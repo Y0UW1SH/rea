@@ -37,7 +37,10 @@ an atomic SQLite snapshot, even if no change is detected during inspection.
 The complete schema inventory includes tables and their columns, indexes, views
 and triggers. SQL declarations retain the original schema text. Virtual and
 shadow tables are identified as such; their supported metadata coverage is
-reported. Schema inventory does not execute views, triggers or arbitrary SQL.
+reported. If a virtual table cannot be resolved, possible backing tables have
+`kind: "unknown"` and an explicit limitation; their rows are refused. Unrelated
+ordinary tables remain selectable. Schema inventory does not execute views,
+triggers or arbitrary SQL.
 
 Rows are optional. `table` selects one exact ordinary-table name. `row_limit`
 requires `table`, defaults to 100 and accepts 1 through 1000. The result reports

@@ -18,18 +18,16 @@ const natural = z
   .transform(Number);
 const schemaRow = z.object({
   type: z.enum(["table", "index", "view", "trigger"]),
-  name: z.string(),
-  tbl_name: z.string(),
+  name: z.instanceof(Uint8Array),
+  tbl_name: z.instanceof(Uint8Array),
   rootpage: natural,
-  sql: z.string().nullable(),
-  name_hex: z.string(),
-  table_hex: z.string(),
-  sql_hex: z.string().nullable(),
+  sql: z.instanceof(Uint8Array).nullable(),
 });
 const tableRow = z.object({
   schema: z.string(),
   name: z.string(),
   type: z.enum(["table", "view", "virtual", "shadow"]),
+  ncol: natural,
   wr: z.bigint(),
   strict: z.bigint(),
 });
@@ -99,6 +97,9 @@ class OutputBudget {
 }
 const quoteIdentifier = (name: string): string =>
   `"${name.replaceAll('"', '""')}"`;
+// SQLite folds only ASCII letters when matching virtual/shadow table names.
+const sqliteIdentifierKey = (name: string): string =>
+  name.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 const textEncoding = (encoding: DatabaseEncoding): string =>
   encoding === "UTF-8"
     ? "utf-8"
@@ -106,33 +107,21 @@ const textEncoding = (encoding: DatabaseEncoding): string =>
       ? "utf-16le"
       : "utf-16be";
 
-const validateSchemaText = (
-  value: z.output<typeof schemaRow>,
+const decodeSchemaText = (
+  value: Uint8Array,
   encoding: DatabaseEncoding,
-): void => {
-  const decoder = new TextDecoder(textEncoding(encoding), {
-    fatal: true,
-    ignoreBOM: true,
-  });
-  for (const [label, text, hex] of [
-    ["name", value.name, value.name_hex],
-    ["table", value.tbl_name, value.table_hex],
-    ["sql", value.sql, value.sql_hex],
-  ] as const) {
-    if (text === null && hex === null) continue;
-    try {
-      if (
-        text === null ||
-        hex === null ||
-        decoder.decode(Buffer.from(hex, "hex")) !== text
-      )
-        throw new Error("text/bytes mismatch");
-    } catch (cause: unknown) {
-      throw new SqliteInspectionFailure(
-        "format",
-        `SQLite schema ${label} contains malformed or lossy decoded ${encoding} text: ${cause instanceof Error ? cause.message : String(cause)}`,
-      );
-    }
+  label: string,
+): string => {
+  try {
+    return new TextDecoder(textEncoding(encoding), {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(value);
+  } catch (cause: unknown) {
+    throw new SqliteInspectionFailure(
+      "format",
+      `SQLite schema ${label} contains malformed ${encoding} text: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
   }
 };
 
@@ -218,6 +207,12 @@ const readSchema = (
       metadata.set(value.name, value);
     }
   }
+  const unresolvedVirtualTables = [...metadata.values()]
+    .filter((value) => value.type === "virtual" && value.ncol === 0)
+    .map((value) => ({
+      name: value.name,
+      prefix: sqliteIdentifierKey(`${value.name}_`),
+    }));
   const schema: SqliteDatabase["schema"] = {
     completeness: "complete",
     tables: [],
@@ -225,13 +220,23 @@ const readSchema = (
     views: [],
     triggers: [],
   };
+  // Raw bytes preserve text without hex expansion; avoid sorter records that
+  // duplicate large names or definitions beyond SQLite's native record limit.
   for (const raw of db
     .prepare(
-      "SELECT type, name, tbl_name, rootpage, sql, hex(CAST(name AS BLOB)) AS name_hex, hex(CAST(tbl_name AS BLOB)) AS table_hex, CASE WHEN sql IS NULL THEN NULL ELSE hex(CAST(sql AS BLOB)) END AS sql_hex FROM main.sqlite_schema ORDER BY type, name",
+      "SELECT type, CAST(name AS BLOB) AS name, CAST(tbl_name AS BLOB) AS tbl_name, rootpage, CAST(sql AS BLOB) AS sql FROM main.sqlite_schema",
     )
     .iterate()) {
-    const value = schemaRow.parse(raw);
-    validateSchemaText(value, encoding);
+    const parsed = schemaRow.parse(raw);
+    const value = {
+      ...parsed,
+      name: decodeSchemaText(parsed.name, encoding, "name"),
+      tbl_name: decodeSchemaText(parsed.tbl_name, encoding, "table"),
+      sql:
+        parsed.sql === null
+          ? null
+          : decodeSchemaText(parsed.sql, encoding, "sql"),
+    };
     if (value.type === "table") {
       const listed = metadata.get(value.name);
       if (listed === undefined || listed.type === "view")
@@ -239,16 +244,27 @@ const readSchema = (
           "format",
           `SQLite schema/table inventory mismatch: ${value.name}`,
         );
+      const identifier = sqliteIdentifierKey(value.name);
+      const possibleShadowParent =
+        listed.type === "table"
+          ? unresolvedVirtualTables.find((parent) =>
+              identifier.startsWith(parent.prefix),
+            )
+          : undefined;
       const table: SqliteDatabase["schema"]["tables"][number] = {
         name: value.name,
         sql: value.sql,
         root_page: value.rootpage,
-        kind: listed.type,
+        kind: possibleShadowParent === undefined ? listed.type : "unknown",
         without_rowid: listed.wr !== 0n,
         strict: listed.strict !== 0n,
         columns_completeness: "complete",
         columns: [],
       };
+      if (possibleShadowParent !== undefined)
+        limitations.push(
+          `SQLite could not resolve virtual table ${possibleShadowParent.name}. Table ${value.name} may be its shadow table; its kind is unknown and row inspection is unavailable.`,
+        );
       budget.retain(table);
       if (listed.type === "virtual") {
         table.columns_completeness = "unsupported";
@@ -299,6 +315,11 @@ const readRows = (
     throw new SqliteInspectionFailure(
       "selection",
       `Selected ordinary table does not exist with that exact name: ${input.table}`,
+    );
+  if (table.kind === "unknown")
+    throw new SqliteInspectionFailure(
+      "selection",
+      `SQLite cannot determine whether selected table ${input.table} is a shadow table of an unresolved virtual table. Row inspection requires a confirmed ordinary table.`,
     );
   if (table.kind !== "table")
     throw new SqliteInspectionFailure(

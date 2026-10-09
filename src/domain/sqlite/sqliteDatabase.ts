@@ -84,7 +84,11 @@ export const sqliteDatabaseSchema = z
           name: z.string(),
           sql: z.string().nullable(),
           root_page: nonnegative,
-          kind: z.enum(["table", "virtual", "shadow"]),
+          kind: z
+            .enum(["table", "virtual", "shadow", "unknown"])
+            .describe(
+              "Unknown means a possible shadow table of an unresolved virtual table; its rows cannot be inspected",
+            ),
           without_rowid: z.boolean(),
           strict: z.boolean(),
           columns_completeness: z.enum(["complete", "unsupported"]),

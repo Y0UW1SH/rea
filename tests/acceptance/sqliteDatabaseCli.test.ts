@@ -222,7 +222,7 @@ cliTest(
 );
 
 cliTest(
-  "returns actionable public errors for corrupt input, unknown tables and invalid record choices",
+  "returns actionable public errors for corrupt input, unknown or ambiguous tables and invalid record choices",
   async ({ cli }) => {
     const root = await createTestTempDirectory("rea-sqlite-errors-public-");
     const path = join(root, "invalid.db");
@@ -240,10 +240,48 @@ cliTest(
     const valid = join(root, "valid.db");
     const database = new DatabaseSync(valid);
     try {
-      database.exec("CREATE TABLE present(value TEXT);");
+      database.exec(
+        "CREATE TABLE present(value TEXT); CREATE VIRTUAL TABLE search USING fts5(body);",
+      );
     } finally {
       database.close();
     }
+    const bytes = await readFile(valid);
+    const declaration = bytes.indexOf(Buffer.from("USING fts5"));
+    if (declaration < 0) throw new Error("Virtual declaration missing");
+    bytes.write("zzzz", declaration + Buffer.byteLength("USING "), "utf8");
+    await writeFile(valid, bytes);
+    const schema = await call("inspect_sqlite_database", { path: valid });
+    expect(schema.isError).not.toBe(true);
+    expect(schema.structuredContent).toMatchObject({
+      normalized_result: {
+        schema: {
+          tables: expect.arrayContaining([
+            expect.objectContaining({ name: "search_data", kind: "unknown" }),
+          ]),
+        },
+      },
+    });
+    const ambiguous = await cli.run({
+      arguments: [
+        "inspect-sqlite-database",
+        valid,
+        "--table",
+        "search_data",
+        "--json",
+      ],
+      environment: { REA_LOG_LEVEL: "silent" },
+    });
+    expect(ambiguous.exitCode).toBe(1);
+    expect(ambiguous.stdout).toContain("shadow table");
+    expect(
+      (
+        await call("inspect_sqlite_database", {
+          path: valid,
+          table: "search_data",
+        })
+      ).isError,
+    ).toBe(true);
     const missing = await cli.run({
       arguments: [
         "inspect-sqlite-database",

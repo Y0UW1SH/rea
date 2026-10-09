@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { readFile, writeFile } from "node:fs/promises";
 import { expect, it, onTestFinished } from "vitest";
 import { inspectSqliteDatabaseSnapshot } from "../../../src/sqlite/SqliteDatabaseInspection.js";
 import { SqliteInspectionFailure } from "../../../src/sqlite/SqliteDatabaseLimits.js";
@@ -54,6 +55,105 @@ it.each(["table", "view"] as const)(
     });
   },
 );
+
+it.each([6, 9])(
+  "preserves a %i MiB schema statement without expanding its native record",
+  async (mebibytes) => {
+    const trigger = `CREATE TRIGGER large_definition AFTER INSERT ON records BEGIN /*${"x".repeat(mebibytes * 1024 * 1024)}*/ SELECT 1; END`;
+    const path = await createDatabase(`
+      CREATE TABLE records(value TEXT);
+      ${trigger};
+    `);
+    const result = inspectSqliteDatabaseSnapshot(path, { path });
+    expect(result.schema.triggers).toEqual([
+      { name: "large_definition", table: "records", sql: trigger },
+    ]);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(
+      16 * 1024 * 1024,
+    );
+  },
+);
+
+it("inspects a large schema identifier without expanding a native sort record", async () => {
+  const name = "x".repeat(4 * 1024 * 1024);
+  const sql = `CREATE TABLE "${name}" (value TEXT)`;
+  const path = await createDatabase(sql);
+  const result = inspectSqliteDatabaseSnapshot(path, { path });
+  expect(result.schema.tables).toMatchObject([
+    { name, sql, columns: [{ name: "value", declared_type: "TEXT" }] },
+  ]);
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(
+    16 * 1024 * 1024,
+  );
+});
+
+it.each(["UTF-8", "UTF-16le", "UTF-16be"])(
+  "preserves exact %s schema text when decoding native bytes",
+  async (encoding) => {
+    const sql = 'CREATE TABLE "\uFEFFé𝄞" ("列" TEXT DEFAULT \'\uFEFFvalue\')';
+    const path = await createDatabase(`PRAGMA encoding='${encoding}'; ${sql}`);
+    const result = inspectSqliteDatabaseSnapshot(path, { path });
+    expect(result.schema.tables).toMatchObject([
+      {
+        name: "\uFEFFé𝄞",
+        sql,
+        columns: [{ name: "列", default_sql: "'\uFEFFvalue'" }],
+      },
+    ]);
+  },
+);
+
+it("rejects malformed schema bytes instead of returning replacement text", async () => {
+  const path = await createDatabase(
+    "CREATE TABLE records(value TEXT /*schema-marker*/)",
+  );
+  const bytes = await readFile(path);
+  const marker = bytes.indexOf(Buffer.from("schema-marker"));
+  if (marker < 0) throw new Error("Schema marker missing");
+  bytes[marker] = 0xff;
+  await writeFile(path, bytes);
+  expect(() => inspectSqliteDatabaseSnapshot(path, { path })).toThrow(
+    /schema sql contains malformed UTF-8 text/,
+  );
+});
+
+it("refuses possible shadow tables when their virtual module is unavailable", async () => {
+  const path = await createDatabase(`
+    CREATE VIRTUAL TABLE "SeArCh_É" USING fts5(body);
+    INSERT INTO "SeArCh_É" VALUES ('retained');
+    CREATE TABLE "search_É_manual" (value TEXT);
+    CREATE TABLE "search_é_manual" (value TEXT);
+    INSERT INTO "search_é_manual" VALUES ('distinct Unicode name');
+    CREATE TABLE "SeArCh_Élite" (value TEXT);
+  `);
+  const bytes = await readFile(path);
+  const declaration = bytes.indexOf(Buffer.from("USING fts5"));
+  if (declaration < 0) throw new Error("Virtual declaration missing");
+  bytes.write("zzzz", declaration + Buffer.byteLength("USING "), "utf8");
+  await writeFile(path, bytes);
+
+  for (const table of ["SeArCh_É_data", "search_É_manual"])
+    expect(() => inspectSqliteDatabaseSnapshot(path, { path, table })).toThrow(
+      /cannot determine.*shadow table/i,
+    );
+  const result = inspectSqliteDatabaseSnapshot(path, {
+    path,
+    table: "search_é_manual",
+  });
+  expect(result.schema.tables).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "SeArCh_É", kind: "virtual" }),
+      expect.objectContaining({ name: "SeArCh_É_data", kind: "unknown" }),
+      expect.objectContaining({ name: "search_É_manual", kind: "unknown" }),
+      expect.objectContaining({ name: "search_é_manual", kind: "table" }),
+      expect.objectContaining({ name: "SeArCh_Élite", kind: "table" }),
+    ]),
+  );
+  expect(result.rows).toMatchObject({
+    values: [[{ type: "text", value: "distinct Unicode name" }]],
+  });
+  expect(result.limitations.join("\n")).toMatch(/shadow table/i);
+});
 
 it("rejects an oversized generated cell through SQLite's native value limit", async () => {
   const path = await createDatabase(`
