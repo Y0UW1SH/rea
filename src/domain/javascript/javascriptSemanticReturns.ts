@@ -155,10 +155,24 @@ const callableIdsForBinding = (
   admitted: ReadonlySet<string>,
   seen: ReadonlySet<string>,
 ): string[] => {
-  if (seen.has(binding.bindingId) || binding.initializers.length !== 1)
+  // A single initializer does not prove an assignment executes or replace
+  // the unknown incoming value of a parameter/catch binding.
+  if (
+    seen.has(binding.bindingId) ||
+    binding.initializers.length !== 1 ||
+    binding.definitions.some(
+      ({ kind }) =>
+        kind === "assignment" || kind === "parameter" || kind === "catch",
+    )
+  )
     return [];
   const initializer = binding.initializers[0];
-  if (initializer === undefined || initializer.projection.length > 0) return [];
+  if (
+    initializer === undefined ||
+    initializer.projection.length > 0 ||
+    state.conditionalInitializers.has(initializer.node)
+  )
+    return [];
   return callableIdsForNode(
     initializer.node,
     state,

@@ -50,6 +50,7 @@ export interface JavaScriptSemanticAnalysisState {
     JavaScriptSemanticModuleLink,
     JavaScriptSemanticBindingState
   >;
+  readonly conditionalInitializers: WeakSet<t.Node>;
 }
 
 /** Return the active scope from a non-empty construction stack. */

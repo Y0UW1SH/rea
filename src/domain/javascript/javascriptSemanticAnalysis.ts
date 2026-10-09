@@ -287,6 +287,7 @@ const createState = (program: t.Program): JavaScriptSemanticAnalysisState => {
     callableNodesById: new Map(),
     moduleLinks: [],
     moduleLinkBindings: new WeakMap(),
+    conditionalInitializers: new WeakSet(),
   };
 };
 
@@ -303,7 +304,7 @@ const collectDefinitions = (
     readonly scope: JavaScriptSemanticScopeState;
   }[] = [];
   traverseJavaScriptAst(program, {
-    enter: (node, parent) => {
+    enter: (node, parent, readAncestors) => {
       let parentScope = currentSemanticScope(stack);
       if (
         parent !== null &&
@@ -357,6 +358,14 @@ const collectDefinitions = (
       });
       bindInnerDeclaration(node, parent, scope, state);
       if (
+        t.isVariableDeclarator(node) &&
+        node.init != null &&
+        parent !== null &&
+        t.isVariableDeclaration(parent, { kind: "var" }) &&
+        hasConditionalInitializer(readAncestors())
+      )
+        state.conditionalInitializers.add(node.init);
+      if (
         t.isAssignmentExpression(node) ||
         t.isUpdateExpression(node) ||
         t.isForOfStatement(node) ||
@@ -372,6 +381,24 @@ const collectDefinitions = (
   // All declarations must exist before resolving writes, including hoisted
   // functions and local declarations that shadow an outer binding.
   for (const { node, scope } of assignments) bindAssignment(node, scope, state);
+};
+
+const hasConditionalInitializer = (ancestors: readonly t.Node[]): boolean => {
+  // A hoisted var can remain undefined when control flow skips its initializer.
+  // Conditions outside the owning callable/static block do not govern its body.
+  for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+    const node = ancestors[index];
+    if (t.isFunction(node) || t.isProgram(node) || t.isStaticBlock(node))
+      return false;
+    if (
+      t.isIfStatement(node) ||
+      t.isLoop(node) ||
+      t.isSwitchCase(node) ||
+      t.isTryStatement(node)
+    )
+      return true;
+  }
+  return false;
 };
 
 const bindOuterDeclaration = (
@@ -464,8 +491,11 @@ const bindAssignment = (
   } else if (t.isUpdateExpression(node) && t.isIdentifier(node.argument))
     addAssignment(node.argument, node, scope, state);
   else if (t.isForOfStatement(node) || t.isForInStatement(node))
-    for (const identifier of assignedPatternIdentifiers(node.left))
-      addAssignment(identifier, node, scope, state);
+    for (const pattern of t.isVariableDeclaration(node.left)
+      ? node.left.declarations.map(({ id }) => id)
+      : [node.left])
+      for (const identifier of assignedPatternIdentifiers(pattern))
+        addAssignment(identifier, node, scope, state);
 };
 
 const assignedPatternIdentifiers = (

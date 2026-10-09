@@ -160,6 +160,121 @@ describe("stable exported function bindings through the CLI", () => {
   });
 });
 
+describe("export bindings with loop and assignment-only writes", () => {
+  it.each([
+    ["a skipped branch", "if (false)"],
+    ["a zero-iteration loop", "for (; false;)"],
+    ["an unselected switch case", "switch (0) { case 1:"],
+    ["an interrupted try block", "try { throw 1;"],
+  ])("does not infer a callable initialized in %s", async (_, prefix) => {
+    const fixture = await analyzeVersions((count) => {
+      const initializer = `var current = () => ({ count: ${String(count)} });`;
+      const statement = prefix.startsWith("try")
+        ? `${prefix} ${initializer} } catch {}`
+        : prefix.startsWith("switch")
+          ? `${prefix} ${initializer} }`
+          : `${prefix} { ${initializer} }`;
+      return `${statement} export { current as default };`;
+    }, "default");
+    await expectRuntimeExports(fixture, () => undefined);
+    expectUncertainComparison(await compareThroughCli(fixture));
+  });
+
+  it("retains a var initializer in an unconditional nested block", async () => {
+    const fixture = await analyzeVersions(
+      (count) =>
+        `{ var current = () => ({ kind: "result", count: ${String(count)} }); }
+         export { current as default };`,
+      "default",
+    );
+    await expectRuntimeExports(fixture, (count) => ({ kind: "result", count }));
+    expectCountChange(await compareThroughCli(fixture));
+  });
+
+  it.each([
+    {
+      name: "a for-of var declaration",
+      loop: (count: number) =>
+        `for (var current of [() => ({ count: ${String(count)} })]) {}`,
+    },
+    {
+      name: "a destructured for-of var declaration",
+      loop: (count: number) =>
+        `for (var { value: current } of [{ value: () => ({ count: ${String(count)} }) }]) {}`,
+    },
+  ])("keeps $name uncertain", async ({ loop }) => {
+    const fixture = await analyzeVersions(
+      (count) =>
+        `function current() { return { count: 0 }; }
+         ${loop(count)}
+         module.exports = current;`,
+      "default",
+      "app.cjs",
+    );
+    await expectRuntimeExports(fixture, (count) => ({ count }));
+    expectUncertainComparison(await compareThroughCli(fixture));
+  });
+
+  it("does not associate a for-in key with the overwritten function", async () => {
+    const fixture = await analyzeVersions(
+      (count) =>
+        `function current() { return { count: 0 }; }
+         for (var current in { ${String(count)}: true }) {}
+         module.exports = current;`,
+      "default",
+      "app.cjs",
+    );
+    await expectRuntimeExports(fixture, String);
+    expectUncertainComparison(await compareThroughCli(fixture));
+  });
+
+  it("preserves an outer export shadowed by a lexical loop declaration", async () => {
+    const fixture = await analyzeVersions(
+      (count) =>
+        `export function current() { return { kind: "result", count: ${String(count)} }; }
+         for (let current of [() => ({ count: 0 })]) { current = null; }`,
+      "current",
+    );
+    await expectRuntimeExports(fixture, (count) => ({ kind: "result", count }));
+    expectCountChange(await compareThroughCli(fixture));
+  });
+
+  it.each([
+    {
+      name: "a parameter",
+      source: (count: number) =>
+        `function install(current) {
+           if (false) current = () => ({ count: 0 });
+           module.exports = current;
+         }
+         install(${String(count)});`,
+    },
+    {
+      name: "a catch binding",
+      source: (count: number) =>
+        `try { throw ${String(count)}; } catch (current) {
+           if (false) current = () => ({ count: 0 });
+           module.exports = current;
+         }`,
+    },
+    {
+      name: "a parameter redeclared with var",
+      source: (count: number) =>
+        `function install(current) {
+           if (false) { var current = () => ({ count: 0 }); }
+           module.exports = current;
+         }
+         install(${String(count)});`,
+    },
+  ])("does not infer $name from its only assignment", async ({ source }) => {
+    const fixture = await analyzeVersions(source, "default", "app.cjs");
+    await expectRuntimeExports(fixture, (count) => count);
+    const cli = await compareThroughCli(fixture);
+    expectUncertainComparison(cli);
+    expect(await compareThroughMcp(fixture.input)).toEqual(cli);
+  });
+});
+
 describe("export binding lexical scope and declaration order", () => {
   it.each([
     {
@@ -439,9 +554,10 @@ const runtimeExport = async (
     `import { pathToFileURL } from 'node:url';
      const module = await import(pathToFileURL(process.argv[1]).href);
      const value = module[process.argv[2]];
-     console.log(JSON.stringify(typeof value === 'function' ? value() : value));`,
+     console.log(JSON.stringify({ value: typeof value === 'function' ? value() : value }));`,
     path,
     exportName,
   ]);
-  return JSON.parse(stdout);
+  return z.object({ value: z.unknown().optional() }).parse(JSON.parse(stdout))
+    .value;
 };
