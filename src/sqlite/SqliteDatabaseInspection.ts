@@ -140,7 +140,9 @@ const cell = (
           ? "Infinity"
           : value === -Infinity
             ? "-Infinity"
-            : value,
+            : Object.is(value, -0)
+              ? "-0"
+              : value,
     };
   const hex = value.slice(1).toLowerCase();
   if (!/^(?:[0-9a-f]{2})*$/.test(hex))

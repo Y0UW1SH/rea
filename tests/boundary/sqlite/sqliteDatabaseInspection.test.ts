@@ -21,6 +21,26 @@ const createDatabase = async (sql: string): Promise<string> => {
   return path;
 };
 
+it("preserves negative-zero REAL values through JSON separately from positive and integer zero", async () => {
+  const path = await createDatabase(`
+    CREATE TABLE numbers(value);
+    INSERT INTO numbers VALUES (-0.0), (0.0), (0), (5e-324), (-5e-324);
+  `);
+  const result = inspectSqliteDatabaseSnapshot(path, {
+    path,
+    table: "numbers",
+  });
+  expect(JSON.parse(JSON.stringify(result.rows))).toMatchObject({
+    values: [
+      [{ type: "real", value: "-0" }],
+      [{ type: "real", value: 0 }],
+      [{ type: "integer", value: "0" }],
+      [{ type: "real", value: Number.MIN_VALUE }],
+      [{ type: "real", value: -Number.MIN_VALUE }],
+    ],
+  });
+});
+
 it.each(["table", "view"] as const)(
   "inspects columns when a %s shadows the table-valued PRAGMA name",
   async (kind) => {

@@ -49,7 +49,8 @@ order is unspecified; a truncated sample does not prove anything about omitted
 records. View, virtual-table and shadow-table row reads are unsupported.
 
 SQLite integers are decimal strings so every signed 64-bit value survives JSON
-serialization. Real values retain their numbers or explicit infinite values.
+serialization. Real values retain their numbers; `"Infinity"`, `"-Infinity"`
+and `"-0"` explicitly preserve infinities and negative zero through JSON.
 Text returns the decoded string together with its bytes as hex and the database
 encoding, preserving malformed text that the SQLite binding may replace for
 display. Blobs are hex, and SQL NULL is a distinct tagged value.

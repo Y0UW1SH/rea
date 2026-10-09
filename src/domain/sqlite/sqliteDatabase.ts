@@ -47,7 +47,7 @@ export const inspectSqliteDatabaseInputSchema = z
   })
   .meta({ dependentRequired: { row_limit: ["table"] } });
 
-/** JSON-safe SQLite cells retain integers, binary content and nonfinite REAL values. */
+/** JSON-safe SQLite cells retain integers, binary content and special REAL values. */
 export const sqliteValueSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("null") }),
   z.strictObject({
@@ -56,7 +56,7 @@ export const sqliteValueSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({
     type: z.literal("real"),
-    value: z.union([z.number(), z.enum(["Infinity", "-Infinity"])]),
+    value: z.union([z.number(), z.enum(["Infinity", "-Infinity", "-0"])]),
   }),
   z.strictObject({
     type: z.literal("text"),

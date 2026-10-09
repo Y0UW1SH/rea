@@ -39,6 +39,7 @@ cliTest.for(["DELETE", "PERSIST", "TRUNCATE"])(
         amount REAL,
         missing TEXT,
         text_value TEXT,
+        negative_zero,
         generated TEXT GENERATED ALWAYS AS (hex(payload)) VIRTUAL
       );
       CREATE UNIQUE INDEX "quoted "" index" ON "odd "" table"(payload, id);
@@ -47,10 +48,20 @@ cliTest.for(["DELETE", "PERSIST", "TRUNCATE"])(
       CREATE TABLE keyed(k TEXT PRIMARY KEY) WITHOUT ROWID, STRICT;
     `);
       const insert = database.prepare(
-        'INSERT INTO "odd "" table"(id,payload,amount,missing,text_value) VALUES(?,?,?,NULL,CAST(X\'80ff\' AS TEXT))',
+        'INSERT INTO "odd "" table"(id,payload,amount,missing,text_value,negative_zero) VALUES(?,?,?,NULL,CAST(X\'80ff\' AS TEXT),?)',
       );
-      insert.run(9007199254740993n, Buffer.from("deadbeef", "hex"), Infinity);
-      insert.run(9007199254740994n, Buffer.from("deadbeef", "hex"), Infinity);
+      insert.run(
+        9007199254740993n,
+        Buffer.from("deadbeef", "hex"),
+        Infinity,
+        -0,
+      );
+      insert.run(
+        9007199254740994n,
+        Buffer.from("deadbeef", "hex"),
+        Infinity,
+        -0,
+      );
     } finally {
       database.close();
     }
@@ -124,6 +135,7 @@ cliTest.for(["DELETE", "PERSIST", "TRUNCATE"])(
             "amount",
             "missing",
             "text_value",
+            "negative_zero",
             "generated",
           ],
           returned_rows: 1,
@@ -139,6 +151,7 @@ cliTest.for(["DELETE", "PERSIST", "TRUNCATE"])(
               { type: "real", value: "Infinity" },
               { type: "null" },
               { type: "text", value: "\ufffd\ufffd", bytes_hex: "80ff" },
+              { type: "real", value: "-0" },
               {
                 type: "text",
                 value: "DEADBEEF",
