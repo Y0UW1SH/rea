@@ -144,6 +144,125 @@ describe("owned process-group cleanup validation: ownership and lineage", () => 
   });
 });
 
+describe("owned process-group cleanup validation: launcher exit races", () => {
+  it.each(["planning", "signaling"])(
+    "settles a stale launcher command during %s without skipping surviving group ownership",
+    async (phase) => {
+      for (const remaining of ["absent", "zombie", "owned", "foreign"]) {
+        const launcher = {
+          pid: 100,
+          parentPid: 1,
+          processGroupId: 100,
+          state: "S",
+          command: "fixture",
+        };
+        const stale = { ...launcher, command: "[MainThread]" };
+        const child = { ...launcher, pid: 101, command: "child" };
+        let reads = 0;
+        const signalGroup = vi.fn();
+        const adapter: ProcessOwnershipHost = {
+          listProcesses: () => {
+            reads += 1;
+            if (phase === "signaling" && reads === 1)
+              return Promise.resolve([launcher]);
+            if (reads === (phase === "planning" ? 1 : 2))
+              return Promise.resolve([stale]);
+            return Promise.resolve(
+              remaining === "absent"
+                ? []
+                : remaining === "zombie"
+                  ? [{ ...stale, state: "Z" }]
+                  : [child],
+            );
+          },
+          environment: () =>
+            Promise.resolve({
+              REA_PROCESS_RUN_ID:
+                remaining === "foreign" && reads > 1
+                  ? "other-run"
+                  : "run-token",
+            }),
+          signalGroup,
+        };
+        const result = await cleanupOwnedProcessGroup(
+          { ...ownership, expectedCommand: "fixture" },
+          adapter,
+        );
+        if (remaining === "foreign")
+          expect(result).toMatchObject({
+            cleaned: false,
+            reason: "process tree contains an unowned or PID-reused process",
+          });
+        else
+          expect(result).toEqual({
+            cleaned: true,
+            signaled: remaining === "owned",
+          });
+        if (remaining === "owned")
+          expect(signalGroup).toHaveBeenCalledWith(100, "SIGKILL");
+        else expect(signalGroup).not.toHaveBeenCalled();
+      }
+    },
+  );
+  it("fails closed when a mismatched launcher's exit cannot be inspected", async () => {
+    const { adapter, signalGroup } = host({
+      100: { REA_PROCESS_RUN_ID: "run-token" },
+    });
+    const listProcesses = vi
+      .fn<ProcessOwnershipHost["listProcesses"]>()
+      .mockResolvedValueOnce(await adapter.listProcesses())
+      .mockRejectedValue(new Error("process table unavailable"));
+    await expect(
+      cleanupOwnedProcessGroup(
+        { ...ownership, expectedCommand: "/owned/hopper" },
+        { ...adapter, listProcesses },
+      ),
+    ).resolves.toMatchObject({
+      cleaned: false,
+      reason: expect.stringContaining("command identity did not match"),
+    });
+    expect(signalGroup).not.toHaveBeenCalled();
+  });
+  it.each(["planning", "signaling"])(
+    "rejects a surviving launcher PID in another group during %s",
+    async (phase) => {
+      const launcher = {
+        pid: 100,
+        parentPid: 1,
+        processGroupId: 100,
+        state: "S",
+        command: "fixture",
+      };
+      let reads = 0;
+      const signalGroup = vi.fn();
+      const adapter: ProcessOwnershipHost = {
+        listProcesses: () => {
+          reads += 1;
+          return Promise.resolve([
+            phase === "signaling" && reads === 1
+              ? launcher
+              : reads === (phase === "planning" ? 1 : 2)
+                ? { ...launcher, command: "[MainThread]" }
+                : { ...launcher, processGroupId: 999 },
+          ]);
+        },
+        environment: () => Promise.resolve({ REA_PROCESS_RUN_ID: "run-token" }),
+        signalGroup,
+      };
+      await expect(
+        cleanupOwnedProcessGroup(
+          { ...ownership, expectedCommand: "fixture" },
+          adapter,
+        ),
+      ).resolves.toMatchObject({
+        cleaned: false,
+        reason: expect.stringContaining("command identity did not match"),
+      });
+      expect(signalGroup).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("owned process-group cleanup validation: exited members", () => {
   it("preserves cancellation during process-table observation instead of reporting unverifiable ownership", async () => {
     const controller = new AbortController();
