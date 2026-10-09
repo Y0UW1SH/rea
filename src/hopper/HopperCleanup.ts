@@ -41,6 +41,7 @@ export interface HopperCleanupInput {
   readonly launch: BridgeLaunch | undefined;
   readonly processSupervisor: ProviderProcessSupervisor | undefined;
   readonly runtimeRoot: PrivateRuntimeRoot | undefined;
+  readonly shutdownConfirmed?: boolean;
   readonly activeRequest: HopperRequestActivity | null;
   readonly retainDocument: boolean;
   readonly progress: ProgressReporter | undefined;
@@ -52,15 +53,21 @@ export interface HopperCleanupInput {
   releaseTransport(socket: Socket | undefined): void;
 }
 
+/** Cleanup result and document confirmation retained across retry attempts. */
+export interface HopperCleanupOutcome {
+  readonly result: Result<null, AnalysisError>;
+  readonly shutdownConfirmed: boolean;
+}
+
 /** Close Hopper phases and retain every resource whose cleanup is unverified. */
 export const cleanupHopperSession = async (
   input: HopperCleanupInput,
-): Promise<Result<null, AnalysisError>> => {
+): Promise<HopperCleanupOutcome> => {
   const state: CleanupState = {
     issues: [],
     resources: new Set(),
     cleanupResult: undefined,
-    shutdownConfirmed: false,
+    shutdownConfirmed: input.shutdownConfirmed === true,
   };
   await report(
     input.progress,
@@ -89,7 +96,10 @@ export const cleanupHopperSession = async (
   } else {
     await closeRuntimeRoot(input.runtimeRoot, state);
   }
-  return cleanupOutcome(input, state);
+  return {
+    result: cleanupOutcome(input, state),
+    shutdownConfirmed: state.shutdownConfirmed,
+  };
 };
 
 const requestShutdown = async (
@@ -97,6 +107,7 @@ const requestShutdown = async (
   state: CleanupState,
 ): Promise<void> => {
   if (
+    state.shutdownConfirmed ||
     input.socket === undefined ||
     input.socket.destroyed ||
     input.activeRequest !== null

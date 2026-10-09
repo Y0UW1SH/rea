@@ -50,7 +50,7 @@ const failure = (message: string) =>
 describe("Hopper shutdown rejection diagnostics", () => {
   it("retains the primary shutdown operation and rejection cause", async () => {
     const { logger, logs } = loggerHarness();
-    const result = await cleanupHopperSession({
+    const { result } = await cleanupHopperSession({
       socket: new Socket(),
       launch: undefined,
       processSupervisor: undefined,
@@ -86,7 +86,7 @@ describe("Hopper shutdown rejection diagnostics", () => {
   it("retains the fallback shutdown operation and rejection cause", async () => {
     const { logger, logs } = loggerHarness();
     const methods: string[] = [];
-    const result = await cleanupHopperSession({
+    const { result } = await cleanupHopperSession({
       socket: new Socket(),
       launch: processCleanupLaunch(),
       processSupervisor: undefined,
@@ -139,7 +139,7 @@ it("keeps a prepared backing image when native document closure cannot be confir
       shutdownMode: "bridge-request" as const,
       providerLifetime: "external-application" as const,
     };
-    const result = await cleanupHopperSession({
+    const { result } = await cleanupHopperSession({
       socket: new Socket(),
       launch,
       runtimeRoot,

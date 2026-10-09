@@ -99,6 +99,7 @@ export class HopperClient {
   readonly #lineage = new ProviderRunLineage();
   #nextId = 1;
   #closing = false;
+  #shutdownConfirmed = false;
   #launcherExitCode: number | null | undefined;
   #launcherFailureDiagnostic: HopperStartupFailureDiagnostic | undefined;
   #operationFailure: OperationFailureRecord | undefined;
@@ -468,11 +469,12 @@ export class HopperClient {
   ): Promise<Result<null, AnalysisError>> {
     this.#closing = true;
     try {
-      return await cleanupHopperSession({
+      const outcome = await cleanupHopperSession({
         socket: this.#socket,
         launch: this.#launch,
         processSupervisor: this.#process,
         runtimeRoot: this.#runtimeRoot,
+        shutdownConfirmed: this.#shutdownConfirmed,
         activeRequest: this.#requests.activity(),
         progress: options.progress,
         logger: this.#logger,
@@ -486,11 +488,16 @@ export class HopperClient {
           socket?.destroy();
         },
       });
+      this.#shutdownConfirmed = outcome.shutdownConfirmed;
+      if (outcome.result.ok) {
+        this.#process = undefined;
+        this.#launch = undefined;
+        this.#runtimeRoot = undefined;
+        this.#shutdownConfirmed = false;
+      }
+      return outcome.result;
     } finally {
       this.#socket = undefined;
-      this.#process = undefined;
-      this.#launch = undefined;
-      this.#runtimeRoot = undefined;
       this.#token = undefined;
       this.#responses.reset();
       this.#launcherExitCode = undefined;
