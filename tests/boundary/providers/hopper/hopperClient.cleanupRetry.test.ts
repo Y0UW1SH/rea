@@ -13,7 +13,10 @@ import type {
   BridgeLauncher,
   BridgeSession,
 } from "../../../../src/hopper/BridgeLauncher.js";
-import { HopperClient } from "../../../../src/hopper/HopperClient.js";
+import {
+  HopperClient,
+  type HopperClientOptions,
+} from "../../../../src/hopper/HopperClient.js";
 import {
   type HopperOwnedResources,
   cleanupHopperSession,
@@ -82,11 +85,16 @@ const stopFixture = async (child: ChildProcess): Promise<void> => {
   await exited;
 };
 
-const failedStartup = async (launcher: RetryCleanupLauncher) => {
-  const client = new HopperClient({ launcher, startupTimeoutMs: 100 });
+const createClient = (options: HopperClientOptions) => {
+  const client = new HopperClient({ startupTimeoutMs: 100, ...options });
   onTestFinished(async () => {
     await client.close();
   });
+  return client;
+};
+
+const failedStartup = async (launcher: RetryCleanupLauncher) => {
+  const client = createClient({ launcher });
   await expect(client.start()).resolves.toMatchObject({
     ok: false,
     error: {
@@ -186,10 +194,7 @@ it("permits a fresh launch after stopping an owned bridge-request provider witho
       return ok({ ...launched.value, shutdownMode: "bridge-request" as const });
     },
   };
-  const client = new HopperClient({ launcher, startupTimeoutMs: 100 });
-  onTestFinished(async () => {
-    await client.close();
-  });
+  const client = createClient({ launcher });
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await expect(client.start()).resolves.toMatchObject({
@@ -227,22 +232,8 @@ it("retains a cross-client lease until owned cleanup succeeds", async () => {
       });
     },
   };
-  const first = new HopperClient({
-    launcher,
-    startupTimeoutMs: 100,
-    runId: "first",
-  });
-  const second = new HopperClient({
-    launcher,
-    startupTimeoutMs: 100,
-    runId: "second",
-  });
-  onTestFinished(async () => {
-    await first.close();
-  });
-  onTestFinished(async () => {
-    await second.close();
-  });
+  const first = createClient({ launcher, runId: "first" });
+  const second = createClient({ launcher, runId: "second" });
   await expect(first.start()).resolves.toMatchObject({ ok: false });
   await expect(second.start()).resolves.toMatchObject({
     ok: false,
@@ -276,10 +267,7 @@ it("retries a failed lease release after document, process, and runtime cleanup 
       });
     },
   };
-  const client = new HopperClient({ launcher, startupTimeoutMs: 100 });
-  onTestFinished(async () => {
-    await client.close();
-  });
+  const client = createClient({ launcher });
   await expect(client.start()).resolves.toMatchObject({ ok: false });
   await expect(client.close()).resolves.toMatchObject({
     ok: false,
