@@ -5,9 +5,16 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import { createPackage } from "@electron/asar";
-
 import { evaluateCodexEvents } from "../dist/evaluation/CodexAgentEval.js";
+import {
+  createAgentEvaluationFixtures,
+  agentFixtureClaims,
+  agentFixtureAnswerInstructions,
+} from "../dist/evaluation/AgentEvaluationFixtures.js";
+import {
+  agentEvaluationPassed,
+  summarizeFactualCorrectness,
+} from "../dist/evaluation/AgentEvaluationReport.js";
 import { MCP_STARTUP_POLICY } from "../dist/mcpStartupPolicy.js";
 import { completeVerifierRun, createVerifierRun } from "./lib/verifier-run.mjs";
 
@@ -91,6 +98,10 @@ try {
       expectedFirstTool: "inspect_managed_artifact",
       requiresEvidence: true,
       requiredAnswerTermGroups: [["profile"], ["main", "entry point"]],
+      requiredToolSubsequence: [
+        "inspect_managed_artifact",
+        "inspect_managed_members",
+      ],
       prompt: `Explain the public managed types and entry point in ${targets.managed}. Use shipped-artifact evidence and distinguish unavailable behavior from observed metadata.`,
     },
     {
@@ -134,7 +145,13 @@ try {
   const results = [];
   for (const scenario of scenarios) {
     process.stderr.write(`Running Codex agent evaluation: ${scenario.id}\n`);
-    const execution = await runCodex(scenario.prompt);
+    const fixtureClaims = agentFixtureClaims(scenario.id, targets);
+    const answerInstructions = agentFixtureAnswerInstructions(scenario.id);
+    const execution = await runCodex(
+      answerInstructions.length === 0
+        ? scenario.prompt
+        : `${scenario.prompt}\n\n${answerInstructions}`,
+    );
     const transcriptDirectory = process.env.REA_AGENT_EVAL_TRANSCRIPT_DIR;
     if (transcriptDirectory !== undefined) {
       const transcriptPath = resolve(
@@ -155,6 +172,7 @@ try {
         requiredAnswerTermGroups: scenario.requiredAnswerTermGroups,
         requiredToolSubsequence: scenario.requiredToolSubsequence,
         forbidInputValidationFailures: true,
+        ...(fixtureClaims === undefined ? {} : { fixtureClaims }),
       },
     );
     const result = {
@@ -163,6 +181,7 @@ try {
       requiresEvidence: scenario.requiresEvidence,
       requiredAnswerTermGroups: scenario.requiredAnswerTermGroups,
       requiredToolSubsequence: scenario.requiredToolSubsequence ?? [],
+      configuredClaimIds: fixtureClaims?.map(({ id }) => id) ?? [],
       exitCode: execution.exitCode,
       stderr: execution.stderr,
       ...metrics,
@@ -173,10 +192,11 @@ try {
     );
   }
 
+  const factualCorrectness = summarizeFactualCorrectness(results);
   const summary = {
-    schemaVersion: 2,
-    evaluationScope: "routing_workflow_and_answer_text_heuristics",
-    factualCorrectness: "not_assessed",
+    schemaVersion: 3,
+    evaluationScope: "routing_workflow_and_configured_fixture_claims",
+    factualCorrectness,
     verifier_run: await completeVerifierRun(verifierRun),
     codex,
     codexVersion,
@@ -214,6 +234,9 @@ try {
       epistemicCuePresent: results.filter(({ epistemicCuePresent }) =>
         Boolean(epistemicCuePresent),
       ).length,
+      factualScenariosPassed: factualCorrectness.counts.passed,
+      factualScenariosFailed: factualCorrectness.counts.failed,
+      factualScenariosNotAssessed: factualCorrectness.counts.notAssessed,
     },
   };
   const encoded = `${JSON.stringify(summary, null, 2)}\n`;
@@ -224,31 +247,10 @@ try {
     await writeFile(resolve(reportPath), encoded);
   }
 
-  const failed = results.filter(
-    ({
-      exitCode,
-      naturalUse,
-      correctFirstTool,
-      repeatedCallCount,
-      inputValidationFailureCount,
-      requiredToolSubsequenceMet,
-      inputTokens,
-      answerHeuristicsMet,
-      epistemicCuePresent,
-    }) =>
-      exitCode !== 0 ||
-      !naturalUse ||
-      !correctFirstTool ||
-      repeatedCallCount !== 0 ||
-      inputValidationFailureCount !== 0 ||
-      !requiredToolSubsequenceMet ||
-      inputTokens <= 0 ||
-      !answerHeuristicsMet ||
-      !epistemicCuePresent,
-  );
+  const failed = results.filter((result) => !agentEvaluationPassed(result));
   if (failed.length > 0)
     throw new Error(
-      `Codex agent routing/workflow/text heuristic checks failed: ${failed.map(({ id }) => id).join(", ")}`,
+      `Agent routing/workflow/answer checks failed: ${failed.map(({ id }) => id).join(", ")}`,
     );
 } finally {
   if (process.env.REA_AGENT_EVAL_KEEP_FIXTURES !== "true")
@@ -256,45 +258,7 @@ try {
 }
 
 async function createTargets(root, includeManaged) {
-  const javascript = join(root, "desktop-app");
-  await mkdir(join(javascript, "renderer"), { recursive: true });
-  await Promise.all([
-    writeFile(
-      join(javascript, "package.json"),
-      `${JSON.stringify({ name: "desktop-fixture", version: "1.0.0", main: "main.js" }, null, 2)}\n`,
-    ),
-    writeFile(
-      join(javascript, "main.js"),
-      'const { BrowserWindow, ipcMain } = require("electron");\nnew BrowserWindow({ webPreferences: { preload: require("node:path").join(__dirname, "preload.js"), contextIsolation: true, sandbox: true } });\nipcMain.handle("profile:read", (_event, id) => ({ id }));\n',
-    ),
-    writeFile(
-      join(javascript, "preload.js"),
-      'const { contextBridge, ipcRenderer } = require("electron");\ncontextBridge.exposeInMainWorld("profileApi", { read: (id) => ipcRenderer.invoke("profile:read", id) });\n',
-    ),
-    writeFile(
-      join(javascript, "renderer/app.js"),
-      'globalThis.profileApi.read("fixture");\n',
-    ),
-  ]);
-  const javascriptAsar = join(root, "desktop-app.asar");
-  await createPackage(javascript, javascriptAsar);
-
-  const javascriptShapeLeft = join(root, "parser-v1");
-  const javascriptShapeRight = join(root, "parser-v2");
-  await Promise.all([
-    mkdir(javascriptShapeLeft, { recursive: true }),
-    mkdir(javascriptShapeRight, { recursive: true }),
-  ]);
-  await Promise.all([
-    cp(
-      join(repositoryRoot, "tests/fixtures/replay/parser.mjs"),
-      join(javascriptShapeLeft, "parser.mjs"),
-    ),
-    cp(
-      join(repositoryRoot, "tests/fixtures/replay/parser-v2.mjs"),
-      join(javascriptShapeRight, "parser.mjs"),
-    ),
-  ]);
+  const fixtures = await createAgentEvaluationFixtures(root, repositoryRoot);
 
   const managedOutput = join(root, "managed-output");
   if (includeManaged) {
@@ -327,9 +291,7 @@ async function createTargets(root, includeManaged) {
   }
   return {
     native: "/bin/true",
-    javascript: javascriptAsar,
-    javascriptShapeLeft,
-    javascriptShapeRight,
+    ...fixtures,
     managed: join(managedOutput, "AgentEval.dll"),
   };
 }

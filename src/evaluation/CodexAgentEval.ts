@@ -1,3 +1,8 @@
+import {
+  evaluateKnownAnswers,
+  type FixtureClaimExpectation,
+  type KnownAnswerAssessment,
+} from "./KnownAnswerEvaluation.js";
 import { compareUnicodeCodePoints } from "../domain/unicodeCodePointOrder.js";
 
 /** One REA MCP invocation observed in a Codex JSONL transcript. */
@@ -11,7 +16,7 @@ interface CodexMcpCall {
   readonly errorCode: string | null;
 }
 
-/** Transcript measurements and text heuristics; factual correctness is not assessed. */
+/** Transcript measurements, text heuristics, and optional closed fixture-claim assessment. */
 export interface CodexAgentMetrics {
   readonly naturalUse: boolean;
   readonly correctFirstTool: boolean;
@@ -33,7 +38,9 @@ export interface CodexAgentMetrics {
   readonly answerHeuristicsMet: boolean;
   /** Whether an epistemic keyword occurs; this does not establish honest authority use. */
   readonly epistemicCuePresent: boolean;
-  readonly factualCorrectness: "not_assessed";
+  /** Limited to configured fixture claims; free-form factual correctness is not assessed. */
+  readonly factualCorrectness: KnownAnswerAssessment["status"];
+  readonly factualAssessment: KnownAnswerAssessment;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -170,6 +177,7 @@ export const evaluateCodexEvents = (
     readonly requiredAnswerTermGroups?: readonly (readonly string[])[];
     readonly requiredToolSubsequence?: readonly string[];
     readonly forbidInputValidationFailures?: boolean;
+    readonly fixtureClaims?: readonly FixtureClaimExpectation[];
   } = {},
 ): CodexAgentMetrics => {
   const state: EvaluationState = {
@@ -219,6 +227,11 @@ export const evaluateCodexEvents = (
     /\b(evidence|observed|inferred|unknown|unavailable|limitation|authority|not configured|could not|requires approval)\b/iu.test(
       finalMessage,
     );
+  const factualAssessment = evaluateKnownAnswers(
+    events,
+    finalMessage,
+    options.fixtureClaims,
+  );
   return {
     naturalUse: reaCalls.length > 0,
     correctFirstTool: reaCalls[0]?.tool === expectedFirstTool,
@@ -243,7 +256,8 @@ export const evaluateCodexEvents = (
         inputValidationFailureCount === 0) &&
       (options.requireEvidence !== true || finalCitesEvidence),
     epistemicCuePresent,
-    factualCorrectness: "not_assessed",
+    factualCorrectness: factualAssessment.status,
+    factualAssessment,
   };
 };
 

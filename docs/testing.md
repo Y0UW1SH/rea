@@ -885,26 +885,48 @@ real local Codex CLI with:
 npm run verify:agent
 ```
 
-Its report records tool selection, repeated calls, token use, workflow checks,
-and answer text heuristics. `answerTermCoverageMet` checks case-insensitive
-substrings, `epistemicCuePresent` checks for words such as "observed" or "unknown",
-and `answerHeuristicsMet` combines those checks with answer length and the
-configured workflow and Evidence-ID requirements. `finalCitesEvidence` only
-checks whether a produced Evidence ID occurs in the answer; it does not verify
-that the Evidence supports any claim. Negated or fabricated claims can pass all
-of these heuristics.
+The packaged desktop and parser-comparison scenarios now assess a closed set of
+known fixture claims. Each final answer must be a strict JSON manifest containing
+exactly the requested claim IDs, values, Evidence IDs, and Evidence authority and
+confidence. Golden values are not included in the prompt. The evaluator checks
+exact values against both the fixture oracle and authenticated successful REA
+results; an Evidence ID by itself is insufficient. Missing, duplicate, extra,
+contradictory, incorrectly sourced, or unsupported claims fail the scenario.
 
-The report explicitly records `factualCorrectness: "not_assessed"` and preserves
-each final answer for review against the fixture and tool results. A successful
-exit checks routing, workflow, and text heuristics; it does not establish factual
-correctness, completion quality, or honest handling of authority. For the full
-tool results, set `REA_AGENT_EVAL_TRANSCRIPT_DIR` to save the scenario transcripts.
+The desktop rubric covers the exposed bridge API and members, renderer and main
+IPC operations, and the resolved preload. It binds its Evidence to the exact
+packaged artifact path and SHA-256. The parser rubric checks the precise heading
+depth addition, discriminant, complete comparison counts, and the explicit limit
+on runtime semantics. Its comparison must link to the two delivered source
+analyses and use the requested module and export selectors. Boundary tests package
+the same source-owned desktop fixture and compare the same source-owned parser
+files through actual MCP tool results, then verify that fabricated answers fail.
 
-Report schema version 2 replaces `completionQuality` with `answerHeuristicsMet`,
-`authorityHonesty` with `epistemicCuePresent`, `contentCriteriaMet` with
-`answerTermCoverageMet`, and scenario `qualityCriteria` with
-`requiredAnswerTermGroups`. Update report consumers to use these narrower names;
-the previous booleans did not assess the qualities their names implied.
+Per-scenario `factualCorrectness` is `passed`, `failed`, or `not_assessed` within
+the `configured_fixture_claims` scope. A pass establishes only the configured
+claims, not unrestricted factual correctness. Native, managed, browser,
+navigation-context, and address-context scenarios have no factual rubric and
+remain `not_assessed`; the managed workflow requires both artifact and member
+inspection to answer its type and entry-point question.
+
+All scenarios retain routing, workflow, validation, repetition, process-exit,
+and token-use gates. Configured factual scenarios additionally require a factual
+pass. Their answer-text heuristics are diagnostic and do not affect the gate.
+Scenarios without a rubric retain the legacy text-heuristic gate.
+`answerTermCoverageMet` checks case-insensitive substrings,
+`epistemicCuePresent` checks keywords, and `finalCitesEvidence` checks only an ID's
+presence. These metrics can still accept fabricated prose and must not be read
+as factual assessments. Set `REA_AGENT_EVAL_TRANSCRIPT_DIR` to retain complete
+tool results and final answers for review.
+
+Report schema version 3 changes the top-level `factualCorrectness` from a constant
+string to an assessment summary with status, scope, and assessed/passed/failed/
+not-assessed scenario counts. Scenario records include the factual assessment and
+configured claim IDs. The evaluation scope is
+`routing_workflow_and_configured_fixture_claims`. Update report consumers for
+these changes. The narrower heuristic field names introduced in version 2 remain:
+`answerHeuristicsMet`, `epistemicCuePresent`, `answerTermCoverageMet`, and
+`requiredAnswerTermGroups`.
 
 Regenerate the managed conformance manifest and Evidence completion ledger from
 live verification results, or check them for drift:
