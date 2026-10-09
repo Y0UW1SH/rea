@@ -333,14 +333,21 @@ const collectCommonJsExport = (
 ): void => {
   const exportedName = commonJsExportName(node.left, state);
   if (exportedName === undefined) return;
-  const origin = semanticRequireOrigin(node.right, state);
+  // Plain assignment chains evaluate to their rightmost value. Retain the
+  // callable in `module.exports = exports = fn` without exporting the alias.
+  // Compound and logical writes depend on the prior export value, so their
+  // RHS alone cannot establish the assigned value or its callable identity.
+  let value = node.operator === "=" ? node.right : null;
+  while (t.isAssignmentExpression(value, { operator: "=" }))
+    value = value.right;
+  const origin = semanticRequireOrigin(value, state);
   addModuleLink(state, {
     kind: "commonjs-export",
     specifier: origin?.specifier ?? null,
     importedName: origin?.importedPath.at(-1) ?? null,
-    localName: t.isIdentifier(node.right) ? node.right.name : null,
+    localName: t.isIdentifier(value) ? value.name : null,
     exportedName,
-    callableId: semanticCallableIdForNode(node.right),
+    callableId: value === null ? null : semanticCallableIdForNode(value),
     location: range(node),
   });
 };
@@ -588,7 +595,8 @@ const commonJsExportName = (
   node: t.Node,
   state: JavaScriptSemanticAnalysisState,
 ): string | undefined => {
-  if (isUnshadowedGlobal(node, state, "exports")) return "default";
+  // Rebinding the CommonJS `exports` alias does not replace `module.exports`.
+  // Only assignments to export properties or `module.exports` create links.
   if (!t.isMemberExpression(node) && !t.isOptionalMemberExpression(node))
     return undefined;
   const key = semanticStaticPropertyKey(node.property, node.computed);
