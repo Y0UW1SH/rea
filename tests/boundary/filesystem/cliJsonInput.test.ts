@@ -1,13 +1,36 @@
 import { execFile } from "node:child_process";
-import { chmod, symlink, writeFile } from "node:fs/promises";
+import { constants as bufferConstants } from "node:buffer";
+import {
+  appendFile,
+  chmod,
+  open,
+  symlink,
+  type FileHandle,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { createCli } from "../../../src/cli.js";
+import { isCliOperationFailure } from "../../../src/cliLogging.js";
 import { parseCliJsonInput } from "../../../src/cliJsonInput.js";
+import { analysisCliErrorEnvelopeSchema } from "../../../src/contracts/errorSchemas.js";
 import { readWithoutFifoWriter } from "../../fixtures/fifoInput.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
+
+const runCli = async (arguments_: readonly string[]): Promise<unknown> => {
+  let stdout = "";
+  await createCli({}).serve([...arguments_, "--json"], {
+    env: {},
+    stdout: (chunk) => {
+      stdout += chunk;
+    },
+    exit: () => undefined,
+  });
+  return JSON.parse(stdout) as unknown;
+};
 
 describe("CLI JSON file selection", () => {
   it("accepts a symlink to a regular JSON file", async () => {
@@ -85,13 +108,58 @@ describe("CLI JSON file selection", () => {
 });
 
 describe("CLI JSON input", () => {
-  it("distinguishes malformed inline text from files and preserves bracket-prefixed paths", async () => {
-    expect(await parseCliJsonInput("[", "test-input")).toMatchObject({
+  it("reports a valid file beyond the runtime string limit as too large", async () => {
+    const root = await createTestTempDirectory("rea-json-input-too-large-");
+    const path = join(root, "input.json");
+    const size = bufferConstants.MAX_STRING_LENGTH + 1;
+    await writeValidOversizedObject(path, size);
+
+    const result = await parseCliJsonInput(path, "test-input");
+    if (result.ok) throw new Error("Expected oversized JSON to be rejected");
+    expect(analysisCliErrorEnvelopeSchema.parse(result.error)).toEqual(
+      result.error,
+    );
+    expect(result).toMatchObject({
       ok: false,
       error: {
-        details: { issues: [{ reason: "invalid_format", expected: "JSON" }] },
+        code: "resource_constraint",
+        input_path: path,
+        input_reason: "too-large",
+        details: {
+          resource: "memory",
+          reported_limits: {
+            boundary: "cli-json-input",
+            max_string_code_units: bufferConstants.MAX_STRING_LENGTH,
+          },
+        },
+        remediation: {
+          action: expect.stringContaining("re-analyze a smaller selection"),
+        },
       },
     });
+
+    expect(isCliOperationFailure(result.error)).toBe(true);
+
+    const characterCount =
+      Math.floor(bufferConstants.MAX_STRING_LENGTH / 2) + 2;
+    await writeValidMultibyteString(path, characterCount);
+
+    const multibyteResult = await parseCliJsonInput(path, "test-input");
+    if (!multibyteResult.ok)
+      throw new Error("Expected large multibyte JSON to fit the string limit");
+    if (typeof multibyteResult.value !== "string")
+      throw new Error("Expected parsed JSON string");
+    expect(multibyteResult.value.length).toBe(characterCount);
+
+    // Large-input streaming must flush and reject an incomplete UTF-8 suffix.
+    await appendFile(path, Buffer.from([0xc3]));
+    expect(await parseCliJsonInput(path, "test-input")).toMatchObject({
+      ok: false,
+      error: { input_path: path, input_reason: "invalid-json" },
+    });
+  }, 20_000);
+
+  it("distinguishes malformed inline text from files and preserves bracket-prefixed paths", async () => {
     expect(await parseCliJsonInput("[", "test-input")).toMatchObject({
       ok: false,
       error: {
@@ -158,22 +226,72 @@ describe("CLI JSON input", () => {
   );
 
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
-    "lists a permission denial as the cause of an unreadable file",
+    "projects a real permission denial as access_denied",
     async () => {
       const root = await createTestTempDirectory("rea-json-input-denied-");
       const path = join(root, "input.json");
       await writeFile(path, "{}");
       await chmod(path, 0o000);
       onTestFinished(() => chmod(path, 0o600));
-      expect(await parseCliJsonInput(path, "test-input")).toMatchObject({
-        ok: false,
-        error: {
-          input_reason: "read-failed",
-          details: {
-            issues: [{ message: expect.stringContaining("(EACCES)") }],
-          },
+      const result = await runCli(["inspect-analysis-view", path]);
+      expect(analysisCliErrorEnvelopeSchema.parse(result)).toMatchObject({
+        error: "Application workflow failed",
+        code: "access_denied",
+        category: "unavailable",
+        details: {
+          operation: "inspect-analysis-view",
+          path,
+          system_code: "EACCES",
+          boundary: "filesystem-read",
         },
+        input_path: path,
+        input_reason: "read-failed",
+        remediation: { action: expect.stringContaining("read access") },
       });
     },
   );
 });
+
+const writeRepeatedBytes = async (
+  handle: FileHandle,
+  bytes: Buffer,
+  length: number,
+): Promise<void> => {
+  let remaining = length;
+  while (remaining > 0) {
+    const chunkLength = Math.min(bytes.length, remaining);
+    await handle.writeFile(bytes.subarray(0, chunkLength));
+    remaining -= chunkLength;
+  }
+};
+
+const writeValidOversizedObject = async (
+  path: string,
+  size: number,
+): Promise<void> => {
+  const handle = await open(path, "w");
+  const whitespace = Buffer.alloc(1024 * 1024, 0x20);
+  try {
+    await handle.writeFile("{");
+    await writeRepeatedBytes(handle, whitespace, size - 2);
+    await handle.writeFile("}");
+  } finally {
+    await handle.close();
+  }
+};
+
+const writeValidMultibyteString = async (
+  path: string,
+  characterCount: number,
+): Promise<void> => {
+  const encodedCharacters = Buffer.from("é".repeat(512 * 1024));
+  const byteLength = characterCount * 2 + 2;
+  const handle = await open(path, "w");
+  try {
+    await handle.writeFile('"');
+    await writeRepeatedBytes(handle, encodedCharacters, byteLength - 2);
+    await handle.writeFile('"');
+  } finally {
+    await handle.close();
+  }
+};
