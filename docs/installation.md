@@ -409,6 +409,10 @@ result identifies resources whose cleanup could not be verified.
 REA retains unresolved cleanup ownership and any confirmed shutdown phases.
 After addressing the reported failure, retry `close_binary` on the same
 connection; a failed close does not release ownership or authorize a fresh launch.
+An unconfirmed external document can be retried while its authenticated bridge
+remains connected. If that bridge has disconnected, another close cannot confirm
+the document: inspect and close the reported document in Hopper before ending
+the owning REA connection.
 
 ### Hopper in CI
 
@@ -518,8 +522,9 @@ import and auto-analysis. The first Ghidra-backed query starts that work lazily.
 The provider startup deadline is 330,000 ms by default for import, analysis,
 bridge, and health readiness. Large binaries can need more: set
 `REA_GHIDRA_STARTUP_TIMEOUT_MS` to an integer between 1 and 2,147,483,647
-milliseconds in the server environment. An absent, empty, invalid or out-of-range
-value keeps the default. REA parses the supplied configuration environment and
+milliseconds in the server environment. An absent setting uses the default;
+empty, invalid or out-of-range supplied values fail configuration validation.
+REA parses the supplied configuration environment and
 passes the deadline to each provider client; a startup failure is returned by the query that triggered it,
 without exposing partial analysis. This deadline is separate from MCP transport
 initialization and the client's deadline for that individual tool call. A client
