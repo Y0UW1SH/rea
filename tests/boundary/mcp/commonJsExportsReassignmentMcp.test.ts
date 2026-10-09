@@ -14,7 +14,15 @@ import { findExportNode } from "../../support/javascriptApplicationFixture.js";
 
 const requireFixture = createRequire(import.meta.url);
 
-it.each([
+interface CommonJsExportCase {
+  readonly source: string;
+  readonly status: string;
+  readonly loadedType: string;
+  readonly exportName?: string;
+  readonly runtimeCount?: number;
+}
+
+it.each<CommonJsExportCase>([
   {
     source:
       "exports = function parse() { return { kind: 'result', count: COUNT }; };",
@@ -69,13 +77,47 @@ it.each([
     loadedType: "function",
     exportName: "parse",
   },
-  {
-    source:
-      "function parse() { return { kind: 'result', count: COUNT }; } function configure() { const parse = () => ({ kind: 'result', count: 7 }); let local; module.exports = local = parse; } configure();",
+  ...[
+    { before: "if (false) {", after: "}" },
+    { before: "for (; false;) {", after: "}" },
+    { before: "switch (0) { case 1:", after: "}" },
+    { before: "try { throw 0;", after: "} catch {}" },
+  ].map(({ before, after }) => ({
+    source: `${before} var parse = () => ({ kind: 'result', count: COUNT }); ${after} module.exports = exports = parse;`,
+    status: "unavailable",
+    loadedType: "undefined",
+  })),
+  ...[
+    "parse = () => ({ kind: 'result', count: 7 }); function parse() { return { kind: 'result', count: COUNT }; }",
+    "function parse() { return { kind: 'result', count: COUNT }; } for (var parse of [() => ({ kind: 'result', count: 7 })]) {}",
+  ].map((body) => ({
+    source: `function configure() { ${body} module.exports = exports = parse; } configure();`,
     status: "unavailable",
     loadedType: "function",
     runtimeCount: 7,
+  })),
+  {
+    source:
+      "function configure() { function parse() { return { kind: 'result', count: COUNT }; } for (var parse in { actual: 0 }) {} module.exports = exports = parse; } configure();",
+    status: "unavailable",
+    loadedType: "string",
   },
+  ...["parse", "var parse"].map((target) => ({
+    source: `function configure(parse) { if (false) ${target} = () => ({ kind: 'result', count: COUNT }); module.exports = exports = parse; } configure(() => ({ kind: 'result', count: 7 }));`,
+    status: "unavailable",
+    loadedType: "function",
+    runtimeCount: 7,
+  })),
+  ...[
+    "module.exports",
+    "module.exports = exports",
+    "module.exports = local",
+  ].map((target) => ({
+    source: `function parse() { return { kind: 'result', count: COUNT }; } function configure() { const parse = () => ({ kind: 'result', count: 7 }); let local; ${target} = parse; } configure();`,
+    status: target.endsWith("local") ? "unavailable" : "selected",
+    loadedType: "function",
+    runtimeCount: 7,
+  })),
 ])(
   "does not compare an unexported CommonJS callable: $source",
   async ({
@@ -160,6 +202,12 @@ it.each([
     target: "module.exports = exports",
     exportName: "default",
     suffix: "",
+    binding: true,
+  },
+  {
+    target: "function configure() { module.exports = exports",
+    exportName: "default",
+    suffix: "} configure();",
     binding: true,
   },
   {
