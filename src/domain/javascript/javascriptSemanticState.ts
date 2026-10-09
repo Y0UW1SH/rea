@@ -12,6 +12,7 @@ import type {
 interface JavaScriptSemanticInitializer {
   readonly node: t.Node;
   readonly projection: readonly (string | number | null)[];
+  readonly entryBody?: t.BlockStatement;
 }
 
 /** Mutable binding state used only while constructing the immutable IR. */

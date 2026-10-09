@@ -353,6 +353,61 @@ describe("export binding lexical scope and declaration order", () => {
 
 describe("export writes in function evaluation contexts", () => {
   it.each([
+    { body: "var arg; arg.value = COUNT;", uncertain: true },
+    { body: "var arg = arg; arg.value = COUNT;", uncertain: true },
+    { body: "arg.value = COUNT; var arg;", uncertain: true },
+    { body: "arg.value = COUNT; var arg = {};", uncertain: true },
+    { body: "var arg = {}; arg.value = COUNT;", uncertain: false },
+    { body: "var arg; arg = {}; arg.value = COUNT;", uncertain: false },
+    { body: "function arg() {} arg.value = COUNT;", uncertain: false },
+  ])("retains parameter-copy timing for $body", async ({ body, uncertain }) => {
+    const fixture = await analyzeVersions(
+      (count) =>
+        `const source = { value: 0 };
+         export function current(arg = null, set = (arg = source)) {
+           ${body.replace("COUNT", String(count))}
+           return { kind: "result", count: source.value };
+         }`,
+      "current",
+    );
+    await expectRuntimeExports(fixture, (count) => ({
+      kind: "result",
+      count: uncertain ? count : 0,
+    }));
+    for (const evidence of [fixture.input.left, fixture.input.right]) {
+      const { normalized_result: analysis } = z
+        .object({
+          normalized_result: javascriptApplicationAnalysisResultSchema,
+        })
+        .parse(evidence);
+      const observations = analysis.graph.nodes.flatMap(
+        ({ observations }) => observations,
+      );
+      expect(observations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            properties: expect.objectContaining({
+              semantic_role: "export-return-shapes",
+              exported_name: "current",
+              static_return_shapes: [
+                expect.objectContaining({
+                  fields: expect.arrayContaining([
+                    expect.objectContaining({
+                      path: "/count",
+                      state: uncertain ? "unknown" : "literal",
+                      value: uncertain ? null : 0,
+                    }),
+                  ]),
+                }),
+              ],
+            }),
+          }),
+        ]),
+      );
+    }
+  });
+
+  it.each([
     ...["let current;", "var current;", "function current() {}"].map(
       (body) => ({
         name: `a parameter default before ${body}`,
