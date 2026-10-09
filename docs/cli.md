@@ -20,6 +20,14 @@ files when neither `--provider` nor `--snapshot` is supplied. See
 [JavaScript artifact reconstruction](javascript-artifact-reconstruction.md)
 for results, integrity checks and coverage.
 
+## SQLite snapshots
+
+For a local database snapshot, use `rea inspect-sqlite-database PATH --json`.
+Add `--table NAME --row-limit 20` to read a bounded sample from an ordinary
+table. This command does not require a native analysis provider. See
+[SQLite database snapshots](sqlite-databases.md) for database/WAL identity,
+source-file handling and row-value semantics.
+
 ## Native analysis
 
 Configure [Hopper or Ghidra](installation.md#hopper), or the
