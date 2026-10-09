@@ -4,12 +4,15 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
-import { McpServer } from "@modelcontextprotocol/server";
+import { STDIO_DEFAULT_MAX_BUFFER_SIZE } from "@modelcontextprotocol/server";
 import { expect, it, onTestFinished } from "vitest";
 
 import { silentLogger } from "../../../src/logger.js";
+import { EvidenceMcpServer } from "../../../src/server/EvidenceMcpServer.js";
 import { registerWebScriptTool } from "../../../src/server/registerWebScriptTool.js";
+import { ToolResultDelivery } from "../../../src/server/toolResult.js";
 import { readWithoutFifoWriter } from "../../fixtures/fifoInput.js";
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
 it.skipIf(process.platform === "win32")(
@@ -20,7 +23,12 @@ it.skipIf(process.platform === "win32")(
     const outputDirectory = join(root, "export");
     await promisify(execFile)("mkfifo", [capturePath]);
 
-    const server = new McpServer({ name: "script-selection", version: "1" });
+    const server = new EvidenceMcpServer(
+      { name: "script-selection", version: "1" },
+      {},
+      undefined,
+      new ToolResultDelivery(STDIO_DEFAULT_MAX_BUFFER_SIZE),
+    );
     registerWebScriptTool(server, {
       logger: silentLogger,
       recordEvidence: undefined,
@@ -47,8 +55,7 @@ it.skipIf(process.platform === "win32")(
     expect(outcome.state).toBe("completed");
     if (outcome.state !== "completed")
       throw new Error("MCP capture selection waited for a FIFO writer");
-    expect(outcome.result.isError).toBe(true);
-    expect(outcome.result.structuredContent).toMatchObject({
+    expect(parseMcpToolError(outcome.result)).toMatchObject({
       error: {
         code: "invalid_request",
         details: {
