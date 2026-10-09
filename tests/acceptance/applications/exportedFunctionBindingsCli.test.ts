@@ -193,6 +193,218 @@ describe("stable exported function bindings through the CLI", () => {
   });
 });
 
+describe("export binding lexical scope and declaration order", () => {
+  it.each([
+    {
+      name: "a write before a hoisted function declaration",
+      source: (count: number) =>
+        `current = () => ({ count: ${String(count)} });
+         export function current() { return { count: 0 }; }`,
+    },
+    {
+      name: "a nested write collected before its outer declaration",
+      source: (count: number) =>
+        `function replace() { current = () => ({ count: ${String(count)} }); }
+         export function current() { return { count: 0 }; }
+         replace();`,
+    },
+  ])("keeps $name uncertain", async ({ source }) => {
+    const fixture = await analyzeVersions(source, "current");
+    expect(await runtimeExport(fixture.leftPath, "current")).toEqual({
+      count: 1,
+    });
+    expect(await runtimeExport(fixture.rightPath, "current")).toEqual({
+      count: 2,
+    });
+    const cli = await compareThroughCli(fixture);
+    expect(cli).toMatchObject({
+      left: { status: "unavailable" },
+      right: { status: "unavailable" },
+      summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
+      coverage: { status: "partial" },
+    });
+  });
+
+  it("does not let a later local declaration contaminate the exported outer binding", async () => {
+    const fixture = await analyzeVersions(
+      (count) =>
+        `export function current() { return { kind: "result", count: ${String(count)} }; }
+       function isolated() {
+         current = () => ({ count: 9 });
+         function current() { return { count: 0 }; }
+       }
+       isolated();`,
+      "current",
+    );
+    expect(await runtimeExport(fixture.leftPath, "current")).toEqual({
+      kind: "result",
+      count: 1,
+    });
+    expect(await runtimeExport(fixture.rightPath, "current")).toEqual({
+      kind: "result",
+      count: 2,
+    });
+    expect(await compareThroughCli(fixture)).toMatchObject({
+      left: { status: "selected" },
+      right: { status: "selected" },
+      summary: { added: 0, removed: 0, changed: 1, unknown: 0 },
+      changes: [{ path: "/count", status: "changed" }],
+      coverage: { status: "complete-within-inputs" },
+    });
+  });
+
+  it("does not associate a nested CommonJS numeric export with an outer function", async () => {
+    const fixture = await analyzeVersions(
+      (count) =>
+        `function current() { return { count: 0 }; }
+       function install() { const current = ${String(count)}; module.exports = current; }
+       install();`,
+      "default",
+      "app.cjs",
+    );
+    expect(await runtimeExport(fixture.leftPath, "default")).toBe(1);
+    expect(await runtimeExport(fixture.rightPath, "default")).toBe(2);
+    const cli = await compareThroughCli(fixture);
+    expect(cli).toMatchObject({
+      left: { status: "unavailable" },
+      right: { status: "unavailable" },
+      summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
+      coverage: { status: "partial" },
+    });
+    expect(await compareThroughMcp(fixture.input)).toEqual(cli);
+  });
+
+  it.each([
+    {
+      name: "a nested function-local alias",
+      source: (count: number) =>
+        `function current() { return { kind: "result", count: 0 }; }
+         function install() {
+           const actual = () => ({ kind: "result", count: ${String(count)} });
+           const current = actual; module.exports = current;
+         }
+         install();`,
+    },
+    {
+      name: "a block-local function",
+      source: (count: number) =>
+        `const current = 0;
+         { const current = () => ({ kind: "result", count: ${String(count)} });
+           module.exports = current; }`,
+    },
+  ])("compares $name through its real CommonJS binding", async ({ source }) => {
+    const fixture = await analyzeVersions(source, "default", "app.cjs");
+    expect(await runtimeExport(fixture.leftPath, "default")).toEqual({
+      kind: "result",
+      count: 1,
+    });
+    expect(await runtimeExport(fixture.rightPath, "default")).toEqual({
+      kind: "result",
+      count: 2,
+    });
+    expect(await compareThroughCli(fixture)).toMatchObject({
+      left: { status: "selected" },
+      right: { status: "selected" },
+      summary: { added: 0, removed: 0, changed: 1, unknown: 0 },
+      changes: [
+        {
+          path: "/count",
+          status: "changed",
+          left: { availability: "literal", value: 1 },
+          right: { availability: "literal", value: 2 },
+        },
+      ],
+      coverage: { status: "complete-within-inputs" },
+    });
+  });
+});
+
+describe("export writes in function evaluation contexts", () => {
+  it.each([
+    ...["let current;", "var current;", "function current() {}"].map(
+      (body) => ({
+        name: `a parameter default before ${body}`,
+        source: (count: number) =>
+          `export function current() { return { count: 0 }; }
+         function replace(value = (current = () => ({ count: ${String(count)} }))) {
+           ${body}
+         }
+         replace();`,
+      }),
+    ),
+    {
+      name: "a closure invoked from a parameter default",
+      source: (count: number) =>
+        `export function current() { return { count: 0 }; }
+         function replace(value = (() => { current = () => ({ count: ${String(count)} }); })()) {
+           let current;
+         }
+         replace();`,
+    },
+    {
+      name: "a computed destructuring parameter key",
+      source: (count: number) =>
+        `export function current() { return { count: 0 }; }
+         function replace({ [current = () => ({ count: ${String(count)} })]: value }) {
+           var current;
+         }
+         replace({});`,
+    },
+    {
+      name: "an object method's computed key",
+      source: (count: number) =>
+        `export function current() { return { count: 0 }; }
+         const object = { [current = () => ({ count: ${String(count)} })]() { let current; } };`,
+    },
+    {
+      name: "a class method's computed key",
+      source: (count: number) =>
+        `export function current() { return { count: 0 }; }
+         class Example { [current = () => ({ count: ${String(count)} })]() { var current; } }`,
+    },
+  ])("keeps an outer export write in $name uncertain", async ({ source }) => {
+    const fixture = await analyzeVersions(source, "current");
+    expect(await runtimeExport(fixture.leftPath, "current")).toEqual({
+      count: 1,
+    });
+    expect(await runtimeExport(fixture.rightPath, "current")).toEqual({
+      count: 2,
+    });
+    expect(await compareThroughCli(fixture)).toMatchObject({
+      left: { status: "unavailable" },
+      right: { status: "unavailable" },
+      summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
+      coverage: { status: "partial" },
+    });
+  });
+
+  it("resolves a CommonJS export in a parameter default outside the function body", async () => {
+    const fixture = await analyzeVersions(
+      (count) =>
+        `function current() { return { kind: "result", count: ${String(count)} }; }
+         function install(value = (module.exports = current)) { var current = 9; }
+         install();`,
+      "default",
+      "app.cjs",
+    );
+    expect(await runtimeExport(fixture.leftPath, "default")).toEqual({
+      kind: "result",
+      count: 1,
+    });
+    expect(await runtimeExport(fixture.rightPath, "default")).toEqual({
+      kind: "result",
+      count: 2,
+    });
+    expect(await compareThroughCli(fixture)).toMatchObject({
+      left: { status: "selected" },
+      right: { status: "selected" },
+      summary: { added: 0, removed: 0, changed: 1, unknown: 0 },
+      changes: [{ path: "/count", status: "changed" }],
+      coverage: { status: "complete-within-inputs" },
+    });
+  });
+});
+
 const runCli = async (args: readonly string[]): Promise<unknown> => {
   const { stdout } = await execute(
     process.execPath,
@@ -208,13 +420,14 @@ const runCli = async (args: readonly string[]): Promise<unknown> => {
 const analyzeVersions = async (
   source: (count: number) => string,
   exportName: string,
+  fileName = "app.mjs",
 ) => {
   const root = await createTestTempDirectory("rea-exported-function-bindings-");
   const leftRoot = join(root, "left");
   const rightRoot = join(root, "right");
   await Promise.all([mkdir(leftRoot), mkdir(rightRoot)]);
-  const leftPath = join(leftRoot, "app.mjs");
-  const rightPath = join(rightRoot, "app.mjs");
+  const leftPath = join(leftRoot, fileName);
+  const rightPath = join(rightRoot, fileName);
   await Promise.all([
     writeFile(leftPath, source(1)),
     writeFile(rightPath, source(2)),
@@ -230,9 +443,9 @@ const analyzeVersions = async (
     input: {
       left,
       right,
-      left_module_path: "app.mjs",
+      left_module_path: fileName,
       left_export_name: exportName,
-      right_module_path: "app.mjs",
+      right_module_path: fileName,
       right_export_name: exportName,
     },
   };

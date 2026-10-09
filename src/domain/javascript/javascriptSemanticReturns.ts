@@ -90,7 +90,6 @@ export const resolveSemanticModuleCallables = (
   callables: readonly JavaScriptSemanticCallable[],
 ): JavaScriptSemanticModuleLink[] => {
   const callableIds = new Set(callables.map(({ callableId }) => callableId));
-  const root = state.scopes.find(({ kind }) => kind === "program");
   return state.moduleLinks.map((link) => {
     // Named exports follow their lexical binding, including every assignment.
     // A declaration's ID or a callable's display name cannot prove that link.
@@ -98,7 +97,7 @@ export const resolveSemanticModuleCallables = (
       return link.callableId !== null && callableIds.has(link.callableId)
         ? link
         : { ...link, callableId: null };
-    const binding = root?.bindings.get(link.localName);
+    const binding = state.moduleLinkBindings.get(link);
     const resolved =
       binding === undefined
         ? []

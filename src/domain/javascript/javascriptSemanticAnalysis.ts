@@ -286,6 +286,7 @@ const createState = (program: t.Program): JavaScriptSemanticAnalysisState => {
     callables: [],
     callableNodesById: new Map(),
     moduleLinks: [],
+    moduleLinkBindings: new WeakMap(),
   };
 };
 
@@ -297,9 +298,29 @@ const collectDefinitions = (
     currentSemanticScope(state.scopes),
   ];
   const openedScopes = new WeakMap<t.Node, number>();
+  const assignments: {
+    readonly node: t.Node;
+    readonly scope: JavaScriptSemanticScopeState;
+  }[] = [];
   traverseJavaScriptAst(program, {
     enter: (node, parent) => {
       let parentScope = currentSemanticScope(stack);
+      if (
+        parent !== null &&
+        (t.isObjectMethod(parent) || t.isClassMethod(parent)) &&
+        parent.computed &&
+        parent.key === node &&
+        parentScope.parentScopeId !== null
+      ) {
+        // A computed method key is evaluated before entering the method's
+        // parameter and body environments.
+        const keyScope = state.scopesById.get(parentScope.parentScopeId);
+        if (keyScope !== undefined) {
+          stack.push(keyScope);
+          openedScopes.set(node, 1);
+          parentScope = keyScope;
+        }
+      }
       if (
         parent !== null &&
         t.isWithStatement(parent) &&
@@ -335,12 +356,22 @@ const collectDefinitions = (
         state,
       });
       bindInnerDeclaration(node, parent, scope, state);
+      if (
+        t.isAssignmentExpression(node) ||
+        t.isUpdateExpression(node) ||
+        t.isForOfStatement(node) ||
+        t.isForInStatement(node)
+      )
+        assignments.push({ node, scope });
     },
     exit: (node) => {
       for (let count = openedScopes.get(node) ?? 0; count > 0; count--)
         stack.pop();
     },
   });
+  // All declarations must exist before resolving writes, including hoisted
+  // functions and local declarations that shadow an outer binding.
+  for (const { node, scope } of assignments) bindAssignment(node, scope, state);
 };
 
 const bindOuterDeclaration = (
@@ -408,7 +439,14 @@ const bindInnerDeclaration = (
       mutable: true,
       kind: "catch",
     });
-  else if (t.isAssignmentExpression(node)) {
+};
+
+const bindAssignment = (
+  node: t.Node,
+  scope: JavaScriptSemanticScopeState,
+  state: JavaScriptSemanticAnalysisState,
+): void => {
+  if (t.isAssignmentExpression(node)) {
     if (t.isIdentifier(node.left))
       addAssignment(
         node.left,
@@ -539,10 +577,40 @@ const scopeKind = (
   if (t.isStaticBlock(node)) return "static-block";
   if (
     t.isBlockStatement(node) &&
-    !(parent !== null && t.isFunction(parent) && parent.body === node)
-  )
-    return "block";
+    parent !== null &&
+    t.isFunction(parent) &&
+    parent.body === node
+  ) {
+    // Parameter expressions cannot see declarations in the function body.
+    // Retain the outer function scope for parameters and callable ownership;
+    // body declarations belong to a separate variable environment.
+    return functionParametersHaveExpressions(parent) ? "function" : undefined;
+  }
+  if (t.isBlockStatement(node)) return "block";
   return undefined;
+};
+
+const functionParametersHaveExpressions = (node: t.Function): boolean => {
+  const pending: t.Node[] = [...node.params];
+  while (pending.length > 0) {
+    const parameter = pending.pop();
+    if (t.isAssignmentPattern(parameter)) return true;
+    if (t.isTSParameterProperty(parameter)) pending.push(parameter.parameter);
+    else if (t.isRestElement(parameter)) pending.push(parameter.argument);
+    else if (t.isArrayPattern(parameter)) {
+      for (const element of parameter.elements)
+        if (element !== null) pending.push(element);
+    } else if (t.isObjectPattern(parameter)) {
+      for (const property of parameter.properties) {
+        if (t.isRestElement(property)) pending.push(property.argument);
+        else {
+          if (property.computed) return true;
+          pending.push(property.value);
+        }
+      }
+    }
+  }
+  return false;
 };
 
 const bindImports = (

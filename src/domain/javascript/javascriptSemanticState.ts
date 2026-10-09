@@ -46,6 +46,10 @@ export interface JavaScriptSemanticAnalysisState {
   readonly callables: JavaScriptSemanticCallable[];
   readonly callableNodesById: Map<string, t.Node>;
   readonly moduleLinks: JavaScriptSemanticModuleLink[];
+  readonly moduleLinkBindings: WeakMap<
+    JavaScriptSemanticModuleLink,
+    JavaScriptSemanticBindingState
+  >;
 }
 
 /** Return the active scope from a non-empty construction stack. */
