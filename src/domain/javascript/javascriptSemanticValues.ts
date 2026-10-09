@@ -2,7 +2,10 @@ import * as t from "@babel/types";
 
 import { semanticSlotAtPath } from "./javascriptSemanticSlots.js";
 
-import { invalidateSemanticMutationPath } from "./javascriptSemanticMutationValues.js";
+import {
+  invalidateSemanticEscapedPath,
+  invalidateSemanticMutationPath,
+} from "./javascriptSemanticMutationValues.js";
 
 import type {
   JavaScriptBindingProvenance,
@@ -51,6 +54,13 @@ const primitiveBindingValuesByState = new WeakMap<
   JavaScriptSemanticAnalysisState,
   Map<string, JavaScriptSemanticValue>
 >();
+
+/** Discard primitive projections evaluated before mutation collection finished. */
+export const clearSemanticPrimitiveBindingValues = (
+  state: JavaScriptSemanticAnalysisState,
+): void => {
+  primitiveBindingValuesByState.delete(state);
+};
 
 const primitiveBindingValuesFor = (
   state: JavaScriptSemanticAnalysisState,
@@ -133,9 +143,13 @@ const evaluateBinding = (
     evaluateExpression(initializer.node, nested),
     initializer.projection,
   );
-  const projected = binding.mutatedPaths.reduce(
+  const mutated = binding.mutatedPaths.reduce(
     invalidateSemanticMutationPath,
     value,
+  );
+  const projected = binding.escapedPaths.reduce(
+    invalidateSemanticEscapedPath,
+    mutated,
   );
   if (
     projected.status === "literal" ||

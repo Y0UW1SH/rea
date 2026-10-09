@@ -137,6 +137,10 @@ Direct return expressions, including expression-bodied arrows, are evaluated
 through an execution-free value lattice. Literal object fields and direct
 return sites are represented in the result. Calls, dynamic spreads, computed
 keys, and parser recovery remain partial or unknown.
+Objects and arrays passed to calls, constructors, or tagged templates, or used
+as method receivers, are not assumed unchanged after the invocation. Aliases
+and shared children in spread copies retain that uncertainty; copied primitive
+slots and unrelated containing properties remain known.
 Nested callable returns are not assigned to their parent callable. Projected
 graph observations carry source ranges but never source text.
 
@@ -162,6 +166,8 @@ value alone does not make an observed property uncertain. `summary.added` and
 `summary.removed` count
 presence-level add/remove as well as literal value add/remove;
 `summary.unknown` does not absorb complete-coverage presence-only gaps.
+A partial comparison still records an unknown in the MCP session when matching
+uncertain projections produce no changes and `summary.unknown` is zero.
 
 The output includes exact selector candidates, omissions, Evidence links,
 coverage, and limitations; it does not execute JavaScript. When runtime

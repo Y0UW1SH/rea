@@ -1,4 +1,33 @@
-import type { JavaScriptSemanticValue } from "./javascriptSemanticIr.js";
+import type {
+  JavaScriptSemanticProperty,
+  JavaScriptSemanticValue,
+} from "./javascriptSemanticIr.js";
+
+/** Invalidate escaped object references without rewriting their containing slots. */
+export const invalidateSemanticEscapedPath = (
+  value: JavaScriptSemanticValue,
+  path: readonly (string | number | null)[],
+): JavaScriptSemanticValue => {
+  if (value.status !== "object" && value.status !== "array") return value;
+  const [key, ...remaining] = path;
+  if (key === undefined)
+    return {
+      status: "unknown",
+      reason: "This object reference may have been mutated by a call.",
+    };
+  const invalidateChild = (
+    property: JavaScriptSemanticProperty,
+  ): JavaScriptSemanticProperty =>
+    key === null || property.name === String(key)
+      ? {
+          ...property,
+          value: invalidateSemanticEscapedPath(property.value, remaining),
+        }
+      : property;
+  return value.status === "object"
+    ? { ...value, properties: value.properties.map(invalidateChild) }
+    : { ...value, items: value.items.map(invalidateChild) };
+};
 
 /** Invalidate only slots that an explicit mutation can affect. */
 export const invalidateSemanticMutationPath = (

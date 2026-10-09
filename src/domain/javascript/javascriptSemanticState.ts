@@ -14,6 +14,14 @@ interface JavaScriptSemanticInitializer {
   readonly projection: readonly (string | number | null)[];
 }
 
+/** Additional references from destructuring copies and possible defaults. */
+interface JavaScriptSemanticReferenceInitializer extends JavaScriptSemanticInitializer {
+  readonly copyKind?: "object-rest" | "array-rest";
+  readonly copyProjectionOffset?: number;
+  readonly fallbackSources?: readonly JavaScriptSemanticInitializer[];
+  readonly requiredSources?: readonly JavaScriptSemanticInitializer[];
+}
+
 /** Mutable binding state used only while constructing the immutable IR. */
 export interface JavaScriptSemanticBindingState {
   readonly bindingId: string;
@@ -22,8 +30,10 @@ export interface JavaScriptSemanticBindingState {
   kind: JavaScriptSemanticDefinition["kind"];
   mutable: boolean;
   readonly mutatedPaths: (readonly (string | number | null)[])[];
+  readonly escapedPaths: (readonly (string | number | null)[])[];
   readonly definitions: JavaScriptSemanticDefinition[];
   readonly initializers: JavaScriptSemanticInitializer[];
+  readonly referenceInitializers: JavaScriptSemanticReferenceInitializer[];
   readonly directOrigins: JavaScriptModuleOrigin[];
 }
 

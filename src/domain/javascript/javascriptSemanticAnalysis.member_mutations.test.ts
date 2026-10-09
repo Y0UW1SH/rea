@@ -85,6 +85,222 @@ describe("JavaScript semantic values after explicit property mutations", () => {
   });
 });
 
+describe("JavaScript semantic values after mutable references escape", () => {
+  it("preserves copied scalar slots while invalidating shared children of an escaped object spread", () => {
+    expect(
+      resultValue(`
+      const source = { kind: "record", child: { value: 1 } };
+      const copy = { ...source };
+      mutate(copy);
+      return source;
+    `),
+    ).toMatchObject({
+      status: "object",
+      properties: [
+        { name: "child", value: { status: "unknown" }, presence: "present" },
+        { name: "kind", value: { status: "literal", value: "record" } },
+      ],
+    });
+  });
+
+  it("invalidates shared array children without invalidating copied primitives", () => {
+    expect(
+      resultValue(`
+      const child = { value: 1 };
+      const source = [child, "TOKEN"];
+      const copy = [...source];
+      mutate(copy);
+      return { token: source[1], value: child.value };
+    `),
+    ).toMatchObject({
+      status: "object",
+      properties: [
+        { name: "token", value: { status: "literal", value: "TOKEN" } },
+        { name: "value", value: { status: "unknown" } },
+      ],
+    });
+  });
+
+  it("keeps primitive spread arguments known", () => {
+    expect(
+      resultValue(
+        'const values = ["TOKEN"]; consume(...values); return values[0];',
+      ),
+    ).toEqual({ status: "literal", value: "TOKEN" });
+  });
+
+  it("does not treat a member constructor as a call with its container as receiver", () => {
+    expect(
+      resultValue(`
+      const namespace = { token: "TOKEN", Factory: class {} };
+      new namespace.Factory();
+      return namespace.token;
+    `),
+    ).toEqual({ status: "literal", value: "TOKEN" });
+  });
+
+  it("does not reuse an initializer projection cached before call mutations were collected", () => {
+    expect(
+      resultValue(`
+      const source = { value: 1 };
+      function observe() { consume(copy); }
+      mutate(source);
+      const copy = source.value;
+      return copy;
+    `)?.status,
+    ).toBe("unknown");
+  });
+
+  it.each([
+    "mutate(source as unknown);",
+    "mutate((0, source));",
+    "let alias; mutate(alias = source);",
+    "mutate(flag ? source : {});",
+    "let alias = source; mutate(alias ||= {});",
+    "let alias = source; mutate(alias ??= {});",
+  ])("follows a reference through %s", (invocation) => {
+    expect(
+      resultValue(`
+      const source = { value: 1 };
+      ${invocation}
+      return source.value;
+    `)?.status,
+    ).toBe("unknown");
+  });
+});
+
+describe("JavaScript escaped references through async and destructuring syntax", () => {
+  it("follows an awaited object argument", () => {
+    const ir = analyzeJavaScriptSemantics(`export async function result() {
+      const source = { value: 1 };
+      mutate(await source);
+      return source.value;
+    }`);
+    expect(onlyCallable(ir, "result").returnSites[0]?.value.status).toBe(
+      "unknown",
+    );
+  });
+
+  it.each([
+    "const { ...copy } = source; mutate(copy);",
+    "const { ...copy } = source; mutate(copy.child);",
+    "const [ ...copy ] = [source.child]; mutate(copy);",
+    "const [ first, ...copy ] = [null, source.child]; mutate(copy[0]);",
+    "const [ ...[copy] ] = [source.child]; mutate(copy);",
+    "const [ ...[copy = source.child] ] = []; mutate(copy);",
+    "const { value = source.child } = {}; mutate(value);",
+    "const [ value = source.child ] = []; mutate(value);",
+  ])("follows shared references through %s", (invocation) => {
+    expect(
+      resultValue(`
+      const source = { kind: "record", child: { value: 1 } };
+      ${invocation}
+      return source;
+    `),
+    ).toMatchObject({
+      status: "object",
+      properties: [
+        { name: "child", value: { status: "unknown" }, presence: "present" },
+        { name: "kind", value: { status: "literal", value: "record" } },
+      ],
+    });
+  });
+
+  it("keeps an unused default reference unchanged when destructuring a defined value", () => {
+    expect(
+      resultValue(`
+      const source = { value: "TOKEN" };
+      const { value = source } = { value: 1 };
+      mutate(value);
+      return source.value;
+    `),
+    ).toEqual({ status: "literal", value: "TOKEN" });
+  });
+
+  it("keeps an unused nested default reference unchanged", () => {
+    expect(
+      resultValue(`
+      const unused = { value: "TOKEN" };
+      const { box: { value = unused } = { value: 1 } } = {};
+      mutate(value);
+      return unused.value;
+    `),
+    ).toEqual({ status: "literal", value: "TOKEN" });
+  });
+
+  it("reconsiders a destructuring fallback after later collection finds an escape", () => {
+    expect(
+      resultValue(`
+      const fallback = { value: 1 };
+      const source = { child: { value: 2 } };
+      function observe() { mutate(copy); }
+      remove(source);
+      const { child: copy = fallback } = source;
+      mutate(copy);
+      return fallback.value;
+    `)?.status,
+    ).toBe("unknown");
+  });
+
+  it("follows a fallback write when the original projection appeared primitive", () => {
+    expect(
+      resultValue(`
+      const fallback = { value: 1 };
+      const source = { child: 1 };
+      function observe() { copy.value = 2; }
+      remove(source);
+      const { child: copy = fallback } = source;
+      observe();
+      return fallback.value;
+    `)?.status,
+    ).toBe("unknown");
+  });
+
+  it("keeps fresh rest-copy slot writes from changing the original", () => {
+    expect(
+      resultValue(`
+      const source = { child: { value: "TOKEN" } };
+      const { ...copy } = source;
+      copy.child = {};
+      return source.child.value;
+    `),
+    ).toEqual({ status: "literal", value: "TOKEN" });
+  });
+
+  it("follows writes to shared children of rest copies", () => {
+    expect(
+      resultValue(`
+      const source = { kind: "record", child: { value: 1 } };
+      const { ...copy } = source;
+      copy.child.value = 2;
+      return { kind: source.kind, value: source.child.value };
+    `),
+    ).toMatchObject({
+      status: "object",
+      properties: [
+        { name: "kind", value: { status: "literal", value: "record" } },
+        { name: "value", value: { status: "unknown" } },
+      ],
+    });
+  });
+
+  it("finishes repeated alias branches without expanding identical escape paths", () => {
+    const declarations = Array.from({ length: 24 }, (_, index) => {
+      const name = `alias${String(index + 1)}`;
+      const previous = `alias${String(index)}`;
+      return `let ${name} = ${previous}; ${name} = ${previous};`;
+    }).join("\n");
+    expect(
+      resultValue(`
+      let alias0 = { value: 1 };
+      ${declarations}
+      mutate(alias24);
+      return alias0.value;
+    `)?.status,
+    ).toBe("unknown");
+  });
+});
+
 const unchangedProperties = [
   'const source = { token: "TOKEN", count: 1 }; source.count = 2; return source.token;',
   'const source = { token: "TOKEN", count: 1 }; const alias = source; alias.count++; return source.token;',
