@@ -22,6 +22,17 @@ for results, integrity checks and coverage.
 
 ## Native analysis
 
+Inspect embedded Go build metadata without installing Go or configuring a
+disassembler:
+
+```bash
+rea inspect-go-binary /absolute/path/to/program --json
+```
+
+The shared CLI/MCP workflow reports compiler version, modules, replacements,
+build settings, original bytes and SHA-256. See [Go binaries](go-binaries.md)
+for supported containers and absent or malformed metadata.
+
 Configure [Hopper or Ghidra](installation.md#hopper), or the
 [IDA adapter](ida-provider.md), before analyzing a native target. Substitute
 your target, search text and function name or address in these examples:
