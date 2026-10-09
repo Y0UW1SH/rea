@@ -24,13 +24,14 @@ const sourceState = async (path: string) => {
   };
 };
 
-cliTest(
-  "inspects a real SQLite schema and lossless selected records identically through CLI and MCP",
-  async ({ cli }) => {
+cliTest.for(["DELETE", "PERSIST", "TRUNCATE"])(
+  "inspects a real %s SQLite schema and lossless selected records identically through CLI and MCP",
+  async (journalMode, { cli }) => {
     const root = await createTestTempDirectory("rea-sqlite-public-");
     const path = join(root, "selected.db");
     const database = new DatabaseSync(path);
     try {
+      database.exec(`PRAGMA journal_mode=${journalMode}`);
       database.exec(`
       CREATE TABLE "odd "" table" (
         id INTEGER PRIMARY KEY,

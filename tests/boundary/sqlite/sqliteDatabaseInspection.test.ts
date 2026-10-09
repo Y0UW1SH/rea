@@ -103,6 +103,24 @@ it.each(["UTF-8", "UTF-16le", "UTF-16be"])(
   },
 );
 
+it("counts schema names once when enforcing the complete reply budget", async () => {
+  const names = Array.from(
+    { length: 48 },
+    (_, index) => `${index}_${"x".repeat(128 * 1024)}`,
+  );
+  const path = await createDatabase(
+    names.map((name) => `CREATE TABLE "${name}" (value TEXT);`).join("\n"),
+  );
+  const result = inspectSqliteDatabaseSnapshot(path, { path });
+  expect(result.schema.tables).toHaveLength(names.length);
+  expect(result.schema.tables.map((table) => table.name)).toEqual(
+    expect.arrayContaining(names),
+  );
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(
+    16 * 1024 * 1024,
+  );
+});
+
 it("rejects malformed schema bytes instead of returning replacement text", async () => {
   const path = await createDatabase(
     "CREATE TABLE records(value TEXT /*schema-marker*/)",

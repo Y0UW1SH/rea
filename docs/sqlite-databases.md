@@ -67,6 +67,10 @@ temporary directory before SQLite opens them. Source files are not opened by
 SQLite, so its locks or shared-memory sidecars cannot modify the original
 snapshot. Temporary copies and the owned worker are cleaned up on success,
 failure and cancellation. Extension loading and schema trust are disabled.
+Empty rollback journals and fully zeroed journal headers left by successful
+`TRUNCATE` and `PERSIST` commits are accepted after stable identity checks.
+Other retained rollback journals are refused because recovery is outside this
+profile. Journal files are never modified or copied into the worker snapshot.
 
 The database and WAL together are limited to 256 MiB. SQLite values/records,
 SQL statements and the complete worker JSON reply each have a 16 MiB limit.

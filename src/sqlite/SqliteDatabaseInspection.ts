@@ -200,10 +200,13 @@ const readSchema = (
 ): SqliteDatabase["schema"] => {
   const { budget, limitations, encoding } = context;
   const metadata = new Map<string, z.output<typeof tableRow>>();
+  // Names bound the minimum eventual schema output while metadata is collected.
+  // The full schema objects below account for them in the actual reply budget.
+  const metadataBudget = new OutputBudget();
   for (const raw of db.prepare("PRAGMA main.table_list").iterate()) {
     const value = tableRow.parse(raw);
     if (value.schema === "main") {
-      budget.retain(value.name);
+      metadataBudget.retain(value.name);
       metadata.set(value.name, value);
     }
   }
