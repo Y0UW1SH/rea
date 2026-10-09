@@ -256,7 +256,7 @@ Informa de vulnerabilidades siguiendo [SECURITY.md](SECURITY.md).
 
 ## Historial de estrellas
 
-🎉 **30.000 estrellas en GitHub: ¡gracias!**
+🎉 **40.000 estrellas en GitHub: ¡gracias!**
 
 Gracias a quienes usan REA, informan de errores, solicitan funciones, prueban compilaciones y contribuyen con correcciones.
 
@@ -281,5 +281,3 @@ Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para preparar el entorno de desarrol
 ## Licencia
 
 [MIT](LICENSE)
-
-[![Documento de licencia de software con un sello de verificación](docs/assets/rea-license.png)](LICENSE)

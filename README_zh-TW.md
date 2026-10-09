@@ -258,7 +258,7 @@ npx rea-agents@latest setup
 
 ## Star 歷史
 
-🎉 **GitHub Star 達到 30,000 個，感謝大家！**
+🎉 **GitHub Star 達到 40,000 個，感謝大家！**
 
 感謝每一位使用 REA、報告錯誤、提出功能需求、測試建置和貢獻修復的朋友。
 
@@ -283,5 +283,3 @@ REA 為合法的逆向工程研究、分析和重建提供工具。你有責任�
 ## 授權條款
 
 [MIT](LICENSE)
-
-[![帶有勾選印章的軟體授權文件](docs/assets/rea-license.png)](LICENSE)

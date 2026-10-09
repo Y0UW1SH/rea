@@ -292,6 +292,7 @@ const createState = (program: t.Program): JavaScriptSemanticAnalysisState => {
     bindings: new Map(),
   };
   return {
+    parentsByNode: new WeakMap(),
     scopes: [root],
     scopesById: new Map([[root.scopeId, root]]),
     scopeByNode: new WeakMap([[program, root]]),

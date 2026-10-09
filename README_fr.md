@@ -257,7 +257,7 @@ Signalez les vulnérabilités via [SECURITY.md](SECURITY.md).
 
 ## Historique des étoiles
 
-🎉 **30 000 étoiles GitHub — merci !**
+🎉 **40 000 étoiles GitHub — merci !**
 
 Merci à toutes les personnes qui utilisent REA, signalent des bugs, proposent des fonctionnalités, testent les builds et contribuent des correctifs.
 
@@ -282,5 +282,3 @@ Consultez [CONTRIBUTING.md](CONTRIBUTING.md) pour l'environnement de développem
 ## Licence
 
 [MIT](LICENSE)
-
-[![Document de licence logicielle avec un sceau de validation](docs/assets/rea-license.png)](LICENSE)

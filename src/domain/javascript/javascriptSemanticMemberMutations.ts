@@ -19,7 +19,10 @@ import {
 } from "./javascriptSemanticPropertyPaths.js";
 import { compareUnicodeCodePoints } from "../unicodeCodePointOrder.js";
 import { traverseJavaScriptAst } from "./javascriptSemanticTraversal.js";
-import { semanticStaticPropertyKey } from "./javascriptAstValues.js";
+import {
+  semanticStaticPropertyKey,
+  unwrapJavaScriptExpression,
+} from "./javascriptAstValues.js";
 
 type PropertyPath = JavaScriptSemanticPropertyPath;
 type ValueEffect = "write" | "escape";
@@ -29,13 +32,14 @@ export const collectSemanticMemberMutations = (
   program: t.Program,
   state: JavaScriptSemanticAnalysisState,
 ): void => {
-  const parents = new WeakMap<t.Node, t.Node>();
+  const parents = state.parentsByNode;
   traverseJavaScriptAst(program, {
     enter: (node, parent) => {
       if (parent !== null) parents.set(node, parent);
     },
   });
   const recordedEffects = new Set<string>();
+  const selections = new Map<string, readonly string[]>();
   let arrayIterationUnknown = false;
   const pendingReferences: {
     readonly initializer: JavaScriptSemanticBindingState["referenceInitializers"][number];
@@ -43,6 +47,7 @@ export const collectSemanticMemberMutations = (
     readonly bindings: ReadonlySet<string>;
     readonly effect: ValueEffect;
     readonly mutation?: t.Node;
+    readonly originAt: t.Node | undefined;
   }[] = [];
   const iterableReferences: IterableReference[] = [];
   const iterableReferenceKeys = new WeakMap<t.Node, Set<string>>();
@@ -55,6 +60,8 @@ export const collectSemanticMemberMutations = (
       reference.effect,
       reference.mutation?.start,
       reference.mutation?.end,
+      reference.originAt?.start,
+      reference.originAt?.end,
       [...reference.bindings].sort(compareUnicodeCodePoints),
     ]);
     if (keys.has(key)) return;
@@ -68,12 +75,13 @@ export const collectSemanticMemberMutations = (
     bindings: ReadonlySet<string>,
     effect: ValueEffect = "write",
     mutation?: t.Node,
+    originAt: t.Node | undefined = mutation,
   ): void => {
-    const pending = [{ node, path, bindings }];
+    const pending = [{ node, path, bindings, originAt }];
     while (pending.length > 0) {
       const current = pending.pop();
       if (current === undefined) break;
-      const expression = unwrapReferenceExpression(current.node);
+      const expression = unwrapJavaScriptExpression(current.node).node;
       if (t.isIdentifier(expression)) {
         const binding = resolveSemanticBindingState(
           state,
@@ -93,13 +101,55 @@ export const collectSemanticMemberMutations = (
             arrayIterationUnknown = true;
           continue;
         }
-        if (current.bindings.has(binding.bindingId)) continue;
+        // An alias restored from a saved reference can revisit the same binding
+        // at an earlier capture. Only a repeated lifetime closes a cycle.
+        const lifetime = JSON.stringify([
+          binding.bindingId,
+          current.originAt?.start,
+          current.originAt?.end,
+        ]);
+        if (current.bindings.has(lifetime)) continue;
+        // Union compatible copied-slot selections at each binding. Carrying every
+        // combination of exclusions through branch diamonds is exponential.
+        const selectorIndex = current.path.findIndex(
+          (key) => key !== null && typeof key === "object",
+        );
+        let path = current.path;
+        const selector = path[selectorIndex];
+        if (selector !== null && typeof selector === "object") {
+          const selectionIdentity = JSON.stringify([
+            binding.bindingId,
+            effect,
+            path.map((key, index) =>
+              index === selectorIndex
+                ? { startIndex: selector.startIndex }
+                : key,
+            ),
+            mutation?.start,
+            mutation?.end,
+            current.originAt?.start,
+            current.originAt?.end,
+          ]);
+          const previous = selections.get(selectionIdentity);
+          const excludedKeys =
+            previous === undefined
+              ? selector.excludedKeys
+              : previous.filter((key) => selector.excludedKeys.includes(key));
+          if (previous !== undefined && excludedKeys.length === previous.length)
+            continue;
+          selections.set(selectionIdentity, excludedKeys);
+          path = path.map((key, index) =>
+            index === selectorIndex ? { ...selector, excludedKeys } : key,
+          );
+        }
         const identity = JSON.stringify([
           binding.bindingId,
           effect,
-          current.path,
+          path,
           mutation?.start,
           mutation?.end,
+          current.originAt?.start,
+          current.originAt?.end,
         ]);
         if (recordedEffects.has(identity)) continue;
         const value =
@@ -109,32 +159,33 @@ export const collectSemanticMemberMutations = (
         const primitiveWrite =
           value?.status === "literal" || value?.status === "union";
         recordedEffects.add(identity);
-        const nested = new Set([...current.bindings, binding.bindingId]);
+        const nested = new Set([...current.bindings, lifetime]);
+        const origins =
+          current.originAt === undefined
+            ? binding
+            : semanticMutationInitializers(binding, current.originAt, parents);
         if (!primitiveWrite) {
-          (effect === "escape"
-            ? binding.escapedPaths
-            : binding.mutatedPaths
-          ).push(current.path);
+          if (effect === "escape")
+            binding.escapedPaths.push({ path, node: mutation });
+          else binding.mutatedPaths.push(path);
           clearSemanticPrimitiveBindingValues(state);
-          const initializers =
-            mutation === undefined
-              ? binding.initializers
-              : semanticMutationInitializers(binding, mutation, parents);
-          for (const initializer of initializers)
+          for (const initializer of origins.initializers)
             pending.push({
               node: initializer.node,
-              path: [...initializer.projection, ...current.path],
+              path: [...initializer.projection, ...path],
               bindings: nested,
+              originAt: initializer.node,
             });
         }
-        for (const initializer of binding.referenceInitializers) {
-          const path = copiedReferencePath(initializer, current.path, effect);
-          if (path === null) continue;
+        for (const initializer of origins.referenceInitializers) {
+          const copiedPath = copiedReferencePath(initializer, path, effect);
+          if (copiedPath === null) continue;
           pendingReferences.push({
             initializer,
-            path,
+            path: copiedPath,
             bindings: nested,
             effect,
+            originAt: initializer.node,
             ...(mutation === undefined ? {} : { mutation }),
           });
         }
@@ -149,6 +200,7 @@ export const collectSemanticMemberMutations = (
             ...current.path,
           ],
           bindings: current.bindings,
+          originAt: current.originAt,
         });
       } else {
         if (
@@ -172,22 +224,31 @@ export const collectSemanticMemberMutations = (
               fallbackPath: value.iterableFallbackPath,
               bindings: current.bindings,
               effect,
+              originAt: current.originAt,
               ...(mutation === undefined ? {} : { mutation }),
             });
-          else pending.push({ ...value, bindings: current.bindings });
+          else
+            pending.push({
+              ...value,
+              bindings: current.bindings,
+              originAt: current.originAt,
+            });
         }
       }
     }
   };
-  const markEscaped = (node: t.Node, path: PropertyPath = []): void =>
-    markValue(node, path, new Set(), "escape");
-  const markReceiver = (callee: t.Node): void => {
-    const expression = unwrapReferenceExpression(callee);
+  const markEscaped = (
+    node: t.Node,
+    mutation: t.Node,
+    path: PropertyPath = [],
+  ): void => markValue(node, path, new Set(), "escape", mutation);
+  const markReceiver = (callee: t.Node, mutation: t.Node): void => {
+    const expression = unwrapJavaScriptExpression(callee).node;
     if (
       t.isMemberExpression(expression) ||
       t.isOptionalMemberExpression(expression)
     )
-      markEscaped(expression.object);
+      markEscaped(expression.object, mutation);
   };
   const markTarget = (node: t.Node, mutation: t.Node): void => {
     if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node))
@@ -226,14 +287,14 @@ export const collectSemanticMemberMutations = (
       ) {
         for (const argument of node.arguments)
           if (t.isSpreadElement(argument))
-            markEscaped(argument.argument, [null]);
-          else markEscaped(argument);
+            markEscaped(argument.argument, node, [null]);
+          else markEscaped(argument, node);
         // Constructing a member does not pass its container as `this`.
-        if (!t.isNewExpression(node)) markReceiver(node.callee);
+        if (!t.isNewExpression(node)) markReceiver(node.callee, node);
       } else if (t.isTaggedTemplateExpression(node)) {
-        markReceiver(node.tag);
+        markReceiver(node.tag, node);
         for (const expression of node.quasi.expressions)
-          markEscaped(expression);
+          markEscaped(expression, node);
       }
     },
   });
@@ -279,6 +340,7 @@ export const collectSemanticMemberMutations = (
           ],
           bindings: reference.bindings,
           effect: reference.effect,
+          originAt: reference.originAt,
           ...(reference.mutation === undefined
             ? {}
             : { mutation: reference.mutation }),
@@ -290,6 +352,7 @@ export const collectSemanticMemberMutations = (
           reference.bindings,
           reference.effect,
           reference.mutation,
+          reference.originAt,
         );
     }
     for (const reference of [...iterableReferences]) {
@@ -307,6 +370,7 @@ export const collectSemanticMemberMutations = (
         reference.bindings,
         reference.effect,
         reference.mutation,
+        reference.originAt,
       );
     }
     if (
@@ -333,6 +397,7 @@ interface IterableReference extends ReferencedValue {
   readonly bindings: ReadonlySet<string>;
   readonly effect: ValueEffect;
   readonly mutation?: t.Node;
+  readonly originAt: t.Node | undefined;
 }
 
 const referencedValues = (
@@ -536,18 +601,4 @@ const selectedReferenceSlot = (
     evaluateSemanticExpression(source.node, state),
     path,
   );
-};
-
-const unwrapReferenceExpression = (node: t.Node): t.Node => {
-  let current = node;
-  while (
-    t.isParenthesizedExpression(current) ||
-    t.isTSAsExpression(current) ||
-    t.isTSTypeAssertion(current) ||
-    t.isTSSatisfiesExpression(current) ||
-    t.isTSNonNullExpression(current) ||
-    t.isTSInstantiationExpression(current)
-  )
-    current = current.expression;
-  return current;
 };

@@ -307,7 +307,7 @@ Report vulnerabilities through [SECURITY.md](SECURITY.md).
 
 ## Star history
 
-🎉 **30,000 GitHub stars — thank you!**
+🎉 **40,000 GitHub stars — thank you!**
 
 Thanks to everyone using REA, reporting bugs, requesting features, testing builds, and contributing fixes.
 
@@ -338,5 +338,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and checks,
 ## License
 
 [MIT](LICENSE)
-
-[![Software license document with a check seal](docs/assets/rea-license.png)](LICENSE)

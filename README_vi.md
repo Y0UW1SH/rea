@@ -256,7 +256,7 @@ Báo cáo lỗ hổng theo [SECURITY.md](SECURITY.md).
 
 ## Lịch sử sao
 
-🎉 **30.000 sao trên GitHub — xin cảm ơn!**
+🎉 **40.000 sao trên GitHub — xin cảm ơn!**
 
 Cảm ơn mọi người đã sử dụng REA, báo lỗi, đề xuất tính năng, kiểm thử bản dựng và đóng góp bản sửa lỗi.
 
@@ -281,5 +281,3 @@ Xem [CONTRIBUTING.md](CONTRIBUTING.md) về thiết lập môi trường phát t
 ## Giấy phép
 
 [MIT](LICENSE)
-
-[![Tài liệu giấy phép phần mềm có dấu kiểm](docs/assets/rea-license.png)](LICENSE)

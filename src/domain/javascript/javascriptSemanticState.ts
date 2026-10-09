@@ -34,7 +34,10 @@ export interface JavaScriptSemanticBindingState {
   kind: JavaScriptSemanticDefinition["kind"];
   mutable: boolean;
   readonly mutatedPaths: JavaScriptSemanticPropertyPath[];
-  readonly escapedPaths: JavaScriptSemanticPropertyPath[];
+  readonly escapedPaths: {
+    readonly path: JavaScriptSemanticPropertyPath;
+    readonly node: t.Node | undefined;
+  }[];
   readonly definitions: JavaScriptSemanticDefinition[];
   readonly initializers: JavaScriptSemanticInitializer[];
   readonly referenceInitializers: JavaScriptSemanticReferenceInitializer[];
@@ -53,6 +56,7 @@ export interface JavaScriptSemanticScopeState {
 
 /** Shared state for semantic collection and evaluation. */
 export interface JavaScriptSemanticAnalysisState {
+  readonly parentsByNode: WeakMap<t.Node, t.Node>;
   readonly scopes: JavaScriptSemanticScopeState[];
   readonly scopesById: Map<string, JavaScriptSemanticScopeState>;
   readonly scopeByNode: WeakMap<t.Node, JavaScriptSemanticScopeState>;

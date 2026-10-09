@@ -258,7 +258,7 @@ npx rea-agents@latest setup
 
 ## 스타 기록
 
-🎉 **GitHub 스타 30,000개, 감사합니다!**
+🎉 **GitHub 스타 40,000개, 감사합니다!**
 
 REA를 사용하고, 버그를 보고하고, 기능을 요청하고, 빌드를 테스트하고, 수정에 기여해 주신 모든 분께 감사드립니다.
 
@@ -283,5 +283,3 @@ REA에 도움을 보태 주세요! [issue를 등록](https://github.com/morluto/
 ## 라이선스
 
 [MIT](LICENSE)
-
-[![확인 표시가 있는 소프트웨어 라이선스 문서](docs/assets/rea-license.png)](LICENSE)
