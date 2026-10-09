@@ -17,7 +17,7 @@ import {
   semanticPropertyPathKeyMatches,
   type JavaScriptSemanticPropertyPath,
 } from "./javascriptSemanticPropertyPaths.js";
-import { compareCodePoints } from "../canonicalOrdering.js";
+import { compareUnicodeCodePoints } from "../unicodeCodePointOrder.js";
 import { traverseJavaScriptAst } from "./javascriptSemanticTraversal.js";
 import { semanticStaticPropertyKey } from "./javascriptAstValues.js";
 
@@ -55,7 +55,7 @@ export const collectSemanticMemberMutations = (
       reference.effect,
       reference.mutation?.start,
       reference.mutation?.end,
-      [...reference.bindings].sort(compareCodePoints),
+      [...reference.bindings].sort(compareUnicodeCodePoints),
     ]);
     if (keys.has(key)) return;
     keys.add(key);
@@ -395,7 +395,7 @@ const objectReferencedValues = (
                     ...(selected?.excludedKeys ?? []),
                     ...overwritten,
                   ]),
-                ].sort(compareCodePoints),
+                ].sort(compareUnicodeCodePoints),
               }
             : selected,
           ...remaining,
@@ -515,7 +515,7 @@ const copiedReferencePath = (
       key = {
         ...key,
         excludedKeys: [...new Set([...key.excludedKeys, ...excludedKeys])].sort(
-          compareCodePoints,
+          compareUnicodeCodePoints,
         ),
       };
     else if (excludedKeys.includes(String(key))) return null;

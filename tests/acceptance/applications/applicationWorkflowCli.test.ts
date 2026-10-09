@@ -492,18 +492,7 @@ describe("application workflow CLI copy boundaries", () => {
         };
       }`,
     ];
-    const [left, right] = await Promise.all(
-      sources.map(async (source, index) => {
-        const applicationRoot = join(root, String(index));
-        await mkdir(applicationRoot);
-        await writeFile(join(applicationRoot, "parser.mjs"), source);
-        return runCli([
-          "analyze-javascript-application",
-          applicationRoot,
-          "--json",
-        ]);
-      }),
-    );
+    const [left, right] = await analyzeCliSources(root, sources);
     const inputPath = join(root, "comparison.json");
     await writeFile(
       inputPath,
@@ -554,18 +543,7 @@ describe("application workflow CLI export Evidence", () => {
       }`,
       'export default async function make() { return { kind: "record", extra: 1 }; }',
     ];
-    const [left, right] = await Promise.all(
-      sources.map(async (source, index) => {
-        const applicationRoot = join(root, String(index));
-        await mkdir(applicationRoot);
-        await writeFile(join(applicationRoot, "parser.mjs"), source);
-        return runCli([
-          "analyze-javascript-application",
-          applicationRoot,
-          "--json",
-        ]);
-      }),
-    );
+    const [left, right] = await analyzeCliSources(root, sources);
     const compared = await runCli([
       "compare-javascript-export-shapes",
       JSON.stringify({
@@ -778,6 +756,23 @@ describe("application workflow CLI validation", () => {
     });
   }, 20_000);
 });
+
+const analyzeCliSources = (
+  root: string,
+  sources: readonly string[],
+): Promise<unknown[]> =>
+  Promise.all(
+    sources.map(async (source, index) => {
+      const applicationRoot = join(root, String(index));
+      await mkdir(applicationRoot);
+      await writeFile(join(applicationRoot, "parser.mjs"), source);
+      return runCli([
+        "analyze-javascript-application",
+        applicationRoot,
+        "--json",
+      ]);
+    }),
+  );
 
 const runCli = async (
   arguments_: readonly string[],
