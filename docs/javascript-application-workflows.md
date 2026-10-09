@@ -60,13 +60,12 @@ validation boundaries, and built-in resource acquisition/release.
 
 Mutation tracking covers explicit member assignments, updates, deletion, and
 loop assignment targets, including the supported local aliases and shared
-nested references. Calls such as `Object.assign`, `Reflect.set`, and
-`Reflect.deleteProperty`, and writes reaching a caller's object through another
-function's parameter, are not tracked by this mutation pass. These channels
-can leave an initializer-derived literal in the graph even after the runtime
-value changes. Treat such a result as an uncovered mutation channel, not as
-proof of the current runtime value; a follow-up needs to model that channel
-and verify its caller/alias behavior.
+nested references. Calls conservatively invalidate exposed mutable references;
+callee bodies and built-ins such as `Object.assign`, `Reflect.set`, and
+`Reflect.deleteProperty` are not interpreted to establish exact post-call
+values. This uncertainty does not prove that a call actually mutated a value.
+Interprocedural aliasing beyond the supported call-site references remains
+outside this mutation pass.
 
 Function fingerprints commit normalized syntax, control-flow shape, relation
 shape, literal sets, arity, and detected effects without using local names or
@@ -139,8 +138,13 @@ return sites are represented in the result. Calls, dynamic spreads, computed
 keys, and parser recovery remain partial or unknown.
 Objects and arrays passed to calls, constructors, or tagged templates, or used
 as method receivers, are not assumed unchanged after the invocation. Aliases
-and shared children in spread copies retain that uncertainty; copied primitive
-slots and unrelated containing properties remain known.
+and shared children in spread and rest copies retain that uncertainty; copied
+primitive slots and unrelated containing properties remain known. Object rest
+excludes consumed keys, array rest excludes the consumed prefix for known
+arrays, and later explicit data properties and methods replace earlier object
+spread references. A known array prefix does not expose values from a following
+spread. Accessors, custom or uncertain iteration, unknown computed keys, and
+unknown spread lengths retain conservative uncertainty.
 Nested callable returns are not assigned to their parent callable. Projected
 graph observations carry source ranges but never source text.
 

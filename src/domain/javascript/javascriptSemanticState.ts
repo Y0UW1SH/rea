@@ -1,5 +1,7 @@
 import * as t from "@babel/types";
 
+import type { JavaScriptSemanticPropertyPath } from "./javascriptSemanticPropertyPaths.js";
+
 import type {
   JavaScriptModuleOrigin,
   JavaScriptSemanticDefinition,
@@ -18,6 +20,8 @@ interface JavaScriptSemanticInitializer {
 interface JavaScriptSemanticReferenceInitializer extends JavaScriptSemanticInitializer {
   readonly copyKind?: "object-rest" | "array-rest";
   readonly copyProjectionOffset?: number;
+  readonly copyExcludedKeys?: readonly string[];
+  readonly copyStartIndex?: number;
   readonly fallbackSources?: readonly JavaScriptSemanticInitializer[];
   readonly requiredSources?: readonly JavaScriptSemanticInitializer[];
 }
@@ -29,8 +33,8 @@ export interface JavaScriptSemanticBindingState {
   readonly name: string;
   kind: JavaScriptSemanticDefinition["kind"];
   mutable: boolean;
-  readonly mutatedPaths: (readonly (string | number | null)[])[];
-  readonly escapedPaths: (readonly (string | number | null)[])[];
+  readonly mutatedPaths: JavaScriptSemanticPropertyPath[];
+  readonly escapedPaths: JavaScriptSemanticPropertyPath[];
   readonly definitions: JavaScriptSemanticDefinition[];
   readonly initializers: JavaScriptSemanticInitializer[];
   readonly referenceInitializers: JavaScriptSemanticReferenceInitializer[];

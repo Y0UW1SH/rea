@@ -13,8 +13,8 @@ import {
   collectSemanticReferences,
   immutableSemanticBindings,
   immutableSemanticScopes,
-  semanticStaticPropertyKey,
 } from "./javascriptSemanticProjection.js";
+import { semanticStaticPropertyKey } from "./javascriptAstValues.js";
 import type {
   JavaScriptSemanticAnalysisState,
   JavaScriptSemanticBindingState,
@@ -35,7 +35,8 @@ import {
   resolveSemanticModuleCallables,
 } from "./javascriptSemanticReturns.js";
 import { collectJavaScriptDerivedSemantics } from "./javascriptSemanticDerivedAnalysis.js";
-import { propertyName, range } from "./javascriptStaticAnalysisHelpers.js";
+import { range } from "./javascriptStaticAnalysisHelpers.js";
+import { propertyName } from "./javascriptAstValues.js";
 import { semanticCoverage } from "./javascriptSemanticCoverage.js";
 import { semanticResourceLimitsIn } from "./javascriptSemanticResourceLimits.js";
 import {
@@ -54,6 +55,8 @@ interface BindPatternInput {
   readonly referenceOnly?: boolean;
   readonly copyKind?: "object-rest" | "array-rest";
   readonly copyProjectionOffset?: number;
+  readonly copyExcludedKeys?: readonly string[];
+  readonly copyStartIndex?: number;
   readonly fallbackSources?: readonly {
     readonly node: t.Node;
     readonly projection: readonly (string | number | null)[];
@@ -420,7 +423,16 @@ const bindInnerDeclaration = (
     });
   else if (t.isAssignmentExpression(node)) {
     if (t.isIdentifier(node.left))
-      addAssignment(node.left, node.right, scope, state);
+      addAssignment(
+        node.left,
+        node.operator === "=" ||
+          node.operator === "||=" ||
+          node.operator === "??="
+          ? node.right
+          : node,
+        scope,
+        state,
+      );
     else
       for (const identifier of assignedPatternIdentifiers(node.left))
         addAssignment(identifier, node, scope, state);
@@ -600,6 +612,8 @@ const bindPattern = (input: BindPatternInput): void => {
     referenceOnly = false,
     copyKind,
     copyProjectionOffset,
+    copyExcludedKeys,
+    copyStartIndex,
     fallbackSources,
     requiredSources,
   } = input;
@@ -618,6 +632,8 @@ const bindPattern = (input: BindPatternInput): void => {
           ...(copyProjectionOffset === undefined
             ? {}
             : { copyProjectionOffset }),
+          ...(copyExcludedKeys === undefined ? {} : { copyExcludedKeys }),
+          ...(copyStartIndex === undefined ? {} : { copyStartIndex }),
           ...(fallbackSources === undefined ? {} : { fallbackSources }),
           ...(requiredSources === undefined ? {} : { requiredSources }),
         });
@@ -691,6 +707,14 @@ const bindPattern = (input: BindPatternInput): void => {
           referenceOnly: true,
           copyKind: "object-rest",
           copyProjectionOffset: projection.length,
+          copyExcludedKeys: pattern.properties.flatMap((property) => {
+            if (t.isRestElement(property)) return [];
+            const key = semanticStaticPropertyKey(
+              property.key,
+              property.computed,
+            );
+            return key === null ? [] : [key];
+          }),
         });
       } else {
         const name = semanticStaticPropertyKey(property.key, property.computed);
@@ -717,6 +741,7 @@ const bindPattern = (input: BindPatternInput): void => {
             referenceOnly: true,
             copyKind: "array-rest",
             copyProjectionOffset: projection.length,
+            copyStartIndex: index,
           });
       }
     });

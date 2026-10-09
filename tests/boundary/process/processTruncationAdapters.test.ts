@@ -5,11 +5,9 @@ import { promisify } from "node:util";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { expect, onTestFinished } from "vitest";
 import { parseEvidence } from "../../../src/domain/evidence.js";
-import {
-  compareProcessCaptures,
-  parseProcessCapture,
-  processCaptureSchema,
-} from "../../../src/domain/process/processCapture.js";
+import { compareProcessCaptures } from "../../../src/domain/process/processComparison.js";
+import { parseProcessCapture } from "../../../src/domain/process/processCaptureParsing.js";
+import { processCaptureSchema } from "../../../src/domain/process/processCapture.js";
 import { processSourceTruncated } from "../../../src/domain/process/processCaptureCoverage.js";
 import { compareProcessTraces } from "../../../src/domain/process/processTraceComparison.js";
 import { createServer } from "../../../src/server/createServer.js";
@@ -132,6 +130,30 @@ itWithCaptureCapability.each(["cli", "mcp"] as const)(
     });
     expect(
       processCaptureSchema.safeParse({ ...result, truncated: false }).success,
+    ).toBe(false);
+    const withTerminal = (
+      name: "raw_terminal" | "rendered_terminal",
+      change: Partial<typeof details.raw_terminal>,
+    ) =>
+      processCaptureSchema.safeParse({
+        ...result,
+        truncation_details: {
+          ...details,
+          [name]: { ...details[name], ...change },
+        },
+      }).success;
+    // Byte totals must match the retained frames, and with no omitted frame
+    // nothing observed can be missing from retention.
+    expect(withTerminal("raw_terminal", { retained_bytes: 0 })).toBe(false);
+    expect(
+      withTerminal("raw_terminal", {
+        observed_bytes: details.raw_terminal.observed_bytes + 1,
+      }),
+    ).toBe(false);
+    expect(
+      withTerminal("rendered_terminal", {
+        retained_bytes: details.rendered_terminal.retained_bytes - 1,
+      }),
     ).toBe(false);
   },
   20_000,

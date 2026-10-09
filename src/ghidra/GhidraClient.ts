@@ -1,12 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Socket } from "node:net";
-import { tmpdir } from "node:os";
 
 import { AnalysisError } from "../domain/analysisErrorBase.js";
 import type { JsonValue } from "../domain/jsonValue.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
 import { err, ok, type Result } from "../domain/result.js";
-import { silentLogger, type Logger } from "../logger.js";
+import { silentLogger } from "../logger.js";
+import type { Logger } from "pino";
 import { PendingOperations } from "../process/PendingOperations.js";
 import { PrivateRuntimeRoot } from "../process/PrivateRuntimeRoot.js";
 import { ProviderStartupDeadline } from "../process/ProviderDeadline.js";
@@ -47,16 +47,10 @@ import {
 } from "./GhidraTransport.js";
 import { GhidraWire } from "./GhidraClientWire.js";
 import { completeGhidraStartupHandshake } from "./GhidraClientStartup.js";
+import { ghidraSessionRoot } from "./GhidraSessionRoot.js";
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
-const SESSION_ROOT = tmpdir();
-
-export type {
-  GhidraClientOptions,
-  GhidraDiagnostic,
-  GhidraRequestOptions,
-  GhidraStartResult,
-} from "./GhidraClientTypes.js";
+const SESSION_ROOT = ghidraSessionRoot();
 
 /** Closed Java-bridge operation union callable after the exact handshake. */
 export type GhidraOperation =

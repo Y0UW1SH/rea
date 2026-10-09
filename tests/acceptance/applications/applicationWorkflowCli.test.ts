@@ -14,6 +14,7 @@ import {
   JAVASCRIPT_APPLICATION_VERSION_COMPARISON_EXAMPLE,
   SOURCE_TO_BUNDLE_COMPARISON_EXAMPLE,
 } from "../../../src/contracts/javascript/javascriptApplicationWorkflowExamples.js";
+import { JAVASCRIPT_EXPORT_SHAPE_COMPARISON_EXAMPLE } from "../../../src/contracts/javascript/javascriptExportShapeComparisonExample.js";
 import { analyzeJavaScriptApplication } from "../../../src/application/javascript/JavaScriptApplicationService.js";
 import {
   javascriptApplicationAnalysisResultSchema,
@@ -454,6 +455,90 @@ describe("application workflow CLI input", () => {
     ]);
     expect(result).toMatchObject({ code: "invalid_request" });
   });
+});
+
+describe("application workflow CLI copy boundaries", () => {
+  it("compares source values excluded from escaped rest and spread copies", async () => {
+    const root = await createTestTempDirectory("rea-copy-boundary-cli-");
+    temporary.push(root);
+    const sources = [
+      `export default function make() {
+        function mutate(value) { value.changed = true; }
+        const objectRest = { only: { value: "TOKEN" } };
+        const { only, ...restObject } = objectRest;
+        mutate(restObject);
+        const arrayRest = [{ value: "TOKEN" }];
+        const [head, ...restArray] = arrayRest;
+        mutate(restArray);
+        const objectSpread = { child: { value: "TOKEN" } };
+        const spreadObject = { ...objectSpread, child: {} };
+        mutate(spreadObject.child);
+        const arraySpread = [{ value: "TOKEN" }];
+        const spreadArray = [{}, ...arraySpread];
+        mutate(spreadArray[0]);
+        return {
+          kind: "copy-boundary",
+          objectRest: objectRest.only.value,
+          arrayRest: arrayRest[0].value,
+          objectSpread: objectSpread.child.value,
+          arraySpread: arraySpread[0].value,
+        };
+      }`,
+      `export default function make() {
+        return {
+          kind: "copy-boundary",
+          objectRest: "UPDATED", arrayRest: "UPDATED",
+          objectSpread: "UPDATED", arraySpread: "UPDATED",
+        };
+      }`,
+    ];
+    const [left, right] = await Promise.all(
+      sources.map(async (source, index) => {
+        const applicationRoot = join(root, String(index));
+        await mkdir(applicationRoot);
+        await writeFile(join(applicationRoot, "parser.mjs"), source);
+        return runCli([
+          "analyze-javascript-application",
+          applicationRoot,
+          "--json",
+        ]);
+      }),
+    );
+    const inputPath = join(root, "comparison.json");
+    await writeFile(
+      inputPath,
+      JSON.stringify({
+        left,
+        right,
+        left_module_path: "parser.mjs",
+        left_export_name: "default",
+        right_module_path: "parser.mjs",
+        right_export_name: "default",
+      }),
+    );
+    const compared = await runCli([
+      "compare-javascript-export-shapes",
+      inputPath,
+      "--json",
+    ]);
+    expect(compared).toMatchObject({
+      normalized_result: {
+        summary: { added: 0, removed: 0, changed: 4, unknown: 0 },
+        coverage: { status: "complete-within-inputs" },
+        changes: expect.arrayContaining(
+          ["/arrayRest", "/arraySpread", "/objectRest", "/objectSpread"].map(
+            (path) =>
+              expect.objectContaining({
+                status: "changed",
+                path,
+                left: { availability: "literal", value: "TOKEN" },
+                right: { availability: "literal", value: "UPDATED" },
+              }),
+          ),
+        ),
+      },
+    });
+  }, 20_000);
 });
 
 describe("application workflow CLI export Evidence", () => {

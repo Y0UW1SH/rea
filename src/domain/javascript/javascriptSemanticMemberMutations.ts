@@ -11,10 +11,17 @@ import {
   evaluateSemanticExpression,
 } from "./javascriptSemanticValues.js";
 import { semanticSlotAtPath } from "./javascriptSemanticSlots.js";
+import { semanticMutationInitializers } from "./javascriptSemanticMutationInitializers.js";
+import {
+  semanticArrayIndex,
+  semanticPropertyPathKeyMatches,
+  type JavaScriptSemanticPropertyPath,
+} from "./javascriptSemanticPropertyPaths.js";
+import { compareCodePoints } from "../canonicalOrdering.js";
 import { traverseJavaScriptAst } from "./javascriptSemanticTraversal.js";
 import { semanticStaticPropertyKey } from "./javascriptAstValues.js";
 
-type PropertyPath = readonly (string | number | null)[];
+type PropertyPath = JavaScriptSemanticPropertyPath;
 type ValueEffect = "write" | "escape";
 
 /** Preserve uncertainty from property writes and references exposed to calls. */
@@ -22,18 +29,45 @@ export const collectSemanticMemberMutations = (
   program: t.Program,
   state: JavaScriptSemanticAnalysisState,
 ): void => {
+  const parents = new WeakMap<t.Node, t.Node>();
+  traverseJavaScriptAst(program, {
+    enter: (node, parent) => {
+      if (parent !== null) parents.set(node, parent);
+    },
+  });
   const recordedEffects = new Set<string>();
+  let arrayIterationUnknown = false;
   const pendingReferences: {
     readonly initializer: JavaScriptSemanticBindingState["referenceInitializers"][number];
     readonly path: PropertyPath;
     readonly bindings: ReadonlySet<string>;
     readonly effect: ValueEffect;
+    readonly mutation?: t.Node;
   }[] = [];
+  const iterableReferences: IterableReference[] = [];
+  const iterableReferenceKeys = new WeakMap<t.Node, Set<string>>();
+  const deferIterable = (reference: IterableReference): void => {
+    const keys = iterableReferenceKeys.get(reference.node) ?? new Set<string>();
+    const key = JSON.stringify([
+      reference.projection,
+      reference.path,
+      reference.fallbackPath,
+      reference.effect,
+      reference.mutation?.start,
+      reference.mutation?.end,
+      [...reference.bindings].sort(compareCodePoints),
+    ]);
+    if (keys.has(key)) return;
+    keys.add(key);
+    iterableReferenceKeys.set(reference.node, keys);
+    iterableReferences.push(reference);
+  };
   const markValue = (
     node: t.Node,
     path: PropertyPath,
     bindings: ReadonlySet<string>,
     effect: ValueEffect = "write",
+    mutation?: t.Node,
   ): void => {
     const pending = [{ node, path, bindings }];
     while (pending.length > 0) {
@@ -46,12 +80,26 @@ export const collectSemanticMemberMutations = (
           expression,
           expression.name,
         );
-        if (binding === undefined || current.bindings.has(binding.bindingId))
+        if (binding === undefined) {
+          if (
+            (expression.name === "Array" &&
+              (current.path[0] === "prototype" || current.path[0] === null)) ||
+            (["globalThis", "global", "window", "self"].includes(
+              expression.name,
+            ) &&
+              (current.path[0] === "Array" || current.path[0] === null) &&
+              (current.path[1] === "prototype" || current.path[1] === null))
+          )
+            arrayIterationUnknown = true;
           continue;
+        }
+        if (current.bindings.has(binding.bindingId)) continue;
         const identity = JSON.stringify([
           binding.bindingId,
           effect,
           current.path,
+          mutation?.start,
+          mutation?.end,
         ]);
         if (recordedEffects.has(identity)) continue;
         const value =
@@ -68,7 +116,11 @@ export const collectSemanticMemberMutations = (
             : binding.mutatedPaths
           ).push(current.path);
           clearSemanticPrimitiveBindingValues(state);
-          for (const initializer of binding.initializers)
+          const initializers =
+            mutation === undefined
+              ? binding.initializers
+              : semanticMutationInitializers(binding, mutation, parents);
+          for (const initializer of initializers)
             pending.push({
               node: initializer.node,
               path: [...initializer.projection, ...current.path],
@@ -76,34 +128,14 @@ export const collectSemanticMemberMutations = (
             });
         }
         for (const initializer of binding.referenceInitializers) {
-          const offset = initializer.copyProjectionOffset;
-          const suffix =
-            offset === undefined
-              ? []
-              : initializer.projection.slice(offset + 1);
-          const copiedPath = [...suffix, ...current.path];
-          if (
-            initializer.copyKind !== undefined &&
-            effect === "write" &&
-            copiedPath.length < 2
-          )
-            continue;
-          const path =
-            offset === undefined
-              ? [...initializer.projection, ...current.path]
-              : [
-                  ...initializer.projection.slice(0, offset),
-                  ...(initializer.copyKind === "array-rest"
-                    ? [null, ...copiedPath.slice(1)]
-                    : copiedPath.length === 0
-                      ? [null]
-                      : copiedPath),
-                ];
+          const path = copiedReferencePath(initializer, current.path, effect);
+          if (path === null) continue;
           pendingReferences.push({
             initializer,
             path,
             bindings: nested,
             effect,
+            ...(mutation === undefined ? {} : { mutation }),
           });
         }
       } else if (
@@ -119,8 +151,31 @@ export const collectSemanticMemberMutations = (
           bindings: current.bindings,
         });
       } else {
-        for (const value of referencedValues(expression, current.path, effect))
-          pending.push({ ...value, bindings: current.bindings });
+        if (
+          t.isArrayExpression(expression) &&
+          ((current.path[0] === "__proto__" &&
+            (effect === "escape" || current.path.length > 1)) ||
+            (current.path[0] === "constructor" &&
+              current.path[1] === "prototype"))
+        )
+          arrayIterationUnknown = true;
+        for (const value of referencedValues(
+          expression,
+          current.path,
+          effect,
+        )) {
+          if (value.iterableFallbackPath !== undefined)
+            deferIterable({
+              node: value.node,
+              projection: [],
+              path: value.path,
+              fallbackPath: value.iterableFallbackPath,
+              bindings: current.bindings,
+              effect,
+              ...(mutation === undefined ? {} : { mutation }),
+            });
+          else pending.push({ ...value, bindings: current.bindings });
+        }
       }
     }
   };
@@ -134,33 +189,36 @@ export const collectSemanticMemberMutations = (
     )
       markEscaped(expression.object);
   };
-  const markTarget = (node: t.Node): void => {
+  const markTarget = (node: t.Node, mutation: t.Node): void => {
     if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node))
       markValue(
         node.object,
         [semanticStaticPropertyKey(node.property, node.computed)],
         new Set(),
+        "write",
+        mutation,
       );
-    else if (t.isRestElement(node)) markTarget(node.argument);
-    else if (t.isAssignmentPattern(node)) markTarget(node.left);
+    else if (t.isRestElement(node)) markTarget(node.argument, mutation);
+    else if (t.isAssignmentPattern(node)) markTarget(node.left, mutation);
     else if (t.isArrayPattern(node)) {
       for (const element of node.elements)
-        if (element !== null) markTarget(element);
+        if (element !== null) markTarget(element, mutation);
     } else if (t.isObjectPattern(node)) {
       for (const property of node.properties)
         markTarget(
           t.isRestElement(property) ? property.argument : property.value,
+          mutation,
         );
     }
   };
   traverseJavaScriptAst(program, {
     enter: (node) => {
-      if (t.isAssignmentExpression(node)) markTarget(node.left);
-      else if (t.isUpdateExpression(node)) markTarget(node.argument);
+      if (t.isAssignmentExpression(node)) markTarget(node.left, node);
+      else if (t.isUpdateExpression(node)) markTarget(node.argument, node);
       else if (t.isUnaryExpression(node, { operator: "delete" }))
-        markTarget(node.argument);
+        markTarget(node.argument, node);
       else if (t.isForOfStatement(node) || t.isForInStatement(node))
-        markTarget(node.left);
+        markTarget(node.left, node);
       else if (
         t.isCallExpression(node) ||
         t.isOptionalCallExpression(node) ||
@@ -180,9 +238,11 @@ export const collectSemanticMemberMutations = (
     },
   });
   // A later effect can make a previously defined destructuring source uncertain.
-  // Reconsider its fallback edges until no newly reachable reference is recorded.
-  while (pendingReferences.length > 0) {
+  // Reconsider defaults and iterable origins until their effects are stable.
+  while (pendingReferences.length > 0 || iterableReferences.length > 0) {
     const effectsBefore = recordedEffects.size;
+    const iterablesBefore = iterableReferences.length;
+    const iterationBefore: boolean = arrayIterationUnknown;
     for (const reference of pendingReferences.splice(0)) {
       const { initializer } = reference;
       if (
@@ -202,15 +262,59 @@ export const collectSemanticMemberMutations = (
         })
       )
         pendingReferences.push(reference);
-      else
+      else if (
+        initializer.copyKind === "array-rest" &&
+        initializer.copyProjectionOffset !== undefined
+      ) {
+        const offset = initializer.copyProjectionOffset;
+        const projection = initializer.projection.slice(0, offset);
+        deferIterable({
+          node: initializer.node,
+          projection,
+          path: reference.path,
+          fallbackPath: [
+            ...projection,
+            null,
+            ...reference.path.slice(offset + 1),
+          ],
+          bindings: reference.bindings,
+          effect: reference.effect,
+          ...(reference.mutation === undefined
+            ? {}
+            : { mutation: reference.mutation }),
+        });
+      } else
         markValue(
           initializer.node,
           reference.path,
           reference.bindings,
           reference.effect,
+          reference.mutation,
         );
     }
-    if (recordedEffects.size === effectsBefore) break;
+    for (const reference of [...iterableReferences]) {
+      const slot = selectedReferenceSlot(reference, state);
+      // Custom iteration can reorder values or yield non-indexed children.
+      const knownArray =
+        !arrayIterationUnknown &&
+        slot?.value.status === "array" &&
+        slot.value.items.every(
+          (item) => semanticArrayIndex(item.name) !== null,
+        );
+      markValue(
+        reference.node,
+        knownArray ? reference.path : reference.fallbackPath,
+        reference.bindings,
+        reference.effect,
+        reference.mutation,
+      );
+    }
+    if (
+      recordedEffects.size === effectsBefore &&
+      iterableReferences.length === iterablesBefore &&
+      arrayIterationUnknown === iterationBefore
+    )
+      break;
   }
   // Gathering effects can evaluate a primitive projection before its object
   // escapes. Final values must use the completed mutation state.
@@ -220,6 +324,15 @@ export const collectSemanticMemberMutations = (
 interface ReferencedValue {
   readonly node: t.Node;
   readonly path: PropertyPath;
+  readonly iterableFallbackPath?: PropertyPath;
+}
+
+interface IterableReference extends ReferencedValue {
+  readonly projection: PropertyPath;
+  readonly fallbackPath: PropertyPath;
+  readonly bindings: ReadonlySet<string>;
+  readonly effect: ValueEffect;
+  readonly mutation?: t.Node;
 }
 
 const referencedValues = (
@@ -227,50 +340,15 @@ const referencedValues = (
   path: PropertyPath,
   effect: ValueEffect,
 ): readonly ReferencedValue[] => {
-  const [key, ...remaining] = path;
-  const wholeEscape = effect === "escape" && path.length === 0;
   // An initializer owns its slots; only deeper writes can affect shared children.
-  if (t.isObjectExpression(node))
-    return effect === "write" && path.length < 2
-      ? []
-      : node.properties.flatMap<ReferencedValue>((property) => {
-          if (t.isSpreadElement(property))
-            return [
-              { node: property.argument, path: wholeEscape ? [null] : path },
-            ];
-          if (!t.isObjectProperty(property)) return [];
-          const name = semanticStaticPropertyKey(
-            property.key,
-            property.computed,
-          );
-          return wholeEscape ||
-            key === null ||
-            name === null ||
-            String(key) === name
-            ? [{ node: property.value, path: remaining }]
-            : [];
-        });
-  if (t.isArrayExpression(node)) {
+  if (t.isObjectExpression(node) || t.isArrayExpression(node)) {
     if (effect === "write" && path.length < 2) return [];
-    let uncertainIndex = false;
-    return node.elements.flatMap<ReferencedValue>((element, index) => {
-      if (element === null) return [];
-      if (t.isSpreadElement(element)) {
-        uncertainIndex = true;
-        return [{ node: element.argument, path: [null, ...remaining] }];
-      }
-      return wholeEscape ||
-        uncertainIndex ||
-        key === null ||
-        String(key) === String(index)
-        ? [{ node: element, path: remaining }]
-        : [];
-    });
+    return t.isObjectExpression(node)
+      ? objectReferencedValues(node, path)
+      : arrayReferencedValues(node, path);
   }
   if (t.isAssignmentExpression(node))
-    return node.operator === "||=" ||
-      node.operator === "??=" ||
-      node.operator === "&&="
+    return node.operator === "||=" || node.operator === "??="
       ? [
           { node: node.left, path },
           { node: node.right, path },
@@ -294,13 +372,164 @@ const referencedValues = (
   return [];
 };
 
+const objectReferencedValues = (
+  node: t.ObjectExpression,
+  path: PropertyPath,
+): readonly ReferencedValue[] => {
+  const [key, ...remaining] = path;
+  const references: ReferencedValue[] = [];
+  const overwritten = new Set<string>();
+  for (const property of [...node.properties].reverse()) {
+    if (t.isSpreadElement(property)) {
+      const selected = key ?? null;
+      if (typeof selected !== "object" && overwritten.has(String(selected)))
+        continue;
+      references.push({
+        node: property.argument,
+        path: [
+          typeof selected === "object"
+            ? {
+                ...(selected ?? {}),
+                excludedKeys: [
+                  ...new Set([
+                    ...(selected?.excludedKeys ?? []),
+                    ...overwritten,
+                  ]),
+                ].sort(compareCodePoints),
+              }
+            : selected,
+          ...remaining,
+        ],
+      });
+      continue;
+    }
+    const name = semanticStaticPropertyKey(property.key, property.computed);
+    if (name !== null && overwritten.has(name)) continue;
+    if (
+      t.isObjectProperty(property) &&
+      (name === null || semanticPropertyPathKeyMatches(key ?? null, name))
+    )
+      references.push({ node: property.value, path: remaining });
+    // A prototype setter does not replace an own property from a spread.
+    if (
+      name !== null &&
+      !(t.isObjectMethod(property) && property.kind !== "method") &&
+      !(
+        t.isObjectProperty(property) &&
+        !property.computed &&
+        !property.shorthand &&
+        name === "__proto__"
+      )
+    )
+      overwritten.add(name);
+  }
+  return references;
+};
+
+const arrayReferencedValues = (
+  node: t.ArrayExpression,
+  path: PropertyPath,
+): readonly ReferencedValue[] => {
+  const [key, ...remaining] = path;
+  const selected = key ?? null;
+  const selectedIndex =
+    typeof selected === "object" ? null : semanticArrayIndex(selected);
+  if (typeof selected !== "object" && selectedIndex === null) return [];
+  const references: ReferencedValue[] = [];
+  let minimumIndex = 0;
+  let uncertainIndex = false;
+  for (const element of node.elements) {
+    if (t.isSpreadElement(element)) {
+      if (selectedIndex === null || selectedIndex >= minimumIndex) {
+        let sourceKey: PropertyPath[number] = null;
+        if (!uncertainIndex) {
+          if (selectedIndex !== null) sourceKey = selectedIndex - minimumIndex;
+          else if (selected !== null && typeof selected === "object")
+            sourceKey = {
+              excludedKeys: selected.excludedKeys.flatMap((name) => {
+                const index = semanticArrayIndex(name);
+                return index === null || index < minimumIndex
+                  ? []
+                  : [String(index - minimumIndex)];
+              }),
+              startIndex: Math.max(
+                0,
+                (selected.startIndex ?? 0) - minimumIndex,
+              ),
+            };
+        }
+        references.push({
+          node: element.argument,
+          path: [sourceKey, ...remaining],
+          ...(sourceKey === null
+            ? {}
+            : { iterableFallbackPath: [null, ...remaining] }),
+        });
+      }
+      uncertainIndex = true;
+      continue;
+    }
+    if (
+      element !== null &&
+      (uncertainIndex
+        ? selectedIndex === null || selectedIndex >= minimumIndex
+        : semanticPropertyPathKeyMatches(selected, String(minimumIndex)))
+    )
+      references.push({ node: element, path: remaining });
+    minimumIndex++;
+  }
+  return references;
+};
+
+const copiedReferencePath = (
+  initializer: JavaScriptSemanticBindingState["referenceInitializers"][number],
+  path: PropertyPath,
+  effect: ValueEffect,
+): PropertyPath | null => {
+  const offset = initializer.copyProjectionOffset;
+  if (offset === undefined) return [...initializer.projection, ...path];
+  const copiedPath = [...initializer.projection.slice(offset + 1), ...path];
+  if (effect === "write" && copiedPath.length < 2) return null;
+  let [key, ...remaining] = copiedPath;
+  if (initializer.copyKind === "array-rest") {
+    const startIndex = initializer.copyStartIndex ?? 0;
+    if (key === undefined || key === null)
+      key = { excludedKeys: [], startIndex };
+    else if (typeof key === "object")
+      key = {
+        excludedKeys: key.excludedKeys.flatMap((name) => {
+          const index = semanticArrayIndex(name);
+          return index === null ? [] : [String(index + startIndex)];
+        }),
+        startIndex: (key.startIndex ?? 0) + startIndex,
+      };
+    else {
+      const index = semanticArrayIndex(key);
+      if (index === null) return null;
+      key = index + startIndex;
+    }
+  } else {
+    const excludedKeys = initializer.copyExcludedKeys ?? [];
+    if (key === undefined || key === null) key = { excludedKeys };
+    else if (typeof key === "object")
+      key = {
+        ...key,
+        excludedKeys: [...new Set([...key.excludedKeys, ...excludedKeys])].sort(
+          compareCodePoints,
+        ),
+      };
+    else if (excludedKeys.includes(String(key))) return null;
+  }
+  return [...initializer.projection.slice(0, offset), key, ...remaining];
+};
+
 const selectedReferenceSlot = (
   source: { readonly node: t.Node; readonly projection: PropertyPath },
   state: JavaScriptSemanticAnalysisState,
 ) => {
   const path: string[] = [];
   for (const key of source.projection) {
-    if (key === null) return undefined;
+    if (key === null || typeof key === "object") return undefined;
     path.push(String(key));
   }
   return semanticSlotAtPath(
