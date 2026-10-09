@@ -131,6 +131,21 @@ export const mappedFileOffset = (
       "malformed",
       "Virtual address or string range is not file mapped",
     );
+  const end = address + BigInt(size);
+  for (const mapping of mappings) {
+    const start = address > mapping.address ? address : mapping.address;
+    const mappingEnd = mapping.address + BigInt(mapping.size);
+    const overlapEnd = end < mappingEnd ? end : mappingEnd;
+    if (start >= overlapEnd) continue;
+    if (
+      BigInt(found) + start - address !==
+      BigInt(mapping.offset) + start - mapping.address
+    )
+      throw new GoBinaryFormatFailure(
+        "malformed",
+        "Virtual address has ambiguous file mappings",
+      );
+  }
   return found;
 };
 

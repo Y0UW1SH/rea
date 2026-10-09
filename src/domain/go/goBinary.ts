@@ -18,13 +18,16 @@ export const goModuleSchema = moduleIdentitySchema.extend({
   replacement: moduleIdentitySchema.nullable(),
 });
 
-/** Parsed records alongside every unrecognized module-text line. */
+/** Parsed records alongside unrecognized text lines and exact non-UTF-8 line bytes. */
 export const goModuleMetadataSchema = z.strictObject({
   path: z.string().nullable(),
   main: goModuleSchema.nullable(),
   dependencies: z.array(goModuleSchema),
   settings: z.array(z.strictObject({ key: z.string(), value: z.string() })),
   unparsed_lines: z.array(z.string()),
+  unparsed_line_bytes_base64: z.array(
+    z.string().regex(CANONICAL_BASE64_PATTERN),
+  ),
   complete: z.boolean(),
 });
 
@@ -39,8 +42,9 @@ export const inspectGoBinaryInputSchema = z.strictObject({
 export const goBuildInfoSchema = z.strictObject({
   header_offset: z.number().int().nonnegative(),
   encoding: z.enum(["inline", "pointer"]),
-  go_version: z.string(),
-  module_text: z.string(),
+  go_version: z.string().nullable(),
+  go_version_bytes_base64: z.string().regex(CANONICAL_BASE64_PATTERN),
+  module_text: z.string().nullable(),
   module_bytes_base64: z.string().regex(CANONICAL_BASE64_PATTERN),
   version_location: sourceRangeSchema,
   module_location: sourceRangeSchema,
@@ -83,21 +87,23 @@ export const goBinarySchema = z
           message: "Build-info source range is outside the selected artifact.",
         });
     }
-    const padding = info.module_bytes_base64.endsWith("==")
-      ? 2
-      : info.module_bytes_base64.endsWith("=")
-        ? 1
-        : 0;
-    if (
-      (info.module_bytes_base64.length / 4) * 3 - padding !==
-      info.module_location.bytes
-    )
-      context.addIssue({
-        code: "custom",
-        path: ["build_info", "module_bytes_base64"],
-        message:
-          "Encoded module bytes do not match their reported source length.",
-      });
+    for (const [field, range, description] of [
+      ["go_version_bytes_base64", info.version_location, "compiler"],
+      ["module_bytes_base64", info.module_location, "module"],
+    ] as const) {
+      const encoded = info[field];
+      const padding = encoded.endsWith("==")
+        ? 2
+        : encoded.endsWith("=")
+          ? 1
+          : 0;
+      if ((encoded.length / 4) * 3 - padding !== range.bytes)
+        context.addIssue({
+          code: "custom",
+          path: ["build_info", field],
+          message: `Encoded ${description} bytes do not match their reported source length.`,
+        });
+    }
   });
 
 export type GoModule = z.infer<typeof goModuleSchema>;

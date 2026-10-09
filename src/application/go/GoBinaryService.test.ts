@@ -61,6 +61,59 @@ it("preserves unsupported subject architectures and does not duplicate metadata"
   expect(result.value.raw_result).toBeNull();
 });
 
+it("preserves byte-valued build metadata and validates compiler source lengths", async () => {
+  const moduleBytes = Buffer.concat([
+    Buffer.from("3077af0c9274080241e1c107e6d618e6", "hex"),
+    Buffer.from([0xff, 10]),
+    Buffer.from("f932433186182072008242104116d8f2", "hex"),
+  ]);
+  const buildInfo: NonNullable<GoBinary["build_info"]> = {
+    header_offset: 64,
+    encoding: "inline",
+    go_version: null,
+    go_version_bytes_base64: "/w==",
+    module_text: null,
+    module_bytes_base64: moduleBytes.toString("base64"),
+    version_location: { offset: 128, bytes: 1 },
+    module_location: { offset: 256, bytes: moduleBytes.length },
+    module: {
+      path: null,
+      main: null,
+      dependencies: [],
+      settings: [],
+      unparsed_lines: [],
+      unparsed_line_bytes_base64: ["/w=="],
+      complete: false,
+    },
+  };
+  const partial: GoBinary = {
+    ...report,
+    build_info: buildInfo,
+    limitations: ["Some embedded strings contain non-UTF-8 bytes."],
+  };
+  const result = await new GoBinaryService({
+    identity,
+    inspect: () => Promise.resolve(ok(partial)),
+  }).inspect({ path: report.artifact.path });
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw result.error;
+  expect(result.value.normalized_result).toEqual(partial);
+
+  const mismatched: GoBinary = {
+    ...partial,
+    build_info: {
+      ...buildInfo,
+      version_location: { offset: 128, bytes: 2 },
+    },
+  };
+  const invalid = await new GoBinaryService({
+    identity,
+    inspect: () => Promise.resolve(ok(mismatched)),
+  }).inspect({ path: report.artifact.path });
+  expect(invalid.ok).toBe(false);
+  if (!invalid.ok) expect(invalid.error).toBeInstanceOf(AnalysisOutputError);
+});
+
 it("refuses reader identity changes and invalid original source ranges", async () => {
   const outside: GoBinary = {
     ...report,
@@ -68,9 +121,10 @@ it("refuses reader identity changes and invalid original source ranges", async (
       header_offset: 1000,
       encoding: "inline",
       go_version: "go1.26.0",
+      go_version_bytes_base64: Buffer.from("go1.26.0").toString("base64"),
       module_text: "",
       module_bytes_base64: "",
-      version_location: { offset: 2000, bytes: 9 },
+      version_location: { offset: 2000, bytes: 8 },
       module_location: { offset: 0, bytes: 0 },
       module: {
         path: null,
@@ -78,6 +132,7 @@ it("refuses reader identity changes and invalid original source ranges", async (
         dependencies: [],
         settings: [],
         unparsed_lines: [],
+        unparsed_line_bytes_base64: [],
         complete: true,
       },
     },

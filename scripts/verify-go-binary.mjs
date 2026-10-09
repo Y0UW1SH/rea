@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { isUtf8 } from "node:buffer";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -27,9 +28,12 @@ const entrypoint = fileURLToPath(new URL("./rea.mjs", import.meta.url));
 const environment = Object.fromEntries(
   Object.entries(process.env).filter(([, value]) => typeof value === "string"),
 );
+delete environment.HOPPER_TARGET_PATH;
 const goEnvironment = {
   ...environment,
   CGO_ENABLED: "0",
+  GOCACHEPROG: "",
+  GO111MODULE: "on",
   GOENV: "off",
   GOFLAGS: "",
   GOMAXPROCS: "2",
@@ -62,6 +66,7 @@ const targets = [
   ["darwin", "arm64", "macho", 64, "little"],
 ];
 const verified = [];
+const omittedCoverage = [];
 const failures = [];
 try {
   await prepareFixture();
@@ -119,6 +124,24 @@ try {
       await verify(sectionless, target, oracle);
     }
   }
+  if (process.platform === "win32")
+    omittedCoverage.push(
+      "Compiler-produced non-UTF-8 argv strings were not verified on Windows; Windows argv cannot preserve arbitrary byte arguments.",
+    );
+  else {
+    const path = join(root.path, "linux-amd64-byte-strings");
+    const expected = JSON.parse(
+      (
+        await execute(oracle, ["--build-byte-fixture", compiler, path], {
+          cwd: root.path,
+          env: { ...goEnvironment, GOOS: "linux", GOARCH: "amd64" },
+          timeout: 120_000,
+          maxBuffer: 1024 * 1024,
+        })
+      ).stdout,
+    );
+    await verify(path, targets[0], oracle, expected);
+  }
 } catch (cause) {
   failures.push(cause);
 } finally {
@@ -145,7 +168,13 @@ try {
 if (failures.length > 0) {
   console.error(
     JSON.stringify(
-      { status: "failed", compiler: compilerVersion, verified, verifier },
+      {
+        status: "failed",
+        compiler: compilerVersion,
+        verified,
+        omitted_coverage: omittedCoverage,
+        verifier,
+      },
       null,
       2,
     ),
@@ -163,8 +192,9 @@ console.log(
       binaries: verified.length,
       public_cases: verified.length * 2,
       verified,
+      omitted_coverage: omittedCoverage,
       fixture_execution:
-        "not-requested; only the test-owned buildinfo oracle was executed",
+        "not-requested; only the Go fixture producer and test-owned buildinfo oracle/helper were executed",
       verifier,
     },
     null,
@@ -205,7 +235,60 @@ async function prepareFixture() {
   );
   await writeFile(
     join(root.path, "oracle", "main.go"),
-    'package main\nimport ("debug/buildinfo"; "encoding/json"; "os")\nfunc main() { info, err := buildinfo.ReadFile(os.Args[1]); if err != nil { panic(err) }; if err := json.NewEncoder(os.Stdout).Encode(info); err != nil { panic(err) } }\n',
+    String.raw`package main
+
+import (
+  "context"
+  "debug/buildinfo"
+  "encoding/base64"
+  "encoding/json"
+  "os"
+  "os/exec"
+  "time"
+  "unicode/utf8"
+)
+
+func main() {
+  byteFixture := len(os.Args) == 4 && os.Args[1] == "--build-byte-fixture"
+  path := os.Args[1]
+  if byteFixture {
+    path = os.Args[3]
+    ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+    defer cancel()
+    cmd := exec.CommandContext(ctx, os.Args[2], "build", "-buildvcs=false",
+      "-tags=" + string([]byte{0xff}),
+      "-ldflags=-X runtime.buildVersion=custom" + string([]byte{0xff}),
+      "-o", path, ".")
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    if err := cmd.Run(); err != nil { panic(err) }
+  }
+  info, err := buildinfo.ReadFile(path)
+  if err != nil { panic(err) }
+  var result interface{} = info
+  if byteFixture {
+    settings := make([]map[string]string, 0)
+    byteSettings := make([]map[string]string, 0)
+    for _, setting := range info.Settings {
+      if utf8.ValidString(setting.Key) && utf8.ValidString(setting.Value) {
+        settings = append(settings, map[string]string{"Key": setting.Key, "Value": setting.Value})
+      } else {
+        byteSettings = append(byteSettings, map[string]string{
+          "KeyBytesBase64": base64.StdEncoding.EncodeToString([]byte(setting.Key)),
+          "ValueBytesBase64": base64.StdEncoding.EncodeToString([]byte(setting.Value)),
+        })
+      }
+    }
+    result = map[string]interface{}{
+      "GoVersion": nil,
+      "GoVersionBytesBase64": base64.StdEncoding.EncodeToString([]byte(info.GoVersion)),
+      "Path": info.Path, "Main": info.Main, "Deps": info.Deps,
+      "Settings": settings, "ByteSettings": byteSettings,
+    }
+  }
+  if err := json.NewEncoder(os.Stdout).Encode(result); err != nil { panic(err) }
+}
+`,
   );
 }
 
@@ -233,12 +316,18 @@ async function inspect(mode, path) {
   return report;
 }
 
-async function verify(path, target, oracle) {
+async function verify(path, target, oracle, byteExpected = null) {
   const bytes = await readFile(path);
-  const expected = JSON.parse(
-    (await execute(oracle, [path], { timeout: 10_000, maxBuffer: 1024 * 1024 }))
-      .stdout,
-  );
+  const expected =
+    byteExpected ??
+    JSON.parse(
+      (
+        await execute(oracle, [path], {
+          timeout: 10_000,
+          maxBuffer: 1024 * 1024,
+        })
+      ).stdout,
+    );
   const reports = [];
   for (const mode of ["cli", "mcp"]) {
     const report = await inspect(mode, path);
@@ -271,8 +360,11 @@ async function verify(path, target, oracle) {
         value: Value,
       })),
     );
-    assert.equal(info.module.complete, true);
-    assert.deepEqual(info.module.unparsed_lines, []);
+    assert.equal(info.module.complete, byteExpected === null);
+    if (byteExpected === null) {
+      assert.deepEqual(info.module.unparsed_lines, []);
+      assert.deepEqual(info.module.unparsed_line_bytes_base64, []);
+    } else verifyByteStrings(info, expected);
     verifySource(info, bytes);
     reports.push(report);
     assert.deepEqual(
@@ -288,9 +380,46 @@ async function verify(path, target, oracle) {
   );
   verified.push({
     target: `${target[0]}/${target[1]}`,
-    file: path.endsWith("sectionless") ? "sectionless" : "stripped",
+    file:
+      byteExpected === null
+        ? path.endsWith("sectionless")
+          ? "sectionless"
+          : "stripped"
+        : "byte-valued-strings",
     go_version: expected.GoVersion,
+    ...(byteExpected === null
+      ? {}
+      : { go_version_bytes_base64: expected.GoVersionBytesBase64 }),
   });
+}
+
+function verifyByteStrings(info, expected) {
+  const rawByte = Buffer.from([0xff]);
+  const compilerBytes = Buffer.concat([Buffer.from("custom"), rawByte]);
+  const ldflagsBytes = Buffer.concat([
+    Buffer.from("-X runtime.buildVersion=custom"),
+    rawByte,
+  ]);
+  assert.equal(info.go_version, null);
+  assert.equal(info.module_text, null);
+  assert.equal(info.go_version_bytes_base64, compilerBytes.toString("base64"));
+  assert.equal(info.go_version_bytes_base64, expected.GoVersionBytesBase64);
+  assert.deepEqual(expected.ByteSettings, [
+    {
+      KeyBytesBase64: Buffer.from("-ldflags").toString("base64"),
+      ValueBytesBase64: ldflagsBytes.toString("base64"),
+    },
+    {
+      KeyBytesBase64: Buffer.from("-tags").toString("base64"),
+      ValueBytesBase64: rawByte.toString("base64"),
+    },
+  ]);
+  assert.deepEqual(info.module.unparsed_lines, [
+    'build\t-ldflags="-X runtime.buildVersion=custom\\xff"',
+  ]);
+  assert.deepEqual(info.module.unparsed_line_bytes_base64, [
+    Buffer.concat([Buffer.from("build\t-tags="), rawByte]).toString("base64"),
+  ]);
 }
 
 function normalizeModule(module) {
@@ -338,7 +467,11 @@ function verifySource(info, bytes) {
     offset: module.offset,
     bytes: module.bytes.length,
   });
-  assert.equal(version.bytes.toString("utf8"), info.go_version);
+  assert.equal(
+    isUtf8(version.bytes) ? version.bytes.toString("utf8") : null,
+    info.go_version,
+  );
+  assert.equal(version.bytes.toString("base64"), info.go_version_bytes_base64);
   assert.equal(module.bytes.toString("base64"), info.module_bytes_base64);
   assert.deepEqual(
     module.bytes.subarray(0, 16),
@@ -348,11 +481,12 @@ function verifySource(info, bytes) {
     module.bytes.subarray(-16),
     Buffer.from("f932433186182072008242104116d8f2", "hex"),
   );
+  const moduleBody = module.bytes.subarray(16, -16);
   assert.equal(
-    module.bytes.subarray(16, -16).toString("utf8"),
+    isUtf8(moduleBody) ? moduleBody.toString("utf8") : null,
     info.module_text,
   );
-  assert.equal(info.module_text.endsWith("\n"), true);
+  assert.equal(moduleBody.at(-1), 10);
 }
 
 function inlineString(bytes, start) {

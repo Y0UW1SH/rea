@@ -1,3 +1,4 @@
+import { mzWindowsHeaderOffset, parseDosMzHeader } from "../domain/dosMz.js";
 import {
   GoBinaryFormatFailure,
   GoBinaryReader,
@@ -5,13 +6,37 @@ import {
   type GoFileMapping,
 } from "./GoBinaryContainer.js";
 
+const peHeaderOffset = (reader: GoBinaryReader): number => {
+  const pe = mzWindowsHeaderOffset(reader.bytes);
+  if (pe === null) {
+    const dos = parseDosMzHeader(reader.bytes);
+    if (!dos.ok) throw new GoBinaryFormatFailure("malformed", dos.error);
+    throw new GoBinaryFormatFailure(
+      "unsupported",
+      "DOS MZ images are outside the supported ELF, PE and thin Mach-O formats",
+    );
+  }
+  if (pe < 64)
+    throw new GoBinaryFormatFailure(
+      "malformed",
+      "PE signature overlaps the DOS header",
+    );
+  const signature = reader
+    .range(pe, 2, "Windows new-header signature")
+    .toString("latin1");
+  if (["NE", "LE", "LX"].includes(signature))
+    throw new GoBinaryFormatFailure(
+      "unsupported",
+      `${signature} images are outside the supported ELF, PE and thin Mach-O formats`,
+    );
+  return pe;
+};
+
 /** Read PE32/PE32+ native image mappings and the linker data section. */
 export const readGoPeImage = (bytes: Buffer): GoBinaryContainer => {
   const reader = new GoBinaryReader(bytes, true);
-  reader.range(0, 64, "DOS header");
-  const pe = reader.u32(60);
+  const pe = peHeaderOffset(reader);
   if (
-    pe < 64 ||
     !reader
       .range(pe, 24, "PE signature and COFF header")
       .subarray(0, 4)
@@ -35,6 +60,13 @@ export const readGoPeImage = (bytes: Buffer): GoBinaryContainer => {
     throw new GoBinaryFormatFailure(
       "malformed",
       "PE optional header is truncated",
+    );
+  const directoriesOffset = bits === 64 ? 112 : 96;
+  const directories = reader.u32(optional + directoriesOffset - 4);
+  if (directories * 8 > optionalSize - directoriesOffset)
+    throw new GoBinaryFormatFailure(
+      "malformed",
+      "PE data directories extend beyond the optional header",
     );
   const imageBase = reader.word(optional + (bits === 64 ? 24 : 28), bits);
   const count = reader.u16(pe + 6);

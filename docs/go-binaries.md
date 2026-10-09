@@ -25,23 +25,30 @@ The inline Evidence result contains the artifact path, SHA-256, byte length,
 container format, architecture, word size and byte order. A recognized
 `build_info` record contains:
 
-- `go_version`, preserved as embedded text rather than forced into a semantic
-  version;
+- `go_version`, preserved as embedded UTF-8 text rather than forced into a
+  semantic version, or `null` when the embedded bytes are not UTF-8;
+- `go_version_bytes_base64`, preserving the exact compiler-string bytes;
 - exact file offsets and byte lengths for the header, compiler string and module
   string;
-- `module_text`, the decoded module-information body;
+- `module_text`, the decoded module-information body, or `null` when the complete
+  body cannot be represented as UTF-8;
 - `module_bytes_base64`, the original module-string bytes including Go framing;
 - `module.path`, the embedded package path;
 - `module.main`, the main module's path, version, checksum and optional
   replacement;
 - `module.dependencies`, with the same fields and their original order;
 - `module.settings`, retaining ordered key/value entries and duplicate keys;
-- `module.unparsed_lines` and `module.complete`, so unfamiliar, malformed or
-  conflicting text records do not disappear behind a complete result.
+- `module.unparsed_lines`, `module.unparsed_line_bytes_base64` and
+  `module.complete`, so unfamiliar, malformed, conflicting or undecodable records
+  do not disappear behind a complete result.
 
 Missing checksums are `null`; empty fields and development/local replacement
 versions remain unchanged. Build settings such as `GOOS`, `GOARCH` or `vcs.revision`
 are reported when present. Their absence does not establish a build choice.
+Go strings may contain arbitrary bytes. Non-UTF-8 records remain available as
+base64 while other decodable module records are still reported; the reader does
+not insert replacement characters or reject the entire artifact for those
+strings.
 
 ## Supported boundary
 

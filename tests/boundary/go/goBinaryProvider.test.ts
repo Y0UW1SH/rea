@@ -5,9 +5,63 @@ import { GoBinaryProvider } from "../../../src/go/GoBinaryProvider.js";
 import {
   AnalysisInputError,
   AnalysisResourceConstraintError,
+  AnalysisUnsupportedTargetError,
 } from "../../../src/domain/analysisErrorCore.js";
-import { createGoBinaryFixture } from "../../fixtures/go/image.js";
+import {
+  createGoBinaryDiagnosticFixtures,
+  createGoBinaryFixture,
+} from "../../fixtures/go/image.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
+
+it("distinguishes unsupported MZ carriers from damaged PE declarations", async () => {
+  const root = await createTestTempDirectory("rea-go-mz-");
+  for (const fixture of createGoBinaryDiagnosticFixtures()) {
+    const path = join(root, `${fixture.name}.exe`);
+    await writeFile(path, fixture.bytes);
+    const result = await new GoBinaryProvider().inspect({ path });
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.error).toBeInstanceOf(
+        fixture.code === "unsupported_target"
+          ? AnalysisUnsupportedTargetError
+          : AnalysisInputError,
+      );
+  }
+});
+
+it.each([32, 64] as const)(
+  "rejects advertised PE%d data directories outside the optional header",
+  async (bits) => {
+    const root = await createTestTempDirectory("rea-go-pe-directories-");
+    const fixture = createGoBinaryFixture({ format: "pe", bits });
+    fixture.bytes.writeUInt32LE(1, 152 + (bits === 64 ? 108 : 92));
+    const path = join(root, `truncated-pe${String(bits)}.exe`);
+    await writeFile(path, fixture.bytes);
+    const result = await new GoBinaryProvider().inspect({ path });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(AnalysisInputError);
+      if (!(result.error instanceof AnalysisInputError)) throw result.error;
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({ reason: "invalid_format" }),
+      );
+    }
+  },
+);
+
+it.each([{ signature: [0xce, 0xc5] }, { signature: [0xcc, 0xd8] }])(
+  "rejects high-bit lookalikes of Windows signatures %j",
+  async ({ signature }) => {
+    const root = await createTestTempDirectory("rea-go-pe-signature-");
+    const fixture = createGoBinaryFixture({ format: "pe" });
+    fixture.bytes.set(signature, 128);
+    const path = join(root, "corrupt-signature.exe");
+    await writeFile(path, fixture.bytes);
+    const result = await new GoBinaryProvider().inspect({ path });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBeInstanceOf(AnalysisInputError);
+  },
+);
 
 it("preserves the actual build-info byte guard as a resource failure", async () => {
   const fixture = createGoBinaryFixture();

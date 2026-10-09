@@ -31,8 +31,9 @@ export interface GoStringLocation {
 export interface GoBuildInfo {
   readonly header_offset: number;
   readonly encoding: "inline" | "pointer";
-  readonly go_version: string;
-  readonly module_text: string;
+  readonly go_version: string | null;
+  readonly go_version_bytes_base64: string;
+  readonly module_text: string | null;
   readonly module_bytes_base64: string;
   readonly version_location: GoStringLocation;
   readonly module_location: GoStringLocation;
@@ -51,22 +52,22 @@ export interface GoBinaryImage {
 export const readGoBinaryImage = (bytes: Buffer): GoBinaryImage => {
   const container = readContainer(bytes);
   const { format, architecture, bits, byte_order } = container;
-  const header = findHeader(bytes, container.search);
-  if (header === null)
+  const search = container.search;
+  const header = findHeader(bytes, search);
+  if (header === null || search === null)
     return { format, architecture, bits, byte_order, build_info: null };
+  const verifyMapping = (size: number): void => {
+    const address = search.address + BigInt(header - search.offset);
+    if (mappedFileOffset(container.mappings, address, size) !== header)
+      throw new GoBinaryFormatFailure(
+        "malformed",
+        "Go build-info bytes disagree with their virtual mapping",
+      );
+  };
+  verifyMapping(32);
   const reader = new GoBinaryReader(bytes, byte_order === "little");
   const ptrSize = bytes[header + 14];
   const flags = bytes[header + 15] ?? 0;
-  if (ptrSize !== 4 && ptrSize !== 8)
-    throw new GoBinaryFormatFailure(
-      "malformed",
-      "Go build-info pointer width must be 4 or 8",
-    );
-  if (ptrSize * 8 !== bits)
-    throw new GoBinaryFormatFailure(
-      "malformed",
-      "Go build-info pointer width disagrees with the image",
-    );
   if ((flags & ~3) !== 0)
     throw new GoBinaryFormatFailure(
       "unsupported",
@@ -80,17 +81,25 @@ export const readGoBinaryImage = (bytes: Buffer): GoBinaryImage => {
   const encoding = (flags & 2) !== 0 ? "inline" : "pointer";
   const readInline = (offset: number, remaining: number) =>
     readInlineString(reader, offset, remaining);
-  const sourceEnd =
-    container.search === null
-      ? header + 32
-      : container.search.offset + container.search.size;
+  const sourceEnd = search.offset + search.size;
   let version: LocatedString;
   let module: LocatedString;
   if (encoding === "inline") {
     version = readInline(header + 32, sourceEnd - header - 32);
     const next = version.location.offset + version.location.bytes;
     module = readInline(next, sourceEnd - next);
+    verifyMapping(module.location.offset + module.location.bytes - header);
   } else {
+    if (ptrSize !== 4 && ptrSize !== 8)
+      throw new GoBinaryFormatFailure(
+        "malformed",
+        "Go build-info pointer width must be 4 or 8",
+      );
+    if (ptrSize * 8 !== bits)
+      throw new GoBinaryFormatFailure(
+        "malformed",
+        "Go build-info pointer width disagrees with the image",
+      );
     const pointerBits = ptrSize === 8 ? 64 : 32;
     version = readPointerString(
       reader,
@@ -111,13 +120,13 @@ export const readGoBinaryImage = (bytes: Buffer): GoBinaryImage => {
       MAX_BUILD_INFO_BYTES,
       "Go build-info strings exceed the aggregate 1 MiB limit",
     );
-  const goVersion = goUtf8(version.bytes, "Go version");
-  if (goVersion.length === 0)
+  if (version.bytes.length === 0)
     throw new GoBinaryFormatFailure(
       "malformed",
       "Go build-info compiler version is empty",
     );
-  let moduleText = "";
+  const goVersion = observedText(version.bytes);
+  let moduleText: string | null = "";
   if (module.bytes.length !== 0) {
     if (
       module.bytes.length < 33 ||
@@ -129,10 +138,7 @@ export const readGoBinaryImage = (bytes: Buffer): GoBinaryImage => {
         "malformed",
         "Go module string framing is invalid",
       );
-    moduleText = goUtf8(
-      module.bytes.subarray(16, -16),
-      "Go module information",
-    );
+    moduleText = observedText(module.bytes.subarray(16, -16));
   }
   return {
     format,
@@ -143,12 +149,22 @@ export const readGoBinaryImage = (bytes: Buffer): GoBinaryImage => {
       header_offset: header,
       encoding,
       go_version: goVersion,
+      go_version_bytes_base64: version.bytes.toString("base64"),
       module_text: moduleText,
       module_bytes_base64: module.bytes.toString("base64"),
       version_location: version.location,
       module_location: module.location,
     },
   };
+};
+
+const observedText = (bytes: Buffer): string | null => {
+  try {
+    return goUtf8(bytes, "Go build string");
+  } catch (cause) {
+    if (cause instanceof GoBinaryFormatFailure) return null;
+    throw cause;
+  }
 };
 
 interface LocatedString {

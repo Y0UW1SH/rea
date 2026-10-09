@@ -111,13 +111,10 @@ it("refuses overlong or truncated varints before decoding or allocating strings"
   );
 });
 
-it("refuses invalid module framing and malformed UTF-8 without replacement decoding", () => {
+it("refuses invalid module framing and preserves BOMs without replacement decoding", () => {
   const fixture = createGoBinaryFixture();
   fixture.bytes[fixture.moduleOffset] = 0;
   expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(/framing/i);
-  const invalid = createGoBinaryFixture();
-  invalid.bytes[invalid.versionOffset] = 0xff;
-  expect(() => readGoBinaryImage(invalid.bytes)).toThrowError(/UTF-8/i);
   const bom = createGoBinaryFixture({
     goVersion: "\ufeffgo1.26.0",
     moduleText: "\ufeffpath\tx\n",
@@ -132,9 +129,76 @@ it("rejects future encodings and invalid pointer widths explicitly", () => {
   const flags = createGoBinaryFixture();
   flags.bytes[flags.headerOffset + 15] = 0x82;
   expect(() => readGoBinaryImage(flags.bytes)).toThrowError(/flags/i);
-  const width = createGoBinaryFixture();
+  const width = createGoBinaryFixture({ encoding: "pointer" });
   width.bytes[width.headerOffset + 14] = 16;
   expect(() => readGoBinaryImage(width.bytes)).toThrowError(/pointer/i);
+});
+
+it("preserves non-UTF8 compiler and module bytes without rejecting other observed metadata", () => {
+  const version = createGoBinaryFixture();
+  version.bytes[version.versionOffset] = 0xff;
+  expect(readGoBinaryImage(version.bytes).build_info).toMatchObject({
+    go_version: null,
+    go_version_bytes_base64: version.bytes
+      .subarray(version.versionOffset, version.versionOffset + 8)
+      .toString("base64"),
+    module_text: GO_MODULE_TEXT,
+  });
+  const module = createGoBinaryFixture({ moduleText: "build\t-tags=x\n" });
+  module.bytes[module.moduleOffset + 16 + Buffer.byteLength("build\t-tags=")] =
+    0xff;
+  expect(readGoBinaryImage(module.bytes).build_info).toMatchObject({
+    go_version: "go1.26.0",
+    module_text: null,
+    module_bytes_base64: module.bytes
+      .subarray(
+        module.moduleOffset,
+        module.moduleOffset + module.moduleBytes.length,
+      )
+      .toString("base64"),
+  });
+});
+
+it.each([0, 4, 16])("ignores unused inline pointer width %s", (width) => {
+  const fixture = createGoBinaryFixture();
+  fixture.bytes[fixture.headerOffset + 14] = width;
+  expect(readGoBinaryImage(fixture.bytes).build_info?.go_version).toBe(
+    "go1.26.0",
+  );
+});
+
+it.each(["pe", "macho"] as const)(
+  "refuses ambiguous inline %s header mappings",
+  (format) => {
+    const fixture = createGoBinaryFixture({ format });
+    if (format === "pe") {
+      fixture.bytes.writeUInt16LE(2, 134);
+      fixture.bytes.copy(fixture.bytes, 304, 264, 304);
+      fixture.bytes.writeUInt32LE(512, 324);
+    } else {
+      fixture.bytes.writeUInt32LE(2, 16);
+      fixture.bytes.writeUInt32LE(224, 20);
+      fixture.bytes.writeUInt32LE(0x19, 184);
+      fixture.bytes.writeUInt32LE(72, 188);
+      fixture.bytes.write("__ALIAS", 192);
+      fixture.bytes.writeBigUInt64LE(0x10000n, 208);
+      fixture.bytes.writeBigUInt64LE(4096n, 216);
+      fixture.bytes.writeBigUInt64LE(16n, 224);
+      fixture.bytes.writeBigUInt64LE(4080n, 232);
+    }
+    expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(/ambiguous/i);
+  },
+);
+
+it("refuses a contradictory mapping that overlaps only inline string bytes", () => {
+  const fixture = createGoBinaryFixture({ format: "pe" });
+  fixture.bytes.writeUInt16LE(2, 134);
+  fixture.bytes.copy(fixture.bytes, 304, 264, 304);
+  fixture.bytes.writeUInt32LE(16, 312);
+  fixture.bytes.writeUInt32LE(fixture.moduleOffset + 32, 316);
+  fixture.bytes.writeUInt32LE(16, 320);
+  fixture.bytes.writeUInt32LE(512, 324);
+  expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(/ambiguous/i);
 });
 
 it("ignores the endian flag for pointer-free strings in a big-endian image", () => {

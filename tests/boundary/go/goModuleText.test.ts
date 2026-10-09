@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseGoModuleText } from "../../../src/go/GoModuleText.js";
+import {
+  parseGoModuleBytes,
+  parseGoModuleText,
+} from "../../../src/go/GoModuleText.js";
 
 describe("Go producer module text", () => {
   it("preserves local replacements, empty fields and ordered duplicate build settings", () => {
@@ -24,6 +27,7 @@ describe("Go producer module text", () => {
       ],
       complete: true,
       unparsed_lines: [],
+      unparsed_line_bytes_base64: [],
     });
   });
 
@@ -82,4 +86,92 @@ describe("Go producer module text", () => {
       complete: false,
     });
   });
+});
+
+describe("Go producer module bytes", () => {
+  it("retains byte-valued producer settings and parses surrounding UTF-8 records", () => {
+    const setting = Buffer.concat([
+      Buffer.from("build\t-tags="),
+      Buffer.from([0xff]),
+    ]);
+    const trailing = Buffer.from([0xfe]);
+    const parsed = parseGoModuleBytes(
+      Buffer.concat([
+        Buffer.from("path\tapp\nmod\tapp\t(devel)\t\nbuild\tGOOS=linux\n"),
+        setting,
+        Buffer.from("\nbuild\tGOARCH=amd64\n"),
+        trailing,
+      ]),
+    );
+    expect(parsed).toEqual({
+      path: "app",
+      main: { path: "app", version: "(devel)", sum: "", replacement: null },
+      dependencies: [],
+      settings: [
+        { key: "GOOS", value: "linux" },
+        { key: "GOARCH", value: "amd64" },
+      ],
+      unparsed_lines: [],
+      unparsed_line_bytes_base64: [
+        setting.toString("base64"),
+        trailing.toString("base64"),
+      ],
+      complete: false,
+    });
+  });
+
+  it.each(["mod", "dep", "=>"])(
+    "does not bind a replacement through an undecodable %s record",
+    (record) => {
+      const invalid = Buffer.concat([
+        Buffer.from(`${record}\t`),
+        Buffer.from([0xff]),
+        Buffer.from("\tv2\t"),
+      ]);
+      expect(
+        parseGoModuleBytes(
+          Buffer.concat([
+            Buffer.from("dep\tfirst\tv1\n"),
+            invalid,
+            Buffer.from("\n=>\tlocal\t\t\n"),
+          ]),
+        ),
+      ).toMatchObject({
+        dependencies: [
+          { path: "first", version: "v1", sum: null, replacement: null },
+        ],
+        unparsed_lines: ["=>\tlocal\t\t"],
+        unparsed_line_bytes_base64: [invalid.toString("base64")],
+        complete: false,
+      });
+    },
+  );
+
+  it.each(["build\t-tags=", "future\t"])(
+    "preserves replacement context through an undecodable %s record",
+    (prefix) => {
+      const invalid = Buffer.concat([Buffer.from(prefix), Buffer.from([0xff])]);
+      expect(
+        parseGoModuleBytes(
+          Buffer.concat([
+            Buffer.from("dep\tfirst\tv1\n"),
+            invalid,
+            Buffer.from("\n=>\tlocal\t\t\n"),
+          ]),
+        ),
+      ).toMatchObject({
+        dependencies: [
+          {
+            path: "first",
+            version: "v1",
+            sum: null,
+            replacement: { path: "local", version: "", sum: "" },
+          },
+        ],
+        unparsed_lines: [],
+        unparsed_line_bytes_base64: [invalid.toString("base64")],
+        complete: false,
+      });
+    },
+  );
 });

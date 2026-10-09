@@ -24,7 +24,7 @@ import {
   GoBinaryFormatFailure,
   GoBinaryResourceFailure,
 } from "./GoBinaryImage.js";
-import { parseGoModuleText } from "./GoModuleText.js";
+import { parseGoModuleBytes, parseGoModuleText } from "./GoModuleText.js";
 
 /** Bundled format reader identity; embedded compiler versions are separate observed facts. */
 export const GO_BINARY_PROVIDER_IDENTITY = {
@@ -134,11 +134,22 @@ export class GoBinaryProvider implements GoBinaryPort {
       const info = image.build_info;
       if (
         info !== null &&
-        (Buffer.byteLength(info.module_text) > OUTPUT_BYTES ||
+        ((info.module_text !== null &&
+          Buffer.byteLength(info.module_text) > OUTPUT_BYTES) ||
           Buffer.byteLength(info.module_bytes_base64) > OUTPUT_BYTES)
       )
         throw outputLimit(input.path);
-      const module = info === null ? null : parseGoModuleText(info.module_text);
+      const module =
+        info === null
+          ? null
+          : info.module_text === null
+            ? parseGoModuleBytes(
+                Buffer.from(info.module_bytes_base64, "base64").subarray(
+                  16,
+                  -16,
+                ),
+              )
+            : parseGoModuleText(info.module_text);
       const report = {
         ...image,
         artifact: {
@@ -151,6 +162,12 @@ export class GoBinaryProvider implements GoBinaryPort {
           "Embedded build metadata is observed file content, not proof of compiler identity, dependency authenticity or runtime behavior.",
           "Only Go build information is inspected; function names, source mappings, type metadata and decompiled code are not recovered.",
           "Resource guards bound stable artifact reads to 256 MiB, aggregate embedded strings to 1 MiB, structural table decoding to 16 MiB and complete metadata payloads to 8 MiB; these are not operating-system memory or CPU limits.",
+          ...(info !== null &&
+          (info.go_version === null || info.module_text === null)
+            ? [
+                "Some embedded Go strings contain non-UTF8 bytes; undecodable text is null and exact source bytes are preserved as base64.",
+              ]
+            : []),
           ...(info === null
             ? [
                 "No recognized Go build-info record was found in the inspected image; absent metadata does not establish that the binary is not Go.",

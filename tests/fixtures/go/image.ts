@@ -1,3 +1,5 @@
+import { dosMz } from "../../../src/domain/binaryTarget.fixture.js";
+
 /** Producer-shaped Go metadata used for portable binary format regressions. */
 export const GO_MODULE_TEXT =
   "path\texample.com/tool/cmd/tool\n" +
@@ -96,6 +98,96 @@ export const createGoBinaryFixture = (
       (little ? 0 : 1) | (encoding === "inline" ? 2 : 0);
   }
   return { bytes, headerOffset, versionOffset, moduleOffset, moduleBytes };
+};
+
+/** Embedded invalid UTF-8 alongside valid records, with exact independent byte expectations. */
+export const createGoBinaryByteStringFixture = () => {
+  const version = Buffer.from("xgo1.26.0");
+  const invalidLine = Buffer.from("build\t-tags=x");
+  const fixture = createGoBinaryFixture({
+    goVersion: version.toString("utf8"),
+    moduleText:
+      "path\texample.com/tool/cmd/tool\n" +
+      "mod\texample.com/tool\t(devel)\t\n" +
+      "build\tGOARCH=amd64\n" +
+      `${invalidLine.toString("utf8")}\n`,
+  });
+  version[0] = 0xff;
+  version.copy(fixture.bytes, fixture.versionOffset);
+  const lineOffset = fixture.moduleBytes.indexOf(invalidLine);
+  fixture.moduleBytes[lineOffset + invalidLine.length - 1] = 0xff;
+  invalidLine[invalidLine.length - 1] = 0xff;
+  fixture.moduleBytes.copy(fixture.bytes, fixture.moduleOffset);
+  return {
+    bytes: fixture.bytes,
+    expectedBuildInfo: {
+      header_offset: fixture.headerOffset,
+      encoding: "inline",
+      go_version: null,
+      go_version_bytes_base64: version.toString("base64"),
+      module_text: null,
+      module_bytes_base64: fixture.moduleBytes.toString("base64"),
+      version_location: {
+        offset: fixture.versionOffset,
+        bytes: version.length,
+      },
+      module_location: {
+        offset: fixture.moduleOffset,
+        bytes: fixture.moduleBytes.length,
+      },
+      module: {
+        path: "example.com/tool/cmd/tool",
+        main: {
+          path: "example.com/tool",
+          version: "(devel)",
+          sum: "",
+          replacement: null,
+        },
+        dependencies: [],
+        settings: [{ key: "GOARCH", value: "amd64" }],
+        unparsed_lines: [],
+        unparsed_line_bytes_base64: [invalidLine.toString("base64")],
+        complete: false,
+      },
+    },
+  };
+};
+
+/** Unsupported DOS/Windows carriers and damaged PE records for public diagnostics. */
+export const createGoBinaryDiagnosticFixtures = () => {
+  const unsupported = [
+    { name: "dos-short", bytes: dosMz(16) },
+    { name: "dos", bytes: dosMz() },
+  ];
+  for (const signature of ["NE", "LE", "LX"]) {
+    const bytes = dosMz();
+    bytes.writeUInt16LE(4, 8);
+    bytes.writeUInt32LE(64, 60);
+    bytes.write(signature, 64, "ascii");
+    unsupported.push({ name: signature.toLowerCase(), bytes });
+  }
+  const damagedPe = createGoBinaryFixture({ format: "pe" }).bytes;
+  damagedPe.write("NO", 128, "ascii");
+  const absentDirectories = createGoBinaryFixture({ format: "pe" }).bytes;
+  absentDirectories.writeUInt32LE(1, 152 + 108);
+  return [
+    ...unsupported.map((fixture) => ({
+      ...fixture,
+      code: "unsupported_target" as const,
+      details: { operation: "inspect_go_binary" },
+    })),
+    ...[
+      { name: "damaged-pe", bytes: damagedPe },
+      { name: "absent-directories", bytes: absentDirectories },
+    ].map((fixture) => ({
+      ...fixture,
+      code: "invalid_request" as const,
+      details: {
+        operation: "inspect_go_binary",
+        issues: [{ path: ["path"], reason: "invalid_format" }],
+      },
+    })),
+  ];
 };
 
 const encodeVarint = (input: number): Buffer => {

@@ -3,9 +3,56 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { expect } from "vitest";
 import { toolContract } from "../../src/contracts/toolContracts.js";
-import { createGoBinaryFixture, GO_MODULE_TEXT } from "../fixtures/go/image.js";
+import {
+  createGoBinaryByteStringFixture,
+  createGoBinaryDiagnosticFixtures,
+  createGoBinaryFixture,
+  GO_MODULE_TEXT,
+} from "../fixtures/go/image.js";
 import { createTestTempDirectory } from "../fixtures/temporaryDirectory.js";
 import { cliTest } from "../support/cli/cliFixture.js";
+
+cliTest(
+  "preserves invalid embedded Go text bytes through the public CLI",
+  async ({ cli }) => {
+    const root = await createTestTempDirectory("rea-go-cli-byte-strings-");
+    const path = join(root, "byte-strings.elf");
+    const fixture = createGoBinaryByteStringFixture();
+    await writeFile(path, fixture.bytes);
+    const result = await cli.run({
+      arguments: ["inspect-go-binary", path, "--json"],
+    });
+    expect(result.exitCode, result.stderr).toBe(0);
+    const evidence = toolContract("inspect_go_binary").outputSchema.parse(
+      result.json,
+    );
+    expect(evidence.normalized_result.build_info).toEqual(
+      fixture.expectedBuildInfo,
+    );
+  },
+);
+
+for (const fixture of createGoBinaryDiagnosticFixtures()) {
+  cliTest(
+    `reports ${fixture.code} for ${fixture.name} through the public Go CLI`,
+    async ({ cli }) => {
+      const root = await createTestTempDirectory("rea-go-cli-mz-");
+      const path = join(root, `${fixture.name}.exe`);
+      await writeFile(path, fixture.bytes);
+      const result = await cli.run({
+        arguments: ["inspect-go-binary", path, "--json"],
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.json).toMatchObject({
+        code: fixture.code,
+        details: {
+          ...fixture.details,
+          ...(fixture.code === "unsupported_target" ? { path } : {}),
+        },
+      });
+    },
+  );
+}
 
 cliTest(
   "reports a readable unsupported carrier through the public Go CLI",
