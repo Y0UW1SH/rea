@@ -3,6 +3,7 @@ import {
   cleanupOwnedProcessGroup,
   cleanupWindowsProcessTree,
   type ProcessOwnershipHost,
+  type ProcessTableEntry,
   type WindowsProcessTreeHost,
 } from "./ProcessOwnership.js";
 import {
@@ -11,18 +12,20 @@ import {
 } from "./ProcessOwnershipObservation.js";
 import { host, ownership } from "./ProcessOwnership.fixture.js";
 
+const launcher: ProcessTableEntry = {
+  pid: 100,
+  parentPid: 1,
+  processGroupId: 100,
+  state: "S",
+  command: "fixture",
+};
+
 describe("owned process-group cleanup validation: ownership and lineage", () => {
   it("fails closed when a descendant in another process group lacks the token", async () => {
     const adapter: ProcessOwnershipHost = {
       listProcesses: () =>
         Promise.resolve([
-          {
-            pid: 100,
-            parentPid: 1,
-            processGroupId: 100,
-            state: "S",
-            command: "fixture",
-          },
+          launcher,
           {
             pid: 101,
             parentPid: 100,
@@ -116,16 +119,9 @@ describe("owned process-group cleanup validation: ownership and lineage", () => 
     expect(signalGroup).not.toHaveBeenCalled();
   });
   it("accepts a member that exits during ownership revalidation", async () => {
-    const liveLauncher = {
-      pid: 100,
-      parentPid: 1,
-      processGroupId: 100,
-      state: "S",
-      command: "fixture",
-    };
     const listProcesses = vi
       .fn<ProcessOwnershipHost["listProcesses"]>()
-      .mockResolvedValueOnce([liveLauncher])
+      .mockResolvedValueOnce([launcher])
       .mockResolvedValue([]);
     const signalGroup = vi.fn();
     const adapter: ProcessOwnershipHost = {
@@ -145,17 +141,44 @@ describe("owned process-group cleanup validation: ownership and lineage", () => 
 });
 
 describe("owned process-group cleanup validation: launcher exit races", () => {
+  it.each([101, 999])(
+    "retains cleanup uncertainty for a detached descendant in group %s after launcher exit",
+    async (processGroupId) => {
+      const child = {
+        ...launcher,
+        pid: 101,
+        parentPid: 100,
+        processGroupId: 101,
+      };
+      const signalGroup = vi.fn();
+      const listProcesses = vi
+        .fn<ProcessOwnershipHost["listProcesses"]>()
+        .mockResolvedValueOnce([
+          { ...launcher, command: "[MainThread]" },
+          child,
+        ])
+        .mockResolvedValue([{ ...child, parentPid: 1, processGroupId }]);
+      await expect(
+        cleanupOwnedProcessGroup(
+          {
+            ...ownership,
+            expectedCommand: "fixture",
+          },
+          {
+            listProcesses,
+            environment: () =>
+              Promise.resolve({ REA_PROCESS_RUN_ID: "run-token" }),
+            signalGroup,
+          },
+        ),
+      ).resolves.toMatchObject({ cleaned: false });
+      expect(signalGroup).not.toHaveBeenCalled();
+    },
+  );
   it.each(["planning", "signaling"])(
     "settles a stale launcher command during %s without skipping surviving group ownership",
     async (phase) => {
       for (const remaining of ["absent", "zombie", "owned", "foreign"]) {
-        const launcher = {
-          pid: 100,
-          parentPid: 1,
-          processGroupId: 100,
-          state: "S",
-          command: "fixture",
-        };
         const stale = { ...launcher, command: "[MainThread]" };
         const child = { ...launcher, pid: 101, command: "child" };
         let reads = 0;
@@ -226,13 +249,6 @@ describe("owned process-group cleanup validation: launcher exit races", () => {
   it.each(["planning", "signaling"])(
     "rejects a surviving launcher PID in another group during %s",
     async (phase) => {
-      const launcher = {
-        pid: 100,
-        parentPid: 1,
-        processGroupId: 100,
-        state: "S",
-        command: "fixture",
-      };
       let reads = 0;
       const signalGroup = vi.fn();
       const adapter: ProcessOwnershipHost = {
@@ -307,13 +323,7 @@ describe("owned process-group cleanup validation: exited members", () => {
     const adapter: ProcessOwnershipHost = {
       listProcesses: () =>
         Promise.resolve([
-          {
-            pid: 100,
-            parentPid: 1,
-            processGroupId: 100,
-            state: "S",
-            command: "fixture",
-          },
+          launcher,
           {
             pid: 101,
             parentPid: 100,

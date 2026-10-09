@@ -353,8 +353,24 @@ const settleLauncherExit = async (
   if (
     refreshed.available &&
     !refreshed.processes.some(({ pid }) => pid === launcher.pid)
-  )
+  ) {
+    // Refreshing must not discard a surviving detached descendant's lineage,
+    // including a child that changed groups while the launcher exited.
+    const descendants = descendantsOf(launcher.pid, processes);
+    if (
+      refreshed.processes.some(
+        (process) =>
+          process.processGroupId !== ownership.processGroupId &&
+          descendants.some(
+            (descendant) =>
+              descendant.pid === process.pid ||
+              descendant.processGroupId === process.processGroupId,
+          ),
+      )
+    )
+      return { cleaned: false, reason };
     return refreshed.processes;
+  }
   return { cleaned: false, reason };
 };
 
