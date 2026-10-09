@@ -205,6 +205,13 @@ export const createGoBinaryDiagnosticFixtures = () => {
   damagedPe.write("NO", 128, "ascii");
   const absentDirectories = createGoBinaryFixture({ format: "pe" }).bytes;
   absentDirectories.writeUInt32LE(1, 152 + 108);
+  const shortOptionalHeaders = [0, 1].map((size) => {
+    const bytes = createGoBinaryFixture({ format: "pe" }).bytes;
+    bytes.writeUInt16LE(size, 148);
+    // Bytes following the declared header must not supply its magic field.
+    bytes.fill(0xff, 152 + size, 154);
+    return { name: `optional-header-${String(size)}-bytes`, bytes };
+  });
   return [
     ...unsupported.map((fixture) => ({
       ...fixture,
@@ -214,6 +221,7 @@ export const createGoBinaryDiagnosticFixtures = () => {
     ...[
       { name: "damaged-pe", bytes: damagedPe },
       { name: "absent-directories", bytes: absentDirectories },
+      ...shortOptionalHeaders,
     ].map((fixture) => ({
       ...fixture,
       code: "invalid_request" as const,

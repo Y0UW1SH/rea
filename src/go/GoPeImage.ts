@@ -33,6 +33,20 @@ const peHeaderOffset = (reader: GoBinaryReader): number => {
   return pe;
 };
 
+const optionalHeaderMagic = (
+  reader: GoBinaryReader,
+  offset: number,
+  size: number,
+): number => {
+  reader.range(offset, size, "PE optional header");
+  if (size < 2)
+    throw new GoBinaryFormatFailure(
+      "malformed",
+      "PE optional header is missing its complete magic field",
+    );
+  return reader.u16(offset);
+};
+
 /** Read PE32/PE32+ native image mappings and the linker data section. */
 export const readGoPeImage = (bytes: Buffer): GoBinaryContainer => {
   const reader = new GoBinaryReader(bytes, true);
@@ -49,8 +63,7 @@ export const readGoPeImage = (bytes: Buffer): GoBinaryContainer => {
     );
   const optional = pe + 24;
   const optionalSize = reader.u16(pe + 20);
-  reader.range(optional, optionalSize, "PE optional header");
-  const magic = reader.u16(optional);
+  const magic = optionalHeaderMagic(reader, optional, optionalSize);
   const bits = magic === 0x10b ? 32 : magic === 0x20b ? 64 : null;
   if (bits === null)
     throw new GoBinaryFormatFailure(
