@@ -85,6 +85,13 @@ const stopFixture = async (child: ChildProcess): Promise<void> => {
   await exited;
 };
 
+const expectStoppedFixture = (
+  child: Pick<ChildProcess, "exitCode" | "signalCode">,
+): void => {
+  expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+  if (process.platform !== "win32") expect(child.signalCode).toBe("SIGKILL");
+};
+
 const createClient = (options: HopperClientOptions) => {
   const client = new HopperClient({ startupTimeoutMs: 100, ...options });
   onTestFinished(async () => {
@@ -143,7 +150,7 @@ it("retains failed startup cleanup until an owned process and its backing image 
   const second = client.close();
   await expect(first).resolves.toEqual({ ok: true, value: null });
   await expect(second).resolves.toEqual({ ok: true, value: null });
-  expect(child.signalCode).toBe("SIGKILL");
+  expectStoppedFixture(child);
   await expect(access(session.directory)).rejects.toMatchObject({
     code: "ENOENT",
   });
@@ -155,17 +162,46 @@ it("retains failed startup cleanup until an owned process and its backing image 
 
 it("keeps an unconfirmed external document visible across sequential closes", async () => {
   const launcher = new RetryCleanupLauncher(true);
-  const { client, session, child } = await failedStartup(launcher);
+  const runtimeRoot = await PrivateRuntimeRoot.create();
+  onTestFinished(() => runtimeRoot.close());
+  const launched = await launcher.launch({
+    directory: runtimeRoot.path,
+    socketPath: join(runtimeRoot.path, "bridge.sock"),
+    token: "fixture-token",
+    runId: "fixture-run",
+  });
+  if (!launched.ok) throw launched.error;
+  const child = launched.value.process;
+  const supervisor = new ProviderProcessSupervisor(launched.value);
+  onTestFinished(() => supervisor.dispose());
+  const resources: HopperOwnedResources = {
+    launch: launched.value,
+    processSupervisor: supervisor,
+    runtimeRoot,
+    shutdownConfirmed: false,
+  };
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    await expect(client.close()).resolves.toMatchObject({
+    await expect(
+      cleanupHopperSession({
+        socket: undefined,
+        resources,
+        activeRequest: null,
+        retainDocument: false,
+        progress: undefined,
+        logger: silentLogger,
+        onDiagnostic: undefined,
+        request: () => Promise.resolve(ok(null)),
+        releaseTransport: (socket) => socket?.destroy(),
+      }),
+    ).resolves.toMatchObject({
       ok: false,
-      error: { cleanupResources: ["hopper-document", session.directory] },
+      error: { cleanupResources: ["hopper-document", runtimeRoot.path] },
     });
   }
   expect(child.exitCode).toBeNull();
   expect(child.signalCode).toBeNull();
   await expect(
-    access(join(session.directory, "image.macho")),
+    access(join(runtimeRoot.path, "image.macho")),
   ).resolves.toBeUndefined();
 });
 
@@ -211,9 +247,7 @@ it("permits a fresh launch after stopping an owned bridge-request provider witho
     await expect(access(session.directory)).rejects.toMatchObject({
       code: "ENOENT",
     });
-  expect(
-    fixture.processes.every((child) => child.signalCode === "SIGKILL"),
-  ).toBe(true);
+  for (const child of fixture.processes) expectStoppedFixture(child);
 });
 
 it("retains a cross-client lease until owned cleanup succeeds", async () => {
@@ -328,7 +362,7 @@ it("preserves confirmed document shutdown while retrying owned process cleanup",
     socket: undefined,
   });
   expect(second).toEqual({ ok: true, value: null });
-  expect(launched.value.process.signalCode).toBe("SIGKILL");
+  expectStoppedFixture(launched.value.process);
   await expect(access(runtimeRoot.path)).rejects.toMatchObject({
     code: "ENOENT",
   });
@@ -398,6 +432,6 @@ it.each([
         access(join(runtimeRoot.path, "image.macho")),
       ).resolves.toBeUndefined();
     }
-    expect(launch.process.signalCode).toBe("SIGKILL");
+    expectStoppedFixture(launch.process);
   },
 );

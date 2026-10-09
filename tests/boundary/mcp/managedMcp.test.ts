@@ -1,3 +1,4 @@
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { parseEvidence } from "../../../src/domain/evidence.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 import { AnalysisProviderRegistry } from "../../../src/application/binary/AnalysisProviderRegistry.js";
 import { composeBinarySession } from "../../../src/application/binary/BinarySessionComposition.js";
 import type { BinarySession } from "../../../src/application/binary/BinarySession.js";
-import type { BinaryTarget } from "../../../src/domain/binaryTarget.js";
+import type { BinaryTarget } from "../../../src/domain/binaryTargetTypes.js";
 import { MANAGED_NATIVE_VERIFICATION_EXAMPLE } from "../../../src/contracts/managed/managedWorkflowExamples.js";
 import { toolContract } from "../../../src/contracts/toolContracts.js";
 import { ManagedStaticProvider } from "../../../src/dotnet/ManagedStaticProvider.js";
@@ -218,11 +219,8 @@ const verifyManagedCatalogAndNativeWorkflow = async (
       ],
     },
   });
-  expect(wrong).toMatchObject({
-    isError: true,
-    structuredContent: {
-      error: { code: "evidence_integrity_mismatch" },
-    },
+  expect(parseMcpToolError(wrong)).toMatchObject({
+    error: { code: "evidence_integrity_mismatch" },
   });
 };
 
@@ -426,6 +424,7 @@ const verifyImport = async (
 };
 
 const structured = (result: CallToolResult): Record<string, unknown> => {
+  if (result.isError === true) return parseMcpToolError(result);
   if (
     typeof result.structuredContent !== "object" ||
     result.structuredContent === null

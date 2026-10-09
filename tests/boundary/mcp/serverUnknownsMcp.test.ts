@@ -1,3 +1,4 @@
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { afterEach, expect, it } from "vitest";
@@ -15,11 +16,11 @@ import { observed as ok } from "../../fixtures/analysisExecution.js";
 import { createServer } from "../../../src/server/createServer.js";
 import { createEvidence, parseEvidence } from "../../../src/domain/evidence.js";
 import { parseEvidenceBundle } from "../../../src/domain/evidenceBundle.js";
-import { processCaptureSchema } from "../../../src/domain/process/processCapture.js";
-import { EMPTY_PROCESS_CAPTURE_EXAMPLE } from "../../../src/contracts/process/processCaptureExample.js";
+import { EMPTY_PROCESS_CAPTURE_EXAMPLE } from "../../../src/domain/process/processCaptureExample.js";
 import { jsonValueSchema } from "../../../src/domain/jsonValue.js";
-import { PROCESS_PROVIDER } from "../../../src/server/sessionToolPolicies.js";
+import { PROCESS_PROVIDER } from "../../../src/domain/process/processEvidenceProvider.js";
 
+import { processCaptureSchema } from "../../../src/domain/process/processCapture.js";
 const resources: Array<{ close(): Promise<void> }> = [];
 
 afterEach(async () => {
@@ -68,6 +69,7 @@ const providerWithCapabilities = (
 };
 
 const structured = (result: CallToolResult): Record<string, unknown> => {
+  if (result.isError === true) return parseMcpToolError(result);
   if (
     typeof result.structuredContent !== "object" ||
     result.structuredContent === null

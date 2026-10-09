@@ -1,3 +1,4 @@
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { ok as resultOk } from "../../../src/domain/result.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -9,10 +10,8 @@ import { z } from "zod";
 import { createTestBinarySession } from "../../fixtures/binarySession.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 import { machoImage } from "../../../src/artifacts/apple/MachoImage.fixture.js";
-import {
-  CATALOG_IDENTITY,
-  CLI_COMMAND_NAMES,
-} from "../../../src/catalogIdentity.js";
+import { CATALOG_IDENTITY } from "../../../src/catalogIdentity.js";
+import { CLI_COMMAND_NAMES } from "../../../src/cliCommandNames.js";
 import { PACKAGE_METADATA } from "../../../src/generatedPackageMetadata.js";
 import { PRODUCT_IDENTITY, SDK_IDENTITY } from "../../../src/identity.js";
 import { TOOL_CONTRACTS } from "../../../src/contracts/toolContracts.js";
@@ -275,7 +274,7 @@ describe("active-target availability over MCP", () => {
         name: "inspect_macho",
         arguments: {},
       });
-      expect(call.structuredContent).toMatchObject({
+      expect(parseMcpToolError(call)).toMatchObject({
         error: { code: "target_unavailable" },
       });
       await openTarget(client, plist);

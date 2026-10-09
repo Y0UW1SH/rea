@@ -3,8 +3,10 @@ import { jsonValueSchema } from "../jsonValue.js";
 
 import { normalizationSchema } from "./processScenario.js";
 import { collectProcessCaptureIssues } from "./processCaptureValidation.js";
-
-export * from "./processScenario.js";
+import {
+  processCaptureTruncationDetailsSchema,
+  type ProcessCaptureTruncationDetails,
+} from "./processCaptureCoverage.js";
 
 /** Normalized raw PTY chunk, preserving transport-level output differences. */
 export interface TerminalFrame {
@@ -206,6 +208,8 @@ export interface UnverifiedProcessCapture {
   readonly files_after: readonly FileState[];
   readonly filesystem_effects: readonly FileEffect[];
   readonly truncated: boolean;
+  /** Optional on older captures; identifies each producer's actual coverage. */
+  readonly truncation_details?: ProcessCaptureTruncationDetails | undefined;
   readonly limitations: readonly string[];
   readonly residual_unknowns: readonly {
     readonly scope:
@@ -477,6 +481,7 @@ const processCaptureShapeSchema = z.strictObject({
   files_after: z.array(fileStateSchema),
   filesystem_effects: z.array(fileEffectSchema),
   truncated: z.boolean(),
+  truncation_details: processCaptureTruncationDetailsSchema.optional(),
   limitations: z.array(z.string()),
   residual_unknowns: z.array(
     z.object({
@@ -668,14 +673,3 @@ export const processCaptureSchema = processCaptureShapeSchema
   .describe(
     "The capture must preserve its canonical scenario, comparison, and normalization SHA-256 commitments; ordered capture timestamps and contiguous sequence numbers; before and final filesystem snapshots with truncation propagated; and exit-code consistency with deadline termination. The event journal is required; empty journals are valid. A non-empty journal must reference every captured observation exactly once with unique in-range references. These cross-field invariants are checked by REA after capture.",
   );
-
-export { parseProcessCapture } from "./processCaptureParsing.js";
-export type { ProcessCapture } from "./processCaptureParsing.js";
-
-export {
-  compareProcessCaptures,
-  comparisonStatusSchema,
-  deriveProcessComparisonStatus,
-  PROCESS_COMPARISON_DIMENSIONS,
-  processCaptureComparisonSchema,
-} from "./processComparison.js";
