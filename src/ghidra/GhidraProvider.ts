@@ -1,3 +1,4 @@
+import { snapshotEnvironment } from "../process/snapshotEnvironment.js";
 import {
   type AnalysisClient,
   type AnalysisClientContext,
@@ -8,19 +9,19 @@ import {
   type ProviderIdentity,
   type ProviderTargetSupport,
 } from "../application/AnalysisProvider.js";
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from "../config/types.js";
 import {
   createAnalysisProfile,
   type AnalysisProfileCommitment,
 } from "../domain/analysisProfile.js";
-import type { BinaryTarget } from "../domain/binaryTarget.js";
+import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import {
   jsonObjectSchema,
   jsonValueSchema,
   type JsonValue,
 } from "../domain/jsonValue.js";
 import { ok } from "../domain/result.js";
-import type { Logger } from "../logger.js";
+import type { Logger } from "pino";
 import { GhidraClient } from "./GhidraClient.js";
 import {
   ghidraInstallationDiagnostics,
@@ -46,22 +47,26 @@ import {
   windowsNativeCapabilities,
 } from "../process/WindowsAuthority.js";
 
-export { GHIDRA_PROVIDER_IDENTITY, GHIDRA_OPERATIONS };
-export type { GhidraProviderClientFactory };
-
 const SUPPORTED_ARCHITECTURES = new Set(["x86", "x86_64", "arm", "arm64"]);
 
 /** Ghidra candidate backed by an isolated ephemeral headless import. */
 export class GhidraProvider implements AnalysisProviderCandidate {
   #installation: GhidraInstallationInspection | undefined;
+  private readonly environment: NodeJS.ProcessEnv;
 
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
+    environment: Readonly<NodeJS.ProcessEnv>,
     private readonly installationHost?: GhidraInstallationHost,
     private readonly clientFactory: GhidraProviderClientFactory = (options) =>
       new GhidraClient(options),
-  ) {}
+  ) {
+    this.environment = snapshotEnvironment(
+      environment,
+      installationHost?.platform,
+    );
+  }
 
   identity(): ProviderIdentity {
     return GHIDRA_PROVIDER_IDENTITY;
@@ -190,6 +195,7 @@ export class GhidraProvider implements AnalysisProviderCandidate {
   ): AnalysisClient {
     return createGhidraProviderClient({
       config: this.config,
+      environment: this.environment,
       logger: this.logger,
       clientFactory: this.clientFactory,
       target,
@@ -201,6 +207,7 @@ export class GhidraProvider implements AnalysisProviderCandidate {
 
   #inspectInstallation(): GhidraInstallationInspection {
     const options = {
+      environment: this.environment,
       ...(this.config.ghidraInstallDir === undefined
         ? {}
         : { installDir: this.config.ghidraInstallDir }),

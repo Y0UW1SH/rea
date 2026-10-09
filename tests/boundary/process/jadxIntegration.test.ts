@@ -1,5 +1,5 @@
 import { expect, it as test, vi } from "vitest";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, readFile, truncate, writeFile } from "node:fs/promises";
 import { parseBinaryTarget } from "../../../src/application/BinaryTargetResolver.js";
 import { AndroidAnalysisService } from "../../../src/application/android/AndroidAnalysisService.js";
 import { JadxProvider } from "../../../src/android/JadxProvider.js";
@@ -16,6 +16,30 @@ import {
 import { writeJadxJarInventory } from "../../fixtures/android/jadxJar.js";
 
 const it = test.skipIf(process.platform === "win32");
+
+it("cancels Android admission while hashing the selected APK", async () => {
+  const { service, apk, launches, provider } = await setup();
+  await writeFile(apk, Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  await truncate(apk, 1024 * 1024 * 1024);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 100);
+  try {
+    const result = await service.execute(
+      "inspect_android_package",
+      { path: apk },
+      { signal: controller.signal },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { _tag: "AnalysisCancelledError" },
+    });
+    expect(launches).toHaveLength(0);
+  } finally {
+    clearTimeout(timer);
+    await provider.close();
+    await verifyCleanup(launches);
+  }
+});
 
 it("rejects a copied JAR that differs from its admitted session identity", async () => {
   const { jar } = await setup();
@@ -493,6 +517,145 @@ it("retains an uncertain workspace and blocks later launches after cleanup canno
     await service.execute("inspect_android_package", { path: apk }),
   ).toMatchObject({ ok: false, error: { cleanupIncomplete: true } });
   expect(launches).toHaveLength(1);
+});
+
+it("retries shutdown cleanup after ownership verification recovers", async () => {
+  let cleanupFails = true;
+  const { service, apk, launches, provider } = await setup(
+    "normal",
+    () => cleanupFails,
+  );
+  try {
+    const outcome = await service.execute("inspect_android_package", {
+      path: apk,
+    });
+    if (!outcome.ok) throw outcome.error;
+    const firstClose = provider.close();
+    expect(provider.close()).toBe(firstClose);
+    await expect(firstClose).rejects.toMatchObject({ cleanupIncomplete: true });
+    const workspace = launches[0]?.cwd;
+    if (workspace === undefined) throw new Error("Expected acquired workspace");
+    await expect(access(workspace)).resolves.toBeUndefined();
+    cleanupFails = false;
+    await provider.close();
+    await verifyCleanup(launches);
+    expect(launches).toHaveLength(1);
+  } finally {
+    cleanupFails = false;
+    await provider.close();
+  }
+});
+
+it.each(["idle", "target-change"])(
+  "retries %s retirement before acquiring another engine",
+  async (retirement) => {
+    let cleanupFails = true;
+    let cleanupAttempts = 0;
+    const { service, apk, jar, launches, provider } = await setup(
+      "normal",
+      () => {
+        cleanupAttempts += 1;
+        return cleanupFails;
+      },
+    );
+    try {
+      if (retirement === "idle")
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const first = await service.execute("inspect_android_package", {
+        path: apk,
+      });
+      if (!first.ok) throw first.error;
+      if (retirement === "idle") {
+        vi.advanceTimersByTime(60_000);
+        vi.useRealTimers();
+        await expect.poll(() => cleanupAttempts).toBeGreaterThan(0);
+      } else {
+        await writeJadxJarInventory(jar, ["fixture/NewEngineMarker.class"]);
+        expect(
+          await service.execute("inspect_android_package", { path: apk }),
+        ).toMatchObject({
+          ok: false,
+          error: { cleanupIncomplete: true },
+        });
+      }
+      const workspace = launches[0]?.cwd;
+      if (workspace === undefined)
+        throw new Error("Expected acquired workspace");
+      await expect(access(workspace)).resolves.toBeUndefined();
+      expect(launches).toHaveLength(1);
+      cleanupFails = false;
+      const retried = await service.execute("inspect_android_package", {
+        path: apk,
+      });
+      if (!retried.ok) throw retried.error;
+      expect(launches).toHaveLength(2);
+      await provider.close();
+      await verifyCleanup(launches);
+    } finally {
+      vi.useRealTimers();
+      cleanupFails = false;
+      await provider.close();
+    }
+  },
+);
+
+it("retains the execution failure while cleanup is pending and resumes after cleanup recovers", async () => {
+  let cleanupFails = true;
+  const { service, apk, launches, provider } = await setup(
+    "tool-error",
+    () => cleanupFails,
+  );
+  try {
+    const outcome = await service.execute("inspect_android_package", {
+      path: apk,
+    });
+    expect(outcome).toMatchObject({
+      ok: false,
+      error: {
+        cleanupIncomplete: true,
+        cause: {
+          _tag: "ProviderAdapterError",
+          diagnostics: {
+            reason: "manifest decoder rejected malformed binary XML",
+          },
+        },
+        diagnostics: {
+          previous_error: {
+            details: {
+              diagnostics: {
+                reason: "manifest decoder rejected malformed binary XML",
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(
+      await service.execute("inspect_android_package", { path: apk }),
+    ).toMatchObject({
+      ok: false,
+      error: { cleanupIncomplete: true },
+    });
+    expect(launches).toHaveLength(1);
+    cleanupFails = false;
+    const retried = await service.execute("inspect_android_package", {
+      path: apk,
+    });
+    expect(retried).toMatchObject({
+      ok: false,
+      error: {
+        cleanupIncomplete: false,
+        diagnostics: {
+          reason: "manifest decoder rejected malformed binary XML",
+        },
+      },
+    });
+    expect(launches).toHaveLength(2);
+    await verifyCleanup(launches);
+  } finally {
+    cleanupFails = false;
+    await provider.close();
+  }
 });
 
 it("does not attribute upstream smali containing all overloads to the selected method", async () => {

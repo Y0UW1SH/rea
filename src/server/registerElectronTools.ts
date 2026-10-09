@@ -1,10 +1,12 @@
+import type { ToolResultDelivery } from "./toolResult.js";
+import type { EvidenceMcpServer } from "./EvidenceMcpServer.js";
 import type { EvidenceWriter } from "../application/investigation/InvestigationRecordPort.js";
 import {
   optionalProviderUnavailable,
   type OptionalProviderLoadFailure,
 } from "../application/OptionalObservationProviders.js";
 import { err } from "../domain/result.js";
-import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
+import type { ServerContext } from "@modelcontextprotocol/server";
 
 import type { ElectronActiveObservationPort } from "../application/javascript/ElectronActiveObservationPort.js";
 import { captureElectronScenario } from "../application/javascript/ElectronActiveObservationService.js";
@@ -16,16 +18,16 @@ import {
 import { analyzeJavaScriptApplicationValidated } from "../application/javascript/JavaScriptApplicationService.js";
 import { reconcileJavaScriptRuntimeEvidenceValidated } from "../application/javascript/JavaScriptRuntimeReconciliationService.js";
 import type { ProgressReporter } from "../application/ProgressReporter.js";
-import { toolContract, type ToolContract } from "../contracts/toolContracts.js";
+import { toolContract } from "../contracts/toolContracts.js";
+import type { ToolContract } from "../contracts/toolContractTypes.js";
 import type { AnalysisError } from "../domain/analysisErrorBase.js";
 import type { Evidence } from "../domain/evidence.js";
 import type { Result } from "../domain/result.js";
 import { inspectElectronPageInputSchema } from "../domain/javascript/electronObservation.js";
-import type { Logger } from "../logger.js";
+import type { Logger } from "pino";
 import { mcpProgressReporter } from "./mcpProgress.js";
 import { logToolExecution } from "./toolLogging.js";
 import { toolRegistrationOptions } from "./toolRegistrationOptions.js";
-import { toCallToolResult, toEvidenceToolResult } from "./toolResult.js";
 
 interface ElectronToolRegistration {
   readonly logger: Logger;
@@ -44,9 +46,10 @@ interface ElectronToolContext {
 /** Register Electron tools even when a provider is absent. */
 // oxlint-disable-next-line max-lines-per-function -- direct SDK calls retain each schema-handler type correlation.
 export const registerElectronTools = (
-  server: McpServer,
+  server: EvidenceMcpServer,
   options: ElectronToolRegistration,
 ): void => {
+  const registration = { ...options, delivery: server.delivery };
   const listContract = toolContract("list_electron_targets");
   const inspectContract = toolContract("inspect_electron_page");
   const analyzeContract = toolContract("analyze_javascript_application");
@@ -58,7 +61,7 @@ export const registerElectronTools = (
     toolRegistrationOptions(listContract),
     (input, context) =>
       runElectronTool(
-        options,
+        registration,
         listContract,
         { input, context },
         (parsed, { signal }) =>
@@ -72,7 +75,7 @@ export const registerElectronTools = (
     toolRegistrationOptions(inspectContract),
     (input, context) =>
       runElectronTool(
-        options,
+        registration,
         inspectContract,
         { input, context },
         async (parsed, { signal, progress }) => {
@@ -89,7 +92,7 @@ export const registerElectronTools = (
     toolRegistrationOptions(analyzeContract),
     (input, context) =>
       runElectronTool(
-        options,
+        registration,
         analyzeContract,
         { input, context },
         (parsed, { signal, progress }) =>
@@ -101,7 +104,7 @@ export const registerElectronTools = (
     toolRegistrationOptions(reconcileContract),
     (input, context) =>
       runElectronTool(
-        options,
+        registration,
         reconcileContract,
         { input, context },
         (parsed) =>
@@ -113,7 +116,7 @@ export const registerElectronTools = (
     toolRegistrationOptions(activeContract),
     (input, context) =>
       runElectronTool(
-        options,
+        registration,
         activeContract,
         { input, context },
         (parsed, { signal, progress }) =>
@@ -126,7 +129,7 @@ export const registerElectronTools = (
 };
 
 const runElectronTool = async <Input>(
-  options: ElectronToolRegistration,
+  options: ElectronToolRegistration & { readonly delivery: ToolResultDelivery },
   contract: ToolContract,
   request: {
     readonly input: Input;
@@ -146,7 +149,7 @@ const runElectronTool = async <Input>(
         ? options.observationLoadFailure
         : undefined;
   if (failure !== undefined)
-    return toCallToolResult(
+    return options.delivery.toCallToolResult(
       err(optionalProviderUnavailable(failure, contract.name)),
       contract,
     );
@@ -156,15 +159,11 @@ const runElectronTool = async <Input>(
       progress: mcpProgressReporter(context),
     }),
   );
-  if (!result.ok) return toCallToolResult(result, contract);
-  return evidenceResult(options, contract, result.value);
-};
-
-const evidenceResult = (
-  options: ElectronToolRegistration,
-  contract: ToolContract,
-  evidence: Evidence,
-) => {
-  const recorded = options.recordEvidence?.(evidence);
-  return toEvidenceToolResult(evidence, contract, recorded);
+  if (!result.ok) return options.delivery.toCallToolResult(result, contract);
+  const recorded = options.recordEvidence?.(result.value);
+  return options.delivery.toEvidenceToolResult(
+    result.value,
+    contract,
+    recorded,
+  );
 };

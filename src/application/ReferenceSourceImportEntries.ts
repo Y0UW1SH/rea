@@ -10,7 +10,7 @@ import { parseReferenceSourceImports } from "../domain/referenceSourceImportPars
 import type {
   ReferenceSourceEntry,
   ReferenceSourceRead,
-} from "../reference/ReferenceSourceReader.js";
+} from "../reference/ReferenceSourceReaderTypes.js";
 import { PARSEABLE_REFERENCE_SOURCE_LANGUAGES } from "./ReferenceSourceImportTypes.js";
 
 export interface ParsedReferenceSourceEntries {
@@ -59,7 +59,7 @@ const failedEntry = (
     return {
       path: entry.path,
       kind: "symlink",
-      target: "<unreadable>",
+      target: null,
       target_state: "unreadable",
       classifications,
       limitations: [limitation],

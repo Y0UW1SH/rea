@@ -2,14 +2,16 @@ import type { BrowserObservationPort } from "../application/BrowserObservationPo
 import type { ProviderIdentity } from "../application/AnalysisProvider.js";
 import type { ExecutionOptions } from "../application/AnalysisProvider.js";
 import {
-  browserTargetListSchema,
   sanitizeBrowserUrl,
-  webPageInspectionSchema,
-  type BrowserTargetList,
   type InspectWebPageInput,
   type ListBrowserTargetsInput,
-  type WebPageInspection,
 } from "../domain/browserObservation.js";
+import {
+  browserTargetListSchema,
+  webPageInspectionSchema,
+  type BrowserTargetList,
+  type WebPageInspection,
+} from "../domain/browserObservationSchemas.js";
 import { analyzeCapturedWebBundle } from "../domain/webBundleAnalyzer.js";
 import {
   webBundleAnalysisSchema,
@@ -64,16 +66,13 @@ import { discoverWebMcp } from "./CdpWebMcpDiscovery.js";
 import { captureCdpScreenshot } from "./CdpScreenshot.js";
 import { comparePngScreenshots } from "./PngVisualDiff.js";
 
-/** Public identity committed by passive browser observations. */
-export { CDP_BROWSER_PROVIDER_IDENTITY } from "./providerIdentities.js";
 import { CDP_BROWSER_PROVIDER_IDENTITY } from "./providerIdentities.js";
-const IDENTITY = CDP_BROWSER_PROVIDER_IDENTITY;
 const CLEANUP_DOMAINS = ["Network", "Debugger", "Runtime", "Page"] as const;
 
 /** Passive browser observation through a selected user-owned CDP endpoint. */
 export class CdpBrowserProvider implements BrowserObservationPort {
   identity(): ProviderIdentity {
-    return IDENTITY;
+    return CDP_BROWSER_PROVIDER_IDENTITY;
   }
 
   async listTargets(
@@ -440,4 +439,6 @@ const providerError = (
     ? new BrowserObservationError(operation, cause.reason, { cause })
     : cause instanceof AnalysisError
       ? cause
-      : new ProviderAdapterError(IDENTITY.id, operation, { cause });
+      : new ProviderAdapterError(CDP_BROWSER_PROVIDER_IDENTITY.id, operation, {
+          cause,
+        });

@@ -7,7 +7,6 @@ import { mcpProgressReporter } from "./mcpProgress.js";
 import type { LifecycleToolRegistration } from "./registerSessionTools.js";
 import { logToolExecution } from "./toolLogging.js";
 import { toolRegistrationOptions } from "./toolRegistrationOptions.js";
-import { toCallToolResult } from "./toolResult.js";
 
 /** Register provider cleanup and optional pre-close snapshot persistence. */
 export const registerCloseLifecycleTool = ({
@@ -23,25 +22,27 @@ export const registerCloseLifecycleTool = ({
       const progress = mcpProgressReporter(context);
       const snapshotPath = input.snapshot_path;
       if (snapshotPath === undefined) {
-        await reportLifecycleStart(progress, closeContract.name);
-        const closed = await logToolExecution(logger, closeContract.name, () =>
+        // Enqueue the lifecycle transition before awaiting progress transport so
+        // a later open request cannot overtake this close.
+        const closing = logToolExecution(logger, closeContract.name, () =>
           session.close({ progress }),
         );
+        await reportLifecycleStart(progress, closeContract.name);
+        const closed = await closing;
         await reportLifecycleEnd(progress, closeContract.name, closed.ok);
-        return toCallToolResult(closed, closeContract);
+        return server.delivery.toCallToolResult(closed, closeContract);
       }
+      const closing = logToolExecution(logger, closeContract.name, () =>
+        session.closeWithSnapshot(snapshotPath, input.overwrite, { progress }),
+      );
       await reportLifecycleStart(
         progress,
         closeContract.name,
         "saving snapshot; closing provider",
       );
-      const closed = await logToolExecution(logger, closeContract.name, () =>
-        session.closeWithSnapshot(snapshotPath, input.overwrite, {
-          progress,
-        }),
-      );
+      const closed = await closing;
       await reportLifecycleEnd(progress, closeContract.name, closed.ok);
-      return toCallToolResult(
+      return server.delivery.toCallToolResult(
         closed.ok ? ok({ ...closed.value }) : closed,
         closeContract,
       );

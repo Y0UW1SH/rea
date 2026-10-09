@@ -77,8 +77,14 @@ export abstract class AnalysisError extends Error {
   readonly userMessage: string | undefined = undefined;
   readonly userCategory: "cancelled" | undefined = undefined;
   readonly executionFailure: string | undefined = undefined;
-  readonly partialObservation: AnalysisPartialObservation | undefined;
+  partialObservation: AnalysisPartialObservation | undefined;
   readonly cleanupReport: ProcessCaptureCleanupReport | undefined = undefined;
+
+  /** Retain a completed observation when a later step fails. */
+  retainPartialObservation(observation: AnalysisPartialObservation): this {
+    this.partialObservation ??= observation;
+    return this;
+  }
 }
 import type {
   PartialProcessCaptureObservation,
@@ -87,10 +93,20 @@ import type {
 import type { FileOffsetPartialObservation } from "./native/fileOffsetPartialObservation.js";
 import type { NativeCallPartialObservation } from "./native/nativeCallPartialObservation.js";
 import type { ElectronActivePartialObservation } from "./javascript/electronActiveObservation.js";
+import type { JavaScriptRuntimeObservation } from "./javascript/javascriptRuntimeObservation.js";
+import type { ArtifactInventoryPartialObservation } from "./artifactPartialObservation.js";
+import type { BrowserScenarioPartialObservation } from "./browserScenarioCapture.js";
+import type { Evidence } from "./evidence.js";
+import type { AndroidPartialObservation } from "./android/androidPartialObservation.js";
 
 /** Provider-neutral evidence collected before a typed analysis failure. */
 export type AnalysisPartialObservation =
   | PartialProcessCaptureObservation
   | NativeCallPartialObservation
   | FileOffsetPartialObservation
-  | ElectronActivePartialObservation;
+  | ElectronActivePartialObservation
+  | BrowserScenarioPartialObservation
+  | JavaScriptRuntimeObservation
+  | ArtifactInventoryPartialObservation
+  | Evidence
+  | AndroidPartialObservation;

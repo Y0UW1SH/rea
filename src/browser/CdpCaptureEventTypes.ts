@@ -1,13 +1,13 @@
-import type { WebPageInspection } from "../domain/browserObservation.js";
+import type { WebPageInspection } from "../domain/browserObservationSchemas.js";
 
 export interface CapturedScript {
   readonly scriptId: string;
   readonly rawUrl: string;
   readonly url: string;
   readonly origin: string | null;
-  readonly hash: string;
-  readonly length: number;
-  readonly isModule: boolean;
+  readonly hash: string | null;
+  readonly length: number | null;
+  readonly isModule: boolean | null;
   readonly language: string | null;
   readonly sourceMapUrl: string | null;
   readonly sourceMapRawUrl: string | null;

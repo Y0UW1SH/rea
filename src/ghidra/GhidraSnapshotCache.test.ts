@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createTestBinarySession } from "../../tests/fixtures/binarySession.js";
-import { parseConfig } from "../config.js";
-import type { BinaryTarget } from "../domain/binaryTarget.js";
+import { parseConfig } from "../config/parseConfig.js";
+import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import { functionDossierSchema } from "../domain/hopperValues.js";
 import { ghidraFunctionDossier } from "../domain/ghidraValues.fixture.js";
 import { err, ok } from "../domain/result.js";
@@ -34,6 +34,7 @@ const fixture = (version = "12.1.4") => {
   const provider = new GhidraProvider(
     config.value,
     silentLogger,
+    {},
     {
       platform: "linux",
       architecture: "x64",
@@ -107,7 +108,7 @@ const fixture = (version = "12.1.4") => {
           operation === "procedure_pseudo_code" ? dossier.pseudocode : dossier,
         );
       },
-      close: async () => {},
+      close: async () => ok(null),
     }),
   );
   return {

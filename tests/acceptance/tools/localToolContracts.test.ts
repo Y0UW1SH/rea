@@ -9,6 +9,7 @@ import { toolContract } from "../../../src/contracts/toolContracts.js";
 import { parseEvidence } from "../../../src/domain/evidence.js";
 import { itWithCaptureCapability as captureTest } from "../../boundary/process/processCaptureCapability.js";
 import { connectLocalToolsMcp } from "../../fixtures/localToolsMcp.js";
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
 const execute = promisify(execFile);
@@ -160,27 +161,32 @@ captureTest(
         }),
       ),
     ];
-    for (const options of invalid) {
-      const request = { ...scenario, ...options };
-      expect(
-        (await call("capture_process_scenario", request)).isError,
-        JSON.stringify(options),
-      ).toBe(true);
-      const path = join(root, "scenario.json");
-      await writeFile(path, JSON.stringify(request));
-      await expect(
-        execute(process.execPath, [cli, "capture-process", path, "--json"]),
-      ).rejects.toMatchObject({
-        code: 1,
-        stdout: expect.stringContaining("invalid_request"),
-      });
-    }
+    // Each CLI case is an independent process; running them concurrently keeps
+    // the suite well inside its deadline on slower CI runners.
+    await Promise.all(
+      invalid.map(async (options, index) => {
+        const request = { ...scenario, ...options };
+        expect(
+          (await call("capture_process_scenario", request)).isError,
+          JSON.stringify(options),
+        ).toBe(true);
+        const path = join(root, `scenario-${String(index)}.json`);
+        await writeFile(path, JSON.stringify(request));
+        await expect(
+          execute(process.execPath, [cli, "capture-process", path, "--json"]),
+          JSON.stringify(options),
+        ).rejects.toMatchObject({
+          code: 1,
+          stdout: expect.stringContaining("invalid_request"),
+        });
+      }),
+    );
     await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
     const missing = join(root, "missing-executable");
     const failed = await call("capture_process_scenario", {
       executable: missing,
     });
-    expect(failed.structuredContent).toMatchObject({
+    expect(parseMcpToolError(failed)).toMatchObject({
       error: {
         code: "process_capture_failed",
         message: expect.stringContaining(missing),
@@ -206,16 +212,16 @@ captureTest(
   60_000,
 );
 
-captureTest.each(["unknown", "truncated"] as const)(
+captureTest.each(["untruncated", "truncated"] as const)(
   "captures real process choices and composes a %s self-comparison",
-  async (status) => {
+  async (captureState) => {
     const root = await createTestTempDirectory("rea-local-capture-");
     const { call } = await connectLocalToolsMcp();
     const captured = await call("capture_process_scenario", {
       executable: process.execPath,
       arguments: [
         "-e",
-        `require('node:fs').writeFileSync('state','selected');console.log(process.env['app.setting'],process.env.MY_PASSWORD,process.env['REA_PROCESS_RUN_ID'+String.fromCharCode(10)]);${status === "truncated" ? "console.log('x'.repeat(5000))" : ""}`,
+        `require('node:fs').writeFileSync('state','selected');console.log(process.env['app.setting'],process.env.MY_PASSWORD,process.env['REA_PROCESS_RUN_ID'+String.fromCharCode(10)]);${captureState === "truncated" ? "console.log('x'.repeat(5000))" : ""}`,
       ],
       working_directory: root,
       environment: {
@@ -225,18 +231,18 @@ captureTest.each(["unknown", "truncated"] as const)(
         "REA_PROCESS_RUN_ID\n": "caller-value",
       },
       filesystem_observation_paths: [root],
-      limits: status === "truncated" ? { output_bytes: 128 } : {},
+      limits: captureState === "truncated" ? { output_bytes: 128 } : {},
     });
     expect(captured.isError, JSON.stringify(captured)).not.toBe(true);
     const capture = toolContract("capture_process_scenario").outputSchema.parse(
       captured.structuredContent,
     );
-    const source = capture.evidence;
-    if (status === "unknown")
+    const source = capture;
+    if (captureState === "untruncated")
       expect(
-        capture.result.frames.map((frame) => frame.data).join(""),
+        capture.normalized_result.frames.map((frame) => frame.data).join(""),
       ).toContain("value ordinary-evidence caller-value");
-    else expect(capture.result.truncated).toBe(true);
+    else expect(capture.normalized_result.truncated).toBe(true);
     const environment = await call("capture_process_scenario", {
       executable: "/usr/bin/printenv",
       arguments: ["1"],
@@ -245,15 +251,15 @@ captureTest.each(["unknown", "truncated"] as const)(
     const environmentEnvelope = toolContract(
       "capture_process_scenario",
     ).outputSchema.parse(environment.structuredContent);
-    const received = environmentEnvelope.result.frames
+    const received = environmentEnvelope.normalized_result.frames
       .map((frame) => frame.data)
       .join("");
     expect(received).toBe("numbered\r\n");
     expect(await readFile(join(root, "state"), "utf8")).toBe("selected");
-    expect(capture.result.filesystem_effects).toEqual(
+    expect(capture.normalized_result.filesystem_effects).toEqual(
       expect.arrayContaining([expect.objectContaining({ status: "created" })]),
     );
-    expect(capture.result.cleanup).toMatchObject({
+    expect(capture.normalized_result.cleanup).toMatchObject({
       owned_process_group: "verified",
       temporary_root: "removed",
     });
@@ -265,7 +271,13 @@ captureTest.each(["unknown", "truncated"] as const)(
     const comparison = toolContract(
       "compare_process_captures",
     ).outputSchema.parse(compared.structuredContent);
-    expect(comparison.result.status).toBe(status);
+    expect(comparison.normalized_result).toMatchObject({
+      status: "unknown",
+      terminal: captureState === "truncated" ? "unknown" : "unchanged",
+      interaction: "unchanged",
+      exit: "unchanged",
+      process: "unknown",
+    });
     const verification = await call("verify_reconstruction", {
       specification: {
         name: "Self comparison retains uncertainty",
@@ -282,7 +294,7 @@ captureTest.each(["unknown", "truncated"] as const)(
     });
     expect(verification.isError, JSON.stringify(verification)).not.toBe(true);
     expect(verification.structuredContent).toMatchObject({
-      result: {
+      normalized_result: {
         status: "unknown",
         claims: {
           items: [
@@ -299,11 +311,11 @@ captureTest.each(["unknown", "truncated"] as const)(
       },
     });
     const behavior = await call("find_changed_behavior", {
-      comparisons: [comparison.evidence],
+      comparisons: [comparison],
     });
     expect(behavior.isError, JSON.stringify(behavior)).not.toBe(true);
     expect(behavior.structuredContent).toMatchObject({
-      result: { behavior_status: status },
+      normalized_result: { behavior_status: "unknown" },
     });
     const unknowns = await call("list_unknowns", {
       domain: "process-comparison",
@@ -336,9 +348,7 @@ captureTest.each(["unknown", "truncated"] as const)(
       path,
       "--json",
     ]);
-    expect(parseEvidence(JSON.parse(cliComparison.stdout))).toEqual(
-      comparison.evidence,
-    );
+    expect(parseEvidence(JSON.parse(cliComparison.stdout))).toEqual(comparison);
   },
 );
 
@@ -358,15 +368,15 @@ captureTest(
     const capture = toolContract("capture_process_scenario").outputSchema.parse(
       response.structuredContent,
     );
-    expect(capture.result.frames.map((frame) => frame.data).join("")).toContain(
-      "stdin-byte:0",
-    );
-    expect(capture.result.manifest.scenario).toMatchObject({
+    expect(
+      capture.normalized_result.frames.map((frame) => frame.data).join(""),
+    ).toContain("stdin-byte:0");
+    expect(capture.normalized_result.manifest.scenario).toMatchObject({
       environment: {},
       filesystem_observation_paths: [],
       terminal: { columns: 80, rows: 24, scrollback: 1000 },
     });
-    expect(capture.result.interaction_events).toEqual(
+    expect(capture.normalized_result.interaction_events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "input",

@@ -8,7 +8,10 @@ import {
   functionBodySchema,
 } from "../domain/hopperValues.js";
 import { analysisProfileSchema } from "../domain/analysisProfile.js";
-import { evidenceEnvelopeSchema } from "../domain/evidence.js";
+import {
+  evidenceSchema,
+  validateAnalysisProfileProvider,
+} from "../domain/evidence.js";
 import { jsonValueSchema } from "../domain/jsonValue.js";
 import {
   PROVIDER_REJECTION_CODES,
@@ -20,20 +23,13 @@ import {
   PROVIDER_RETRY_ACTIONS,
 } from "../domain/providerOperationHealth.js";
 import { analysisErrorProjectionSchema } from "./errorSchemas.js";
-import { prefixedDigestSchema } from "./../domain/digests.js";
 
-/** Inline result with its complete Evidence record. */
-export const inlineEvidenceRecordSchema = evidenceEnvelopeSchema;
-
-/** Wrap a result and its Evidence while preserving the result schema type. */
+/** Specialize the single normalized result inside a complete Evidence record. */
 export const evidenceResultOf = <Schema extends z.ZodType>(schema: Schema) =>
-  z.strictObject({
-    result: schema,
-    evidence_id: prefixedDigestSchema("ev"),
-    evidence: inlineEvidenceRecordSchema,
-  });
+  z
+    .strictObject({ ...evidenceSchema.shape, normalized_result: schema })
+    .superRefine(validateAnalysisProfileProvider);
 
-const resultOf = evidenceResultOf;
 /** Wrap a lifecycle result while preserving its exact schema type. */
 export const lifecycleResultOf = <Schema extends z.ZodType>(schema: Schema) =>
   z.object({ result: schema });
@@ -336,8 +332,6 @@ export type ToolUnavailabilityReason = z.output<
 
 export const sessionProvider = z
   .object({
-    provider: providerIdentity,
-    providers: z.array(providerIdentity),
     capabilities: z.array(providerCapability),
     analysis_run: analysisRun,
     analysis_activity: analysisActivity,
@@ -411,14 +405,11 @@ export const addressedEntry = z.object({
   address: z.string(),
   name: z.string(),
 });
-export const procedureIdentity = procedureIdentitySchema;
-const localVariable = localVariableSchema;
-
 export const containingProcedureResolution = z.discriminatedUnion("found", [
   z.object({
     query_address: z.string(),
     found: z.literal(true),
-    procedure: procedureIdentity,
+    procedure: procedureIdentitySchema,
   }),
   z.object({
     query_address: z.string(),
@@ -481,18 +472,18 @@ const memoryRegionOutput = z.object({
   overlay: z.boolean().optional(),
 });
 
-export const segmentOutput = resultOf(
+export const segmentOutput = evidenceResultOf(
   z.array(memoryRegionOutput.extend({ sections: z.array(memoryRegionOutput) })),
 );
 
-export const procedureInfoOutput = resultOf(
+export const procedureInfoOutput = evidenceResultOf(
   z.object({
     name: z.string(),
     entrypoint: z.string(),
     basicblock_count: z.number().int().min(0),
     length: z.number().min(0),
     signature: nullableText,
-    locals: z.array(localVariable),
+    locals: z.array(localVariableSchema),
     classification: procedureClassificationSchema.nullable().default(null),
     body: functionBodySchema.default({
       available: false,
@@ -502,7 +493,7 @@ export const procedureInfoOutput = resultOf(
 );
 
 export const symbolDiscoveryOutput = (property: "classes" | "protocols") =>
-  resultOf(
+  evidenceResultOf(
     z.object({
       count: z.number().int().min(0),
       [property]: z.array(addressedEntry),
@@ -522,4 +513,4 @@ export const graphNode = z.discriminatedUnion("status", [
   }),
 ]);
 
-export const functionDossierOutput = resultOf(functionDossierSchema);
+export const functionDossierOutput = evidenceResultOf(functionDossierSchema);

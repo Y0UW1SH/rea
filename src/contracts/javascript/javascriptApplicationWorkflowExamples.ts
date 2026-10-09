@@ -46,7 +46,6 @@ const TRACE_SEED = {
   match: "exact" as const,
   case_sensitive: false,
 };
-
 /** Natural trace request with the producer's complete Evidence inline. */
 export const JAVASCRIPT_FEATURE_TRACE_EXAMPLE = {
   application: JAVASCRIPT_APPLICATION_EVIDENCE_EXAMPLE,
@@ -100,19 +99,4 @@ export const SOURCE_TO_BUNDLE_COMPARISON_EXAMPLE = {
     limitations: [],
   }),
   application: JAVASCRIPT_APPLICATION_EVIDENCE_EXAMPLE,
-};
-
-export { JAVASCRIPT_EXPORT_SHAPE_COMPARISON_EXAMPLE } from "./javascriptExportShapeComparisonExample.js";
-
-/** Full-Evidence compatibility fixture used by pure domain and adapter tests. */
-export const JAVASCRIPT_FEATURE_TRACE_FULL_EVIDENCE_EXAMPLE = {
-  application: JAVASCRIPT_APPLICATION_EVIDENCE_EXAMPLE,
-  seed: TRACE_SEED,
-  direction: "both" as const,
-};
-
-/** Full-Evidence compatibility comparison fixture. */
-export const JAVASCRIPT_VERSION_COMPARISON_FULL_EVIDENCE_EXAMPLE = {
-  left: JAVASCRIPT_APPLICATION_EVIDENCE_EXAMPLE,
-  right: reconciliationEvidence,
 };

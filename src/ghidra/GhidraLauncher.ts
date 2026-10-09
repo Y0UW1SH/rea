@@ -1,3 +1,4 @@
+import { snapshotEnvironment } from "../process/snapshotEnvironment.js";
 import { mkdir } from "node:fs/promises";
 import { basename, dirname, join, win32 } from "node:path";
 
@@ -55,14 +56,27 @@ export interface GhidraLauncher {
 
 /** Local launch failure retained as the cause of a provider-neutral error. */
 export class GhidraLaunchError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
+  readonly #partialLaunch: GhidraLaunch | undefined;
+
+  constructor(
+    message: string,
+    options?: ErrorOptions & { readonly partialLaunch?: GhidraLaunch },
+  ) {
+    const { partialLaunch, ...errorOptions } = options ?? {};
+    super(message, errorOptions);
     this.name = "GhidraLaunchError";
+    this.#partialLaunch = partialLaunch;
+  }
+
+  /** Process ownership retained for the client to retry an incomplete rollback. */
+  get partialLaunch(): GhidraLaunch | undefined {
+    return this.#partialLaunch;
   }
 }
 
 /** Static coordinates for an extracted Ghidra release and packaged script. */
 export interface GhidraHeadlessLauncherOptions {
+  readonly environment: Readonly<NodeJS.ProcessEnv>;
   readonly analyzeHeadlessPath: string;
   readonly javaHome?: string;
   readonly bridgeScriptPath: string;
@@ -72,11 +86,19 @@ export interface GhidraHeadlessLauncherOptions {
   readonly dosMz?: true;
   readonly dosCom?: true;
   readonly analysisExtensions?: readonly GhidraExtension[];
+  /** Spawn seam for provider-boundary lifecycle tests. */
+  readonly spawnProcess?: typeof spawnOwnedProviderProcess;
 }
 
 /** Launch Ghidra without copying scripts into or modifying its installation. */
 export class GhidraHeadlessLauncher implements GhidraLauncher {
-  constructor(readonly options: GhidraHeadlessLauncherOptions) {}
+  readonly options: GhidraHeadlessLauncherOptions;
+  constructor(options: GhidraHeadlessLauncherOptions) {
+    this.options = {
+      ...options,
+      environment: snapshotEnvironment(options.environment, options.platform),
+    };
+  }
 
   async launch(
     session: GhidraLaunchSession,
@@ -126,6 +148,7 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
           : { dosMz: this.options.dosMz }),
       });
       const scriptCommand = ghidraHeadlessCommand({
+        environment: this.options.environment,
         platform,
         analyzeHeadlessPath: this.options.analyzeHeadlessPath,
         arguments: headlessArguments,
@@ -138,6 +161,7 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
         this.options.javaHome,
         platform,
         scriptCommand.command,
+        this.options.environment,
       );
       if (platform !== "win32" && this.options.javaHome === undefined)
         throw new GhidraLaunchError(
@@ -158,7 +182,7 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
                 : { signal: options.signal }),
             })
           : { ...scriptCommand, environment };
-      started = await spawnOwnedProviderProcess({
+      started = await (this.options.spawnProcess ?? spawnOwnedProviderProcess)({
         command: command.command,
         arguments: command.arguments,
         runId: session.runId,
@@ -168,8 +192,10 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
         windowsVerbatimArguments: platform === "win32",
         platform,
         env: command.environment,
+        hostEnvironment: {},
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
+      const partialLaunch = ownedGhidraLaunch(started, paths, platform);
       await writeGhidraRuntimeFile(
         paths.ownershipPath,
         `${JSON.stringify({
@@ -188,32 +214,59 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
         platform,
       );
       if (isAborted(options.signal)) {
-        await cleanupStartedProcess(started, platform);
-        return err(new AnalysisCancelledError("open_binary"));
+        throw new AnalysisCancelledError("open_binary");
       }
-      const spawned = started;
-      return ok({
-        ...ownedGhidraProcess(spawned, platform),
-        projectRoot: paths.projectRoot,
-        ghidraLogPath: paths.ghidraLogPath,
-        scriptLogPath: paths.scriptLogPath,
-      });
+      return ok(partialLaunch);
     } catch (cause: unknown) {
-      if (started !== undefined)
-        await cleanupStartedProcess(started, platform).catch(
-          (cause: unknown) => {
-            // best-effort cleanup: started-process cleanup must not mask the launch failure.
-            void cause;
-          },
-        );
-      return isAborted(options.signal)
-        ? err(new AnalysisCancelledError("open_binary"))
-        : err(
-            new GhidraLaunchError("Ghidra headless launch failed", { cause }),
+      const primary = isAborted(options.signal)
+        ? new AnalysisCancelledError("open_binary", { cause })
+        : new GhidraLaunchError("Ghidra headless launch failed", { cause });
+      if (started === undefined) return err(primary);
+
+      let cleanupFailure: unknown;
+      try {
+        const cleanup = await cleanupStartedProcess(started, platform);
+        if (!cleanup.cleaned)
+          cleanupFailure = new Error(
+            `Ghidra process cleanup was incomplete: ${cleanup.reason}`,
           );
+      } catch (failure: unknown) {
+        cleanupFailure = failure;
+      }
+      if (cleanupFailure !== undefined) {
+        const partialLaunch = ownedGhidraLaunch(started, paths, platform);
+        const primaryMessage = isAborted(options.signal)
+          ? primary.message
+          : `Ghidra headless launch failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+        return err(
+          new GhidraLaunchError(
+            `${primaryMessage}; process cleanup remains incomplete`,
+            {
+              cause: new AggregateError(
+                [primary, cleanupFailure],
+                "Ghidra launch rollback did not release its process",
+                { cause: primary },
+              ),
+              partialLaunch,
+            },
+          ),
+        );
+      }
+      return err(primary);
     }
   }
 }
+
+const ownedGhidraLaunch = (
+  spawned: SpawnedOwnedProviderProcess,
+  paths: ReturnType<typeof ghidraRuntimePaths>,
+  platform: NodeJS.Platform,
+): GhidraLaunch => ({
+  ...ownedGhidraProcess(spawned, platform),
+  projectRoot: paths.projectRoot,
+  ghidraLogPath: paths.ghidraLogPath,
+  scriptLogPath: paths.scriptLogPath,
+});
 
 const ownedGhidraProcess = (
   spawned: SpawnedOwnedProviderProcess,
@@ -236,6 +289,7 @@ export interface GhidraHeadlessCommand {
 
 /** Build a direct POSIX launch or a conservatively quoted Windows batch call. */
 export const ghidraHeadlessCommand = (options: {
+  readonly environment: Readonly<NodeJS.ProcessEnv>;
   readonly platform: NodeJS.Platform;
   readonly analyzeHeadlessPath: string;
   readonly arguments: readonly string[];
@@ -246,12 +300,17 @@ export const ghidraHeadlessCommand = (options: {
       command: options.analyzeHeadlessPath,
       arguments: [...options.arguments],
     };
+  const environment = snapshotEnvironment(
+    options.environment,
+    options.platform,
+  );
+  const systemRoot = environment.SYSTEMROOT;
   const comSpec =
     options.comSpec ??
-    process.env.ComSpec ??
-    (process.env.SystemRoot === undefined
+    environment.COMSPEC ??
+    (systemRoot === undefined
       ? "C:\\Windows\\System32\\cmd.exe"
-      : win32.join(process.env.SystemRoot, "System32", "cmd.exe"));
+      : win32.join(systemRoot, "System32", "cmd.exe"));
   if (
     !win32.isAbsolute(comSpec) ||
     win32.basename(comSpec).toLowerCase() !== "cmd.exe"
@@ -418,9 +477,10 @@ const ghidraLaunchEnvironment = (
   javaHome: string | undefined,
   platform: NodeJS.Platform,
   executable: string,
+  selectedEnvironment: Readonly<NodeJS.ProcessEnv>,
 ): NodeJS.ProcessEnv => {
   return {
-    ...ghidraJavaEnvironment(javaHome, process.env, platform),
+    ...ghidraJavaEnvironment(javaHome, selectedEnvironment, platform),
     ...ghidraHeadlessJavaOptions(paths.homeRoot, paths.tempRoot, platform),
     HOME: paths.homeRoot,
     TMPDIR: paths.tempRoot,

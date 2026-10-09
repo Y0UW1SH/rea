@@ -6,6 +6,7 @@ import { expect, it, onTestFinished } from "vitest";
 
 import { toolContract } from "../../../src/contracts/toolContracts.js";
 import { connectLocalToolsMcp } from "../../fixtures/localToolsMcp.js";
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
 it("observes a real Node Inspector and releases attachments after cancellation and failures", async () => {
@@ -39,7 +40,7 @@ it("observes a real Node Inspector and releases attachments after cancellation a
   const targets = toolContract(
     "list_javascript_runtime_targets",
   ).outputSchema.parse(discovery.structuredContent);
-  const id = targets.result.targets[0]?.target_id;
+  const id = targets.normalized_result.targets[0]?.target_id;
   if (id === undefined) throw new Error("Node Inspector target was not listed");
   const request = {
     inspector_endpoint: endpoint,
@@ -50,7 +51,7 @@ it("observes a real Node Inspector and releases attachments after cancellation a
   const observation = toolContract(
     "observe_javascript_runtime",
   ).outputSchema.parse(observed.structuredContent);
-  expect(observation.result.scripts.items).toEqual(
+  expect(observation.normalized_result.scripts.items).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         location: expect.objectContaining({ file_path: fixture }),
@@ -62,7 +63,7 @@ it("observes a real Node Inspector and releases attachments after cancellation a
     target_id: "../missing-target",
   });
   expect(missing.isError).toBe(true);
-  expect(missing.structuredContent).toMatchObject({
+  expect(parseMcpToolError(missing)).toMatchObject({
     error: {
       code: "target_unavailable",
       message: expect.stringContaining("Refresh target discovery"),
@@ -114,7 +115,7 @@ it("observes a real Node Inspector and releases attachments after cancellation a
     inspector_endpoint: endpoint,
   });
   expect(unreachable.isError).toBe(true);
-  expect(unreachable.structuredContent).toMatchObject({
+  expect(parseMcpToolError(unreachable)).toMatchObject({
     error: {
       code: "provider_unavailable",
       message: expect.stringContaining(

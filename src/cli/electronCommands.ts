@@ -16,7 +16,7 @@ import { AnalysisInputError } from "../domain/analysisErrorCore.js";
 import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
 import { projectInputIssues } from "../domain/inputIssueProjection.js";
 import type { JsonValue } from "../domain/jsonValue.js";
-import type { Logger } from "../logger.js";
+import type { Logger } from "pino";
 import { CLI_COMMANDS } from "../cliCommandNames.js";
 import { parseCliJsonInput, resolveCliJsonPaths } from "../cliJsonInput.js";
 import {
@@ -31,10 +31,11 @@ import { withCommandCancellation } from "./commandCancellation.js";
 export const registerElectronCommands = (
   cli: ReturnType<typeof Cli.create>,
   logger: Logger,
+  environment: Readonly<Record<string, string | undefined>>,
   resultOutput?: CliResultOutput,
 ): void => {
   registerElectronObservationCommands(cli, logger);
-  registerElectronActiveCommand(cli, logger);
+  registerElectronActiveCommand(cli, logger, environment);
   registerJavaScriptApplicationCommand(cli, logger, resultOutput);
   registerJavaScriptRuntimeReconciliationCommand(cli, logger);
 };
@@ -42,6 +43,7 @@ export const registerElectronCommands = (
 const registerElectronActiveCommand = (
   cli: ReturnType<typeof Cli.create>,
   logger: Logger,
+  environment: Readonly<Record<string, string | undefined>>,
 ): void => {
   cli.command(CLI_COMMANDS.captureElectronScenario, {
     description: "Run one owned Electron scenario with cancellable actions",
@@ -79,7 +81,7 @@ const registerElectronActiveCommand = (
             const { createElectronScenarioProvider } =
               await import("../composition/electronScenario.js");
             const result = await captureElectronScenario(
-              createElectronScenarioProvider(),
+              createElectronScenarioProvider(environment),
               parsed.data,
               { signal },
             );

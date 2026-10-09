@@ -1,3 +1,5 @@
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
+import { ok as resultOk } from "../../../src/domain/result.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -8,10 +10,8 @@ import { z } from "zod";
 import { createTestBinarySession } from "../../fixtures/binarySession.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 import { machoImage } from "../../../src/artifacts/apple/MachoImage.fixture.js";
-import {
-  CATALOG_IDENTITY,
-  CLI_COMMAND_NAMES,
-} from "../../../src/catalogIdentity.js";
+import { CATALOG_IDENTITY } from "../../../src/catalogIdentity.js";
+import { CLI_COMMAND_NAMES } from "../../../src/cliCommandNames.js";
 import { PACKAGE_METADATA } from "../../../src/generatedPackageMetadata.js";
 import { PRODUCT_IDENTITY, SDK_IDENTITY } from "../../../src/identity.js";
 import { TOOL_CONTRACTS } from "../../../src/contracts/toolContracts.js";
@@ -55,7 +55,7 @@ const availabilityProvider = (
     createClient: () => ({
       health: () => Promise.resolve(),
       execute: () => Promise.resolve(observed(null)),
-      close: () => Promise.resolve(),
+      close: () => Promise.resolve(resultOk(null)),
     }),
   };
 };
@@ -87,17 +87,6 @@ const statusCapability = (
 });
 
 describe("server and catalog identity", () => {
-  it("retains all catalog identity fields through transport serialization and detached clones", () => {
-    const serialized = JSON.parse(JSON.stringify(CATALOG_IDENTITY));
-    expect(structuredClone(CATALOG_IDENTITY)).toEqual(serialized);
-    expect(serialized.digests).toEqual(CATALOG_IDENTITY.digests);
-    expect(serialized.tools).toHaveLength(TOOL_CONTRACTS.length);
-    const identity = createServerIdentity({
-      startedAt: "2026-07-13T00:00:00.000Z",
-    });
-    expect(JSON.parse(JSON.stringify(identity)).catalog).toEqual(serialized);
-  });
-
   it("derives package and SDK versions from canonical package metadata", async () => {
     const packageJson = JSON.parse(await readFile("package.json", "utf8"));
     const packageLock = JSON.parse(await readFile("package-lock.json", "utf8"));
@@ -217,7 +206,7 @@ describe("server and catalog identity", () => {
 describe("live server identity over MCP", () => {
   it("exposes live identity, a stable catalog, and changing availability", async () => {
     const session = createTestBinarySession(availabilityProvider());
-    const server = createServer(session, session);
+    const server = createServer({ kind: "session", session });
     const client = new Client(
       { name: "identity-test", version: "9" },
       {
@@ -263,7 +252,7 @@ describe("active-target availability over MCP", () => {
     const session = createTestBinarySession(
       availabilityProvider(["inspect_macho", "inspect_artifact"]),
     );
-    const server = createServer(session, session);
+    const server = createServer({ kind: "session", session });
     const client = new Client({ name: "availability-test", version: "1" });
     const [clientTransport, serverTransport] =
       InMemoryTransport.createLinkedPair();
@@ -285,7 +274,7 @@ describe("active-target availability over MCP", () => {
         name: "inspect_macho",
         arguments: {},
       });
-      expect(call.structuredContent).toMatchObject({
+      expect(parseMcpToolError(call)).toMatchObject({
         error: { code: "target_unavailable" },
       });
       await openTarget(client, plist);
@@ -369,6 +358,7 @@ const assertLiveIdentity = async (client: Client): Promise<void> => {
         },
         client: { name: "identity-test", version: "9" },
         negotiated_protocol_version: expect.any(String),
+        catalog: CATALOG_IDENTITY,
         alignment: { state: "unknown" },
       },
     },

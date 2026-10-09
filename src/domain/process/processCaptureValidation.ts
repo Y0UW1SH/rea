@@ -1,6 +1,7 @@
-import type { UnverifiedProcessCapture } from "./processCapture.js";
 import { digestProcessCommitment } from "./processScenario.js";
+import { hasCaptureTruncation } from "./processCaptureCoverage.js";
 
+import type { UnverifiedProcessCapture } from "./processCapture.js";
 /** One pure semantic validation failure in a shaped process capture. */
 export interface ProcessCaptureValidationIssue {
   readonly path: string;
@@ -26,17 +27,8 @@ const validateCommitments = (
   require: RequireInvariant,
 ): void => {
   const { manifest } = capture;
-  if (manifest.legacy_executable_sha256 !== undefined) {
-    require(manifest.selected_executable_sha256 === null &&
-      manifest.executable_sha256 === null &&
-      manifest.executable_identity.state === "unknown" &&
-      manifest.executable_identity.reason !== null &&
-      manifest.scenario.executable_sha256 ===
-        manifest.legacy_executable_sha256, "manifest.legacy_executable_sha256", "legacy executable digest must remain distinct from unknown selected and launch digests");
-  } else {
-    require(manifest.scenario.executable_sha256 ===
-      manifest.selected_executable_sha256, "manifest.selected_executable_sha256", "selected executable commitment does not match the scenario projection");
-  }
+  require(manifest.scenario.executable_sha256 ===
+    manifest.selected_executable_sha256, "manifest.selected_executable_sha256", "selected executable commitment does not match the scenario projection");
   require(manifest.executable_identity.state === "path_metadata_unchanged"
     ? manifest.executable_sha256 === manifest.selected_executable_sha256 &&
         manifest.executable_identity.reason === null
@@ -82,7 +74,7 @@ const validateEventJournal = (
   capture: UnverifiedProcessCapture,
   require: RequireInvariant,
 ): void => {
-  const journal = capture.event_journal ?? [];
+  const journal = capture.event_journal;
   if (journal.length === 0) return;
   const sizes = {
     frames: capture.frames.length,
@@ -130,6 +122,102 @@ const validateLifecycle = (
       null, "exit", "deadline termination cannot declare a normal exit code");
 };
 
+const validateCoverage = (
+  capture: UnverifiedProcessCapture,
+  require: RequireInvariant,
+): void => {
+  const details = capture.truncation_details;
+  require(details.process.retained_samples === capture.process_samples.length &&
+    details.process.retained_samples <= details.process.sample_limit &&
+    details.process.sampling_partial ===
+      (details.process.sample_limit_reached ||
+        details.process.sampling_failures > 0) &&
+    (details.process.sampling_failures === 0) ===
+      (details.process.first_sampling_failure ===
+        null), "truncation_details.process", "sampling coverage must agree with retained samples and observed failures");
+  require(capture.truncated ===
+    hasCaptureTruncation(
+      details,
+    ), "truncation_details", "aggregate truncation must match producer coverage");
+  for (const [name, retention, count, bytes] of [
+    [
+      "raw_terminal",
+      details.raw_terminal,
+      capture.frames.length,
+      capture.frames.reduce(
+        (total, frame) =>
+          total + Buffer.byteLength(frame.raw_data ?? frame.data),
+        0,
+      ),
+    ],
+    [
+      "rendered_terminal",
+      details.rendered_terminal,
+      capture.rendered_frames.length,
+      capture.rendered_frames.reduce(
+        (total, frame) =>
+          frame.lines.reduce(
+            (sum, line) => sum + Buffer.byteLength(line),
+            total + Buffer.byteLength(frame.serialized_state),
+          ),
+        0,
+      ),
+    ],
+  ] as const) {
+    // Whole frames are retained or omitted, so retained bytes are exactly the
+    // retained frames' bytes, and nothing is unretained when no frame was omitted.
+    require(retention.retained_frames === count &&
+      retention.observed_frames >= count &&
+      retention.retained_bytes === bytes &&
+      retention.observed_bytes >= retention.retained_bytes &&
+      (retention.observed_frames > count ||
+        retention.observed_bytes === retention.retained_bytes) &&
+      retention.retained_bytes <=
+        retention.budget_bytes, `truncation_details.${name}`, "retained observations and budget accounting do not agree");
+  }
+  for (const [name, coverage, files, checkpoint] of [
+    [
+      "filesystem_before",
+      details.filesystem_before,
+      capture.files_before,
+      capture.filesystem_checkpoints[0],
+    ],
+    [
+      "filesystem_after",
+      details.filesystem_after,
+      capture.files_after,
+      capture.filesystem_checkpoints[1],
+    ],
+  ] as const) {
+    const unhashedFiles = new Map(
+      files
+        .filter((file) => file.type === "file" && file.sha256 === null)
+        .map((file) => [file.path, file]),
+    );
+    require(coverage.hash_omissions.length === unhashedFiles.size &&
+      new Set(coverage.hash_omissions.map(({ path }) => path)).size ===
+        unhashedFiles.size &&
+      coverage.hash_omissions.every(
+        (omission) =>
+          unhashedFiles.get(omission.path)?.size === omission.size_bytes &&
+          omission.remaining_budget_bytes <= coverage.hash_budget_bytes,
+      ), `truncation_details.${name}.hash_omissions`, "every retained regular file without a digest must have one matching omission reason");
+    require(coverage.hashed_bytes ===
+      files
+        .filter((file) => file.type === "file" && file.sha256 !== null)
+        .reduce((sum, file) => sum + file.size, 0) &&
+      coverage.hashed_bytes <= coverage.hash_budget_bytes &&
+      files.length <=
+        coverage.files_limit, `truncation_details.${name}`, "filesystem budget accounting does not match retained observations");
+    require(coverage.enumeration_truncated ===
+      coverage.enumeration_reasons.length > 0 &&
+      checkpoint?.truncated ===
+        (coverage.enumeration_truncated ||
+          coverage.hash_omissions.length >
+            0), `truncation_details.${name}`, "filesystem checkpoint truncation must match enumeration and digest coverage");
+  }
+};
+
 /** Recompute commitments and cross-field invariants without side effects. */
 export const collectProcessCaptureIssues = (
   capture: UnverifiedProcessCapture,
@@ -142,5 +230,6 @@ export const collectProcessCaptureIssues = (
   validateOrdering(capture, require);
   validateEventJournal(capture, require);
   validateLifecycle(capture, require);
+  validateCoverage(capture, require);
   return issues;
 };

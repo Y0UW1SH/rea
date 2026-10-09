@@ -1,3 +1,4 @@
+import { analysisErrorWithCleanupFailure } from "../application/binary/AnalysisClientCleanup.js";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -6,9 +7,9 @@ import {
   type AnalysisClientContext,
   type AnalysisOperation,
 } from "../application/AnalysisProvider.js";
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from "../config/types.js";
 import type { AnalysisProfileCommitment } from "../domain/analysisProfile.js";
-import type { BinaryTarget } from "../domain/binaryTarget.js";
+import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import {
   AnalysisCancelledError,
   AnalysisArtifactChangedError,
@@ -21,7 +22,7 @@ import {
 import { type AnalysisError } from "../domain/analysisErrorBase.js";
 import { ProviderAdapterError } from "../domain/providerAdapterError.js";
 import { err, ok, type Result } from "../domain/result.js";
-import type { Logger } from "../logger.js";
+import type { Logger } from "pino";
 import { GhidraClient } from "./GhidraClient.js";
 import type { GhidraClientOptions } from "./GhidraClientTypes.js";
 import {
@@ -69,6 +70,7 @@ export type GhidraProviderClientFactory = (
 /** Build one AnalysisClient for an admitted Ghidra target and profile. */
 export const createGhidraProviderClient = (input: {
   readonly config: AppConfig;
+  readonly environment: Readonly<NodeJS.ProcessEnv>;
   readonly logger: Logger;
   readonly clientFactory: GhidraProviderClientFactory;
   readonly target: BinaryTarget;
@@ -134,6 +136,7 @@ export const createGhidraProviderClient = (input: {
     startupTimeoutMs: config.ghidraStartupTimeoutMs,
     platform: installation.platform,
     launcher: new GhidraHeadlessLauncher({
+      environment: input.environment,
       analyzeHeadlessPath: prerequisites.value.analyzeHeadlessPath,
       javaHome: prerequisites.value.javaHome,
       bridgeScriptPath: fileURLToPath(
@@ -174,8 +177,14 @@ export const createGhidraProviderClient = (input: {
       operation,
     );
     if (extensionFailure === undefined) return undefined;
-    await client.close();
-    return extensionFailure;
+    const closed = await client.close();
+    return closed.ok
+      ? extensionFailure
+      : analysisErrorWithCleanupFailure(
+          extensionFailure,
+          closed.error,
+          operation,
+        );
   };
   const releaseLimitation = unverifiedGhidraBuildLimitation(
     prerequisites.value.providerVersion,
@@ -338,10 +347,29 @@ const ghidraClientPrerequisites = (
 
 const unavailableClient = (failure: AnalysisError): AnalysisClient => ({
   execute: () => Promise.resolve(err(failure)),
-  close: () => Promise.resolve(),
+  close: () => Promise.resolve(ok(null)),
 });
 
 const projectSessionError = (
+  operation: AnalysisOperation,
+  failure: GhidraSessionError,
+  startupTimeoutMs: number,
+): AnalysisError => {
+  const primary = projectPrimarySessionError(
+    operation,
+    failure,
+    startupTimeoutMs,
+  );
+  return failure.cleanupFailure === undefined
+    ? primary
+    : analysisErrorWithCleanupFailure(
+        primary,
+        failure.cleanupFailure,
+        operation,
+      );
+};
+
+const projectPrimarySessionError = (
   operation: AnalysisOperation,
   failure: GhidraSessionError,
   startupTimeoutMs: number,

@@ -10,7 +10,7 @@ import {
   observeJavaScriptRuntime,
 } from "../../../src/application/javascript/JavaScriptRuntimeObservationService.js";
 import { reconcileJavaScriptRuntimeEvidence } from "../../../src/application/javascript/JavaScriptRuntimeReconciliationService.js";
-import { V8_INSPECTOR_PROVIDER_IDENTITY } from "../../../src/inspector/V8InspectorProvider.js";
+import { V8_INSPECTOR_PROVIDER_IDENTITY } from "../../../src/inspector/providerIdentity.js";
 import { V8InspectorProvider } from "../../../src/inspector/V8InspectorProvider.js";
 import { JAVASCRIPT_RUNTIME_RECONCILIATION_EXAMPLE } from "../../../src/contracts/javascript/javascriptRuntimeReconciliationExample.js";
 import type {
@@ -22,65 +22,80 @@ import { javascriptRuntimeReconciliationResultSchema } from "../../../src/domain
 import { startFakeV8Inspector } from "../../fixtures/inspector/fakeV8Inspector.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
-describe("passive V8 Inspector provider", () => {
-  test("rejects unknown runtime observation fields", () => {
-    expect(
-      observeJavaScriptRuntimeInputSchema.safeParse({
-        inspector_endpoint: "http://127.0.0.1:9229",
-        target_id: "target-1",
-        unknown_field: true,
-      }).success,
-    ).toBe(false);
-  });
-
-  test("returns every target exposed by the selected Inspector endpoint inline", async () => {
-    const fixture = await runtimeFixture();
-    const fake = await startFakeV8Inspector({
-      targetUrl: pathToFileURL(fixture.entry).href,
-      additionalTargetCount: 205,
-    });
-    try {
-      const listed = await new V8InspectorProvider().listTargets({
-        inspector_endpoint: fake.endpoint,
+describe("Inspector execution-context lifecycle metadata", () => {
+  test.each([
+    [
+      "Runtime.executionContextDestroyed",
+      { executionContextId: 1 },
+      "destroyed",
+    ],
+    ["Runtime.executionContextsCleared", {}, "cleared"],
+  ] as const)(
+    "preserves observed context metadata after %s",
+    async (method, params, state) => {
+      const fixture = await runtimeFixture();
+      const fake = await startFakeV8Inspector({
+        targetUrl: pathToFileURL(fixture.entry).href,
+        runtimeEvents: [
+          {
+            method: "Runtime.executionContextCreated",
+            params: {
+              context: {
+                id: 1,
+                origin: "https://context.example",
+                name: "worker#one",
+              },
+            },
+          },
+          { method, params },
+        ],
       });
-      if (!listed.ok) throw listed.error;
-      expect(listed.value.targets).toHaveLength(206);
-      expect(listed.value.targets[0]?.target_id).toBe(fake.targetId);
-    } finally {
-      await fake.close();
-    }
-  });
+      try {
+        const result = await new V8InspectorProvider().observe(
+          observeInput(fake.endpoint, fake.targetId, "node"),
+        );
+        if (!result.ok) throw result.error;
+        expect(result.value.execution_contexts).toEqual([
+          {
+            context_key: "1",
+            state,
+            name: "worker#one",
+            origin: "https://context.example",
+          },
+        ]);
+      } finally {
+        await fake.close();
+      }
+    },
+  );
 
-  test("includes targets outside the old caller root filter", async () => {
+  test("replaces context metadata only when a new context creation is observed", async () => {
     const fixture = await runtimeFixture();
-    const outside = await temporaryFile("outside.js");
     const fake = await startFakeV8Inspector({
       targetUrl: pathToFileURL(fixture.entry).href,
-      additionalTargetUrl: pathToFileURL(outside).href,
-    });
-    try {
-      const result = await new V8InspectorProvider().listTargets({
-        inspector_endpoint: fake.endpoint,
-      });
-      if (!result.ok) throw result.error;
-      expect(result.value.targets).toHaveLength(2);
-      expect(
-        result.value.targets.map(({ location }) => location),
-      ).toContainEqual(expect.objectContaining({ file_path: outside }));
-    } finally {
-      await fake.close();
-    }
-  });
-
-  test("captures complete metadata with two enable commands", async () => {
-    const fixture = await runtimeFixture();
-    const outside = await temporaryFile("secret.js");
-    const fake = await startFakeV8Inspector({
-      targetUrl: pathToFileURL(fixture.entry).href,
-      scriptUrls: [
-        pathToFileURL(fixture.entry).href,
-        "node:fs",
-        pathToFileURL(outside).href,
+      runtimeEvents: [
+        {
+          method: "Runtime.executionContextCreated",
+          params: {
+            context: {
+              id: 1,
+              origin: "https://old.example",
+              name: "old context",
+            },
+          },
+        },
+        {
+          method: "Runtime.executionContextDestroyed",
+          params: { executionContextId: 1 },
+        },
+        {
+          method: "Runtime.executionContextCreated",
+          params: { context: { id: 1, origin: "", name: "" } },
+        },
+        {
+          method: "Runtime.executionContextDestroyed",
+          params: { executionContextId: 2 },
+        },
       ],
     });
     try {
@@ -88,77 +103,151 @@ describe("passive V8 Inspector provider", () => {
         observeInput(fake.endpoint, fake.targetId, "node"),
       );
       if (!result.ok) throw result.error;
-      expect(result.value.scripts.items).toHaveLength(3);
-      expect(result.value.scripts.excluded.unsupported_location).toBe(0);
       expect(result.value.execution_contexts).toEqual([
-        {
-          context_key: "1",
-          state: "created",
-          name: null,
-          origin: null,
-        },
+        { context_key: "1", state: "created", name: "", origin: "" },
+        { context_key: "2", state: "destroyed", name: null, origin: null },
       ]);
-      expect(new Set(fake.commands.map(({ method }) => method))).toEqual(
-        new Set(["Runtime.enable", "Debugger.enable"]),
-      );
-      expect(JSON.stringify(result.value)).toContain(outside);
-      expect(result.value.unavailable_without_instrumentation).toContain(
-        "Electron IPC messages and handlers",
-      );
     } finally {
       await fake.close();
     }
   });
+});
 
-  test("excludes an Electron main target that reports only bare file://", async () => {
+test("rejects unknown runtime observation fields", () => {
+  expect(
+    observeJavaScriptRuntimeInputSchema.safeParse({
+      inspector_endpoint: "http://127.0.0.1:9229",
+      target_id: "target-1",
+      unknown_field: true,
+    }).success,
+  ).toBe(false);
+});
+
+test("returns every target exposed by the selected Inspector endpoint inline", async () => {
+  const fixture = await runtimeFixture();
+  const fake = await startFakeV8Inspector({
+    targetUrl: pathToFileURL(fixture.entry).href,
+    additionalTargetCount: 205,
+  });
+  try {
+    const listed = await new V8InspectorProvider().listTargets({
+      inspector_endpoint: fake.endpoint,
+    });
+    if (!listed.ok) throw listed.error;
+    expect(listed.value.targets).toHaveLength(206);
+    expect(listed.value.targets[0]?.target_id).toBe(fake.targetId);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("includes targets outside the old caller root filter", async () => {
+  const fixture = await runtimeFixture();
+  const outside = await temporaryFile("outside.js");
+  const fake = await startFakeV8Inspector({
+    targetUrl: pathToFileURL(fixture.entry).href,
+    additionalTargetUrl: pathToFileURL(outside).href,
+  });
+  try {
+    const result = await new V8InspectorProvider().listTargets({
+      inspector_endpoint: fake.endpoint,
+    });
+    if (!result.ok) throw result.error;
+    expect(result.value.targets).toHaveLength(2);
+    expect(result.value.targets.map(({ location }) => location)).toContainEqual(
+      expect.objectContaining({ file_path: outside }),
+    );
+  } finally {
+    await fake.close();
+  }
+});
+
+test("captures complete metadata with two enable commands", async () => {
+  const fixture = await runtimeFixture();
+  const outside = await temporaryFile("secret.js");
+  const fake = await startFakeV8Inspector({
+    targetUrl: pathToFileURL(fixture.entry).href,
+    scriptUrls: [
+      pathToFileURL(fixture.entry).href,
+      "node:fs",
+      pathToFileURL(outside).href,
+    ],
+  });
+  try {
+    const result = await new V8InspectorProvider().observe(
+      observeInput(fake.endpoint, fake.targetId, "node"),
+    );
+    if (!result.ok) throw result.error;
+    expect(result.value.scripts.items).toHaveLength(3);
+    expect(result.value.scripts.excluded.unsupported_location).toBe(0);
+    expect(result.value.execution_contexts).toEqual([
+      {
+        context_key: "1",
+        state: "created",
+        name: "node[fixture]",
+        origin: "",
+      },
+    ]);
+    expect(new Set(fake.commands.map(({ method }) => method))).toEqual(
+      new Set(["Runtime.enable", "Debugger.enable"]),
+    );
+    expect(JSON.stringify(result.value)).toContain(outside);
+    expect(result.value.unavailable_without_instrumentation).toContain(
+      "Electron IPC messages and handlers",
+    );
+  } finally {
+    await fake.close();
+  }
+});
+
+test("excludes an Electron main target that reports only bare file://", async () => {
+  const fixture = await runtimeFixture();
+  const fake = await startFakeV8Inspector({
+    targetUrl: "file://",
+    scriptUrls: [pathToFileURL(fixture.entry).href],
+  });
+  try {
+    const provider = new V8InspectorProvider();
+    const listed = await provider.listTargets({
+      inspector_endpoint: fake.endpoint,
+    });
+    if (!listed.ok) throw listed.error;
+    expect(listed.value.targets).toEqual([]);
+
+    const observed = await provider.observe(
+      observeInput(fake.endpoint, fake.targetId, "electron-main"),
+    );
+    expect(observed.ok).toBe(false);
+    if (observed.ok) return;
+    expect(observed.error.message).toMatch(/target/u);
+  } finally {
+    await fake.close();
+  }
+});
+
+test.each([
+  ["node", "node"],
+  ["electron-main", "node"],
+  ["electron-preload", "page"],
+  ["electron-renderer", "page"],
+] as const)(
+  "admits declared %s only on its protocol target family",
+  async (runtimeKind, targetType) => {
     const fixture = await runtimeFixture();
     const fake = await startFakeV8Inspector({
-      targetUrl: "file://",
-      scriptUrls: [pathToFileURL(fixture.entry).href],
+      targetUrl: pathToFileURL(fixture.entry).href,
+      targetType,
     });
     try {
-      const provider = new V8InspectorProvider();
-      const listed = await provider.listTargets({
-        inspector_endpoint: fake.endpoint,
-      });
-      if (!listed.ok) throw listed.error;
-      expect(listed.value.targets).toEqual([]);
-
-      const observed = await provider.observe(
-        observeInput(fake.endpoint, fake.targetId, "electron-main"),
+      const result = await new V8InspectorProvider().observe(
+        observeInput(fake.endpoint, fake.targetId, runtimeKind),
       );
-      expect(observed.ok).toBe(false);
-      if (observed.ok) return;
-      expect(observed.error.message).toMatch(/target/u);
+      expect(result.ok).toBe(true);
     } finally {
       await fake.close();
     }
-  });
-
-  test.each([
-    ["node", "node"],
-    ["electron-main", "node"],
-    ["electron-preload", "page"],
-    ["electron-renderer", "page"],
-  ] as const)(
-    "admits declared %s only on its protocol target family",
-    async (runtimeKind, targetType) => {
-      const fixture = await runtimeFixture();
-      const fake = await startFakeV8Inspector({
-        targetUrl: pathToFileURL(fixture.entry).href,
-        targetType,
-      });
-      try {
-        const result = await new V8InspectorProvider().observe(
-          observeInput(fake.endpoint, fake.targetId, runtimeKind),
-        );
-        expect(result.ok).toBe(true);
-      } finally {
-        await fake.close();
-      }
-    },
-  );
-});
+  },
+);
 
 describe("complete Inspector script hashes", () => {
   test("keeps more than one hundred long script hashes distinct", async () => {
@@ -385,6 +474,75 @@ describe("passive V8 Inspector evidence", () => {
     expect(result.runtime_captures[0]?.kind).toBe("v8-inspector");
     expect(result.summary.runtime_scripts).toBe(1);
     expect(result.summary.matched).toBeGreaterThan(0);
+  });
+
+  test("keeps unverified partial script URLs unresolved during reconciliation", () => {
+    const rawUrl = "file:///tmp/not-verified.js?caller-value=kept";
+    const resolvedObservation = runtimeObservation(
+      "/Applications/Example.app/Contents/Resources/app/index.html",
+      "/Applications/Example.app/Contents/Resources/app/renderer.js",
+    );
+    const resolvedScript = resolvedObservation.scripts.items[0];
+    if (resolvedScript === undefined)
+      throw new Error("Expected the runtime fixture to have one script");
+    const observation: JavaScriptRuntimeObservation = {
+      ...resolvedObservation,
+      scripts: {
+        ...resolvedObservation.scripts,
+        items: [
+          ...resolvedObservation.scripts.items.map((script) => ({
+            ...script,
+            location: {
+              kind: "unresolved" as const,
+              reported_url: rawUrl,
+              reason: "location-authorization-not-attempted" as const,
+            },
+          })),
+          {
+            ...resolvedScript,
+            script_key: `v8_script_${"5".repeat(64)}`,
+            location: {
+              kind: "unresolved",
+              reported_url: "",
+              reason: "location-authorization-not-attempted",
+            },
+            cdp_hash: null,
+            length: 0,
+          },
+        ],
+      },
+    };
+    const runtimeEvidence = createJavaScriptRuntimeObservationEvidence(
+      "observe_javascript_runtime",
+      {
+        inspector_endpoint: "http://127.0.0.1:9229",
+        target_id: "example-v8-target",
+        runtime_kind: "electron-main",
+        observation_ms: 100,
+      },
+      observation,
+      V8_INSPECTOR_PROVIDER_IDENTITY,
+    );
+
+    const reconciled = reconcileJavaScriptRuntimeEvidence({
+      static_layers: JAVASCRIPT_RUNTIME_RECONCILIATION_EXAMPLE.static_layers,
+      runtime_observations: [runtimeEvidence],
+    });
+    if (!reconciled.ok) throw reconciled.error;
+    const result = javascriptRuntimeReconciliationResultSchema.parse(
+      reconciled.value.normalized_result,
+    );
+    expect(result.summary.runtime_scripts).toBe(2);
+    expect(result.reconciliations).toContainEqual(
+      expect.objectContaining({
+        entity_kind: "script",
+        status: "unknown",
+        reason: "runtime-location-unresolved",
+      }),
+    );
+    expect(JSON.stringify(result.graph)).toContain(rawUrl);
+    expect(JSON.stringify(result.graph)).toContain("v8-hash");
+    expect(JSON.stringify(result.graph)).toContain('"reported_url":""');
   });
 });
 

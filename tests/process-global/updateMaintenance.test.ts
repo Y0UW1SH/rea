@@ -31,6 +31,10 @@ beforeEach(async () => {
     SAND_DATA_ROOT: join(home, ".grokbot"),
     XDG_CONFIG_HOME: join(home, ".config"),
     OPENCODE_CONFIG: join(home, ".config", "opencode", "opencode.jsonc"),
+    OMP_PROFILE: undefined,
+    PI_CODING_AGENT_DIR: undefined,
+    PI_CONFIG_DIR: undefined,
+    PI_PROFILE: undefined,
   }))
     vi.stubEnv(name, value);
 });
@@ -75,6 +79,29 @@ const action = {
   commands: ["rea mcp"],
 };
 
+describe("OMP integration maintenance", () => {
+  it("refreshes an OMP entry that enabledServers forces on", async () => {
+    const entry = { type: "stdio", command: entryPoint, args: ["mcp"] };
+    await writeClient(
+      "omp",
+      JSON.stringify({ mcpServers: { rea: { ...entry, enabled: false } } }),
+    );
+    await expect(
+      existingMaintenanceScope(home, entryPoint, process.env),
+    ).resolves.toMatchObject({ clients: [] });
+    await writeClient(
+      "omp",
+      JSON.stringify({
+        mcpServers: { rea: { ...entry, enabled: false } },
+        enabledServers: ["rea"],
+      }),
+    );
+    await expect(
+      existingMaintenanceScope(home, entryPoint, process.env),
+    ).resolves.toMatchObject({ clients: ["omp"] });
+  });
+});
+
 describe("existing REA integration maintenance", () => {
   it("selects owned registrations while preserving unconfigured, foreign, and disabled choices", async () => {
     await writeClient("codex", staleCodex);
@@ -93,19 +120,25 @@ describe("existing REA integration maintenance", () => {
         servers: { rea: { type: "stdio", command: entryPoint, args: ["mcp"] } },
       }),
     );
-    await expect(existingMaintenanceScope(home, entryPoint)).resolves.toEqual({
+    await expect(
+      existingMaintenanceScope(home, entryPoint, process.env),
+    ).resolves.toEqual({
       clients: ["codex", "vscode"],
       skill: false,
     });
   });
 
   it("does not install a missing skill or overwrite an unrelated skill", async () => {
-    await expect(existingMaintenanceScope(home, entryPoint)).resolves.toEqual({
+    await expect(
+      existingMaintenanceScope(home, entryPoint, process.env),
+    ).resolves.toEqual({
       clients: [],
       skill: false,
     });
     await writeSkill("---\nname: another-skill\n---\nUser-authored content\n");
-    await expect(existingMaintenanceScope(home, entryPoint)).resolves.toEqual({
+    await expect(
+      existingMaintenanceScope(home, entryPoint, process.env),
+    ).resolves.toEqual({
       clients: [],
       skill: false,
     });
@@ -116,7 +149,9 @@ describe("existing REA integration maintenance", () => {
       `---\nname: ${PRODUCT_IDENTITY.skillName}\nmetadata:\n  version: "1"\n---\n# REA\n`,
     );
     const original = await readFile(path, "utf8");
-    await expect(existingMaintenanceScope(home, entryPoint)).resolves.toEqual({
+    await expect(
+      existingMaintenanceScope(home, entryPoint, process.env),
+    ).resolves.toEqual({
       clients: [],
       skill: true,
     });
@@ -128,6 +163,7 @@ describe("existing REA integration maintenance", () => {
     const result = await planIntegrationMaintenance(
       home,
       entryPoint,
+      process.env,
       async () => {
         invoked = true;
         return err("Unexpected setup");
@@ -143,6 +179,7 @@ describe("existing REA integration maintenance", () => {
     const result = await planIntegrationMaintenance(
       home,
       entryPoint,
+      process.env,
       async (command) => {
         recorded.push([...command]);
         return ok(
@@ -184,8 +221,11 @@ describe("existing REA integration maintenance", () => {
   ])("rejects malformed or out-of-scope subprocess plans", async (output) => {
     await writeClient("codex", staleCodex);
     expect(
-      await planIntegrationMaintenance(home, entryPoint, async () =>
-        ok(output),
+      await planIntegrationMaintenance(
+        home,
+        entryPoint,
+        process.env,
+        async () => ok(output),
       ),
     ).toMatchObject({ status: "unavailable" });
   });
@@ -193,15 +233,20 @@ describe("existing REA integration maintenance", () => {
   it("preserves actual setup failure diagnostics", async () => {
     await writeClient("codex", staleCodex);
     expect(
-      await planIntegrationMaintenance(home, entryPoint, async () =>
-        err("EACCES /test/.codex/config.toml"),
+      await planIntegrationMaintenance(
+        home,
+        entryPoint,
+        process.env,
+        async () => err("EACCES /test/.codex/config.toml"),
       ),
     ).toEqual({
       status: "unavailable",
       remediation: "EACCES /test/.codex/config.toml",
     });
   });
+});
 
+describe("updated executable maintenance planning", () => {
   it("runs real setup as a noninteractive dry run and creates no new integrations or backups", async () => {
     const configPath = await writeClient("codex", staleCodex);
     const untouched = await writeClient("claude_code", '{"mcpServers":{}}');
@@ -209,7 +254,8 @@ describe("existing REA integration maintenance", () => {
     const result = await planIntegrationMaintenance(
       home,
       entryPoint,
-      runUpdateCommand,
+      process.env,
+      (command) => runUpdateCommand(command, process.env),
     );
     expect(result).toMatchObject({
       status: "planned",
@@ -231,44 +277,50 @@ describe("existing REA integration maintenance", () => {
 
 describe("update subprocess boundaries", () => {
   it("exposes update as the sole CLI command", async () => {
-    const help = await runUpdateCommand([
-      process.execPath,
-      entryPoint,
-      "--help",
-    ]);
+    const help = await runUpdateCommand(
+      [process.execPath, entryPoint, "--help"],
+      process.env,
+    );
     expect(help.ok).toBe(true);
     if (help.ok) {
       expect(help.value).toMatch(/^\s{2}update\s/mu);
       expect(help.value).not.toMatch(/^\s{2}upgrade\s/mu);
     }
-    const removed = await runUpdateCommand([
-      process.execPath,
-      entryPoint,
-      "upgrade",
-      "--json",
-    ]);
+    const removed = await runUpdateCommand(
+      [process.execPath, entryPoint, "upgrade", "--json"],
+      process.env,
+    );
     expect(removed.ok).toBe(false);
   });
   it("captures output through stream closure and keeps arguments literal", async () => {
     const literal = 'space and $(echo bad); & | "quotes"';
-    const result = await runUpdateCommand([
-      process.execPath,
-      "-e",
-      'process.stdout.write("x".repeat(1024 * 1024) + process.argv[1])',
-      literal,
-    ]);
+    const result = await runUpdateCommand(
+      [
+        process.execPath,
+        "-e",
+        'process.stdout.write("x".repeat(1024 * 1024) + process.argv[1])',
+        literal,
+      ],
+      process.env,
+    );
     expect(result).toEqual(ok(`${"x".repeat(1024 * 1024)}${literal}`));
   });
 
   it("reports actual stderr and launch failures", async () => {
     await expect(
-      runUpdateCommand([
-        process.execPath,
-        "-e",
-        'process.stderr.write("EACCES /test/install"); process.exitCode = 2',
-      ]),
+      runUpdateCommand(
+        [
+          process.execPath,
+          "-e",
+          'process.stderr.write("EACCES /test/install"); process.exitCode = 2',
+        ],
+        process.env,
+      ),
     ).resolves.toEqual(err("EACCES /test/install"));
-    const missing = await runUpdateCommand([join(home, "missing-executable")]);
+    const missing = await runUpdateCommand(
+      [join(home, "missing-executable")],
+      process.env,
+    );
     expect(missing).toMatchObject({ ok: false });
     if (!missing.ok) expect(missing.error).toContain("ENOENT");
   });

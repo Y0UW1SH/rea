@@ -6,6 +6,7 @@ import { PRODUCT_IDENTITY } from "../identity.js";
 import { isOwnedClientRegistrationCommand } from "./ClientRegistrationIdentity.js";
 import { readClientRegistrationStatuses } from "./ClientRegistrationStatus.js";
 import {
+  clientServerForcedEnabled,
   effectiveClientServer,
   parseClientConfiguration,
 } from "./ClientConfigurationDocument.js";
@@ -51,9 +52,12 @@ const setupPlanSchema = z.object({
 export const existingMaintenanceScope = async (
   home: string,
   entryPoint: string,
+  environment: Readonly<NodeJS.ProcessEnv>,
 ): Promise<MaintenanceScope> => {
-  const registrations = await readClientRegistrationStatuses(home, entryPoint);
-  const supported = supportedClients(home);
+  const registrations = await readClientRegistrationStatuses(home, entryPoint, {
+    environment,
+  });
+  const supported = supportedClients(home, process.platform, environment);
   const clients: string[] = [];
   for (const registration of registrations) {
     if (
@@ -73,7 +77,12 @@ export const existingMaintenanceScope = async (
         disabled: z.boolean().optional(),
       })
       .parse(effectiveClientServer(parsed, PRODUCT_IDENTITY.mcpServerKey));
-    if (enabled.enabled !== false && enabled.disabled !== true)
+    // OMP's enabledServers allowlist runs an entry marked `enabled: false`.
+    if (
+      (enabled.enabled !== false ||
+        clientServerForcedEnabled(parsed, PRODUCT_IDENTITY.mcpServerKey)) &&
+      enabled.disabled !== true
+    )
       clients.push(client.name);
   }
   let skill = false;
@@ -96,10 +105,11 @@ export const existingMaintenanceScope = async (
 export const planIntegrationMaintenance = async (
   home: string,
   entryPoint: string,
+  environment: Readonly<NodeJS.ProcessEnv>,
   execute: (command: readonly string[]) => Promise<Result<string, string>>,
 ): Promise<IntegrationMaintenance> => {
   try {
-    const scope = await existingMaintenanceScope(home, entryPoint);
+    const scope = await existingMaintenanceScope(home, entryPoint, environment);
     if (scope.clients.length === 0 && !scope.skill)
       return { status: "current", plannedActions: [] };
     const command = [

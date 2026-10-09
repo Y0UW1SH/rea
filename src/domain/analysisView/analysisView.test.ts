@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 
+import { resolveJavaScriptSourceMapReference } from "../javascript/javascriptSourceMapPaths.js";
 import { JAVASCRIPT_APPLICATION_EVIDENCE_EXAMPLE } from "../../contracts/javascript/javascriptRuntimeReconciliationExample.js";
 import {
   analysisViewBindJavaScriptGraphs,
@@ -19,13 +20,15 @@ import {
 } from "../javascript/javascriptSemanticGraph.js";
 import {
   completeWithinViewCoverage,
-  inspectAnalysisViewInputSchema,
   pageViewCoverage,
+} from "./analysisViewCoverage.js";
+import { javascriptModulePath } from "./javascriptApplicationView.js";
+
+import {
+  inspectAnalysisViewInputSchema,
   projectAnalysisView,
   type AnalysisViewParent,
 } from "./analysisView.js";
-import { javascriptModulePath } from "./javascriptApplicationView.js";
-
 const layoutParent = (): AnalysisViewParent => {
   const evidence = analysisViewLayoutEvidence();
   return {
@@ -282,6 +285,7 @@ it("pages actual modules, including unknown and empty paths, without unrelated r
           kind === "source-module"
             ? {
                 strategy: "source-map-original",
+                source_root: null,
                 stability: "source-map-exact",
                 original_source: "",
                 source_map_sha256: "c".repeat(64),
@@ -297,6 +301,15 @@ it("pages actual modules, including unknown and empty paths, without unrelated r
                 }
               : original.identity,
         observations: original.observations.map((observation) => ({
+          ...(kind === "source-module"
+            ? {
+                source_map_reference: resolveJavaScriptSourceMapReference(
+                  "",
+                  null,
+                  "renderer.js",
+                ),
+              }
+            : {}),
           label: observation.label,
           properties: {},
           evidence:

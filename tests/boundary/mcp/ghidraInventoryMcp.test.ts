@@ -1,3 +1,4 @@
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { expect, it } from "vitest";
 import { jsonValueSchema } from "../../../src/domain/jsonValue.js";
 import { ok } from "../../../src/domain/result.js";
@@ -22,7 +23,9 @@ it("rejects contradictory provider output before emitting MCP Evidence", async (
       arguments: { address: bytes.address, length: 4 },
     });
     expect(accepted.isError).not.toBe(true);
-    expect(accepted.structuredContent).toMatchObject({ result: bytes });
+    expect(accepted.structuredContent).toMatchObject({
+      normalized_result: bytes,
+    });
     const cases = [
       ...[
         { complete: true },
@@ -98,11 +101,11 @@ it("rejects contradictory provider output before emitting MCP Evidence", async (
         arguments: probe.arguments,
       });
       expect(rejected.isError, probe.name).toBe(true);
-      expect(rejected.structuredContent).toMatchObject({
+      expect(parseMcpToolError(rejected)).toMatchObject({
         error: { code: "unreadable_output" },
       });
-      expect(rejected.structuredContent).not.toHaveProperty("evidence_id");
-      expect(rejected.structuredContent).not.toHaveProperty("result");
+      expect(parseMcpToolError(rejected)).not.toHaveProperty("evidence_id");
+      expect(parseMcpToolError(rejected)).not.toHaveProperty("result");
     }
   } finally {
     await harness.close();

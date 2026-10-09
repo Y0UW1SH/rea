@@ -1,3 +1,4 @@
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { afterEach, expect, it } from "vitest";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -6,9 +7,9 @@ import { createServer } from "../../../src/server/createServer.js";
 import {
   JAVASCRIPT_FEATURE_TRACE_EXAMPLE,
   JAVASCRIPT_APPLICATION_VERSION_COMPARISON_EXAMPLE,
-  JAVASCRIPT_EXPORT_SHAPE_COMPARISON_EXAMPLE,
   SOURCE_TO_BUNDLE_COMPARISON_EXAMPLE,
 } from "../../../src/contracts/javascript/javascriptApplicationWorkflowExamples.js";
+import { JAVASCRIPT_EXPORT_SHAPE_COMPARISON_EXAMPLE } from "../../../src/contracts/javascript/javascriptExportShapeComparisonExample.js";
 import { createEvidence, parseEvidence } from "../../../src/domain/evidence.js";
 
 const resources: Array<{ close(): Promise<unknown> }> = [];
@@ -27,7 +28,7 @@ async function connect() {
   const session = createTestBinarySession(() => {
     throw new Error("references must not launch a provider");
   });
-  const server = createServer(session, session);
+  const server = createServer({ kind: "session", session });
   const client = new Client({ name: "retained-evidence-test", version: "1" });
   resources.push(client, server, session);
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -136,15 +137,12 @@ it("keeps references session-scoped and expires them when close_binary clears th
     },
   };
   const foreign = await second.client.callTool(request);
-  expect(foreign).toMatchObject({
-    isError: true,
-    structuredContent: {
-      error: {
-        details: {
-          evidence_id: application.evidence_id,
-          reason: "missing",
-          actual: null,
-        },
+  expect(parseMcpToolError(foreign)).toMatchObject({
+    error: {
+      details: {
+        evidence_id: application.evidence_id,
+        reason: "missing",
+        actual: null,
       },
     },
   });
@@ -156,10 +154,9 @@ it("keeps references session-scoped and expires them when close_binary clears th
     arguments: {},
   });
   expect(closed.isError).not.toBe(true);
-  expect(await first.client.callTool(request)).toMatchObject({
-    isError: true,
-    structuredContent: { error: { details: { reason: "missing" } } },
-  });
+  expect(parseMcpToolError(await first.client.callTool(request))).toMatchObject(
+    { error: { details: { reason: "missing" } } },
+  );
   for (const harness of [first, second]) {
     const portable = await harness.client.callTool({
       name: "trace_application_feature",
@@ -199,12 +196,25 @@ it("preserves validation for the referenced record's operation, predicate, and s
         application: retained(record.evidence_id),
       },
     });
-    expect(response).toMatchObject({
-      isError: true,
-      structuredContent: {
-        error: { code: "invalid_request", category: "invalid_input" },
+    expect(parseMcpToolError(response)).toMatchObject({
+      error: { code: "invalid_request", category: "invalid_input" },
+    });
+  }
+  for (const reference of [
+    { evidence_id: application.evidence_id },
+    { ...retained(application.evidence_id), kind: "another-session" },
+    retained("ev_short"),
+    { ...retained(application.evidence_id), session_id: "foreign" },
+    { ...retained(application.evidence_id), normalized_result: {} },
+  ]) {
+    const rejected = await client.callTool({
+      name: "trace_application_feature",
+      arguments: {
+        ...JAVASCRIPT_FEATURE_TRACE_EXAMPLE,
+        application: reference,
       },
     });
+    expect(rejected.isError).toBe(true);
   }
   const tampered = {
     ...application,
@@ -239,6 +249,6 @@ it("projects a retained JavaScript summary without graph or semantic_graph", asy
   expect(inline.isError).not.toBe(true);
   expect(referenced.structuredContent).toEqual(inline.structuredContent);
   expect(inline.structuredContent).not.toHaveProperty(
-    "result.summary.semantic_graph",
+    "normalized_result.summary.semantic_graph",
   );
 });

@@ -1,9 +1,10 @@
 import { constants } from "node:fs";
 import { access, readFile, readdir } from "node:fs/promises";
-import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { homeDirectoryFromEnvironment } from "../config/homeDirectory.js";
+import { join } from "node:path";
 
 import { analysisErrorRemediationAction } from "../domain/analysisErrorPresentation.js";
+import { BinaryTargetError } from "../domain/configurationErrors.js";
 import { parseBinaryTarget } from "./BinaryTargetResolver.js";
 import { execFileOutput } from "../process/ExecFileOutput.js";
 import type { JsonValue } from "../domain/jsonValue.js";
@@ -76,7 +77,7 @@ export interface DoctorHost {
   readonly platform: NodeJS.Platform;
   readonly architecture: NodeJS.Architecture;
   readonly nodeVersion: string;
-  readonly homeDirectory?: string;
+  readonly homeDirectory: string;
   readonly configuredHopperPath?: string;
   readonly configuredIlspyCmdPath?: string;
   macosVersion(): Promise<string | undefined>;
@@ -287,21 +288,6 @@ const installationState = (
 ): DoctorIdentity["installations"]["state"] =>
   paths.length === 0 ? "unknown" : paths.length === 1 ? "single" : "multiple";
 
-const homeFromEnvironment = (
-  environment: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform,
-): string => {
-  const selected =
-    platform === "win32"
-      ? (environment.USERPROFILE ??
-        (environment.HOMEDRIVE !== undefined &&
-        environment.HOMEPATH !== undefined
-          ? `${environment.HOMEDRIVE}${environment.HOMEPATH}`
-          : environment.HOME))
-      : (environment.HOME ?? environment.USERPROFILE);
-  return selected ?? homedir();
-};
-
 /** Optional outer-adapter diagnostics composed without reversing dependencies. */
 export interface SystemDoctorHostOptions {
   readonly platform?: NodeJS.Platform;
@@ -322,7 +308,7 @@ export const systemDoctorHost = (
   const architecture = options.architecture ?? process.arch;
   const environment = options.environment ?? process.env;
   const hostExecFileOutput = options.execFileOutput ?? execFileOutput;
-  const homeDirectory = homeFromEnvironment(environment, platform);
+  const homeDirectory = homeDirectoryFromEnvironment(environment, platform);
   const commandEnvironment = { env: environment };
   return {
     platform,
@@ -339,10 +325,18 @@ export const systemDoctorHost = (
       readMacosVersion(hostExecFileOutput, commandEnvironment),
     linuxDistribution: readLinuxDistribution,
     async validTarget(path) {
-      return (await parseBinaryTarget(path, process.cwd(), architecture)).ok;
+      return (
+        await parseBinaryTarget(path, {
+          cwd: process.cwd(),
+          hostArchitecture: architecture,
+        })
+      ).ok;
     },
     async inspectTarget(path) {
-      const result = await parseBinaryTarget(path, process.cwd(), architecture);
+      const result = await parseBinaryTarget(path, {
+        cwd: process.cwd(),
+        hostArchitecture: architecture,
+      });
       if (result.ok)
         return {
           name: "target",
@@ -351,19 +345,21 @@ export const systemDoctorHost = (
           detail: path,
         };
       const error = result.error;
+      const targetError =
+        error instanceof BinaryTargetError ? error : undefined;
       return {
         name: "target",
         ok: false,
         classification:
-          error.constraint === "directory_requires_file"
+          targetError?.constraint === "directory_requires_file"
             ? "unsupported_target"
             : "config_drift",
         detail: path,
         details: {
-          reason: error.reason,
-          ...(error.constraint === undefined
+          reason: targetError?.reason ?? error.message,
+          ...(targetError?.constraint === undefined
             ? {}
-            : { constraint: error.constraint }),
+            : { constraint: targetError.constraint }),
         },
         remediation: analysisErrorRemediationAction(error),
       };
@@ -451,8 +447,8 @@ export const systemDoctorHost = (
 };
 
 const readMacosVersion = async (
-  run: typeof execFileOutput = execFileOutput,
-  options: { readonly env: NodeJS.ProcessEnv } = { env: process.env },
+  run: typeof execFileOutput,
+  options: { readonly env: NodeJS.ProcessEnv },
 ): Promise<string | undefined> => {
   try {
     return (await run("sw_vers", ["-productVersion"], options)).stdout.trim();
@@ -465,9 +461,9 @@ const readMacosVersion = async (
 
 const executableAvailable = async (
   path: string,
-  platform: NodeJS.Platform = process.platform,
-  run: typeof execFileOutput = execFileOutput,
-  options: { readonly env: NodeJS.ProcessEnv } = { env: process.env },
+  platform: NodeJS.Platform,
+  run: typeof execFileOutput,
+  options: { readonly env: NodeJS.ProcessEnv },
 ): Promise<boolean> => {
   try {
     await access(path, constants.X_OK);
@@ -490,9 +486,7 @@ const uncomposedLinuxDemoRuntimeCheck = (): Promise<DoctorCheck> =>
     remediation: "Run rea doctor through the production CLI adapter.",
   });
 
-const manualHopperPaths = async (
-  home: string = homedir(),
-): Promise<readonly string[]> => {
+const manualHopperPaths = async (home: string): Promise<readonly string[]> => {
   const paths: string[] = [];
   for (const root of ["/Applications", join(home, "Applications")]) {
     try {

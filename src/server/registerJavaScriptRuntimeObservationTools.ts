@@ -1,25 +1,27 @@
+import type { ToolResultDelivery } from "./toolResult.js";
+import type { EvidenceMcpServer } from "./EvidenceMcpServer.js";
 import type { EvidenceWriter } from "../application/investigation/InvestigationRecordPort.js";
 import {
   optionalProviderUnavailable,
   type OptionalProviderLoadFailure,
 } from "../application/OptionalObservationProviders.js";
 import { err } from "../domain/result.js";
-import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
+import type { ServerContext } from "@modelcontextprotocol/server";
 
 import type { JavaScriptRuntimeObservationPort } from "../application/javascript/JavaScriptRuntimeObservationPort.js";
 import {
   listJavaScriptRuntimeTargets,
   observeJavaScriptRuntime,
 } from "../application/javascript/JavaScriptRuntimeObservationService.js";
-import { toolContract, type ToolContract } from "../contracts/toolContracts.js";
+import { toolContract } from "../contracts/toolContracts.js";
+import type { ToolContract } from "../contracts/toolContractTypes.js";
 import type { AnalysisError } from "../domain/analysisErrorBase.js";
 import type { Evidence } from "../domain/evidence.js";
 import type { Result } from "../domain/result.js";
 import { observeJavaScriptRuntimeInputSchema } from "../domain/javascript/javascriptRuntimeObservation.js";
-import type { Logger } from "../logger.js";
+import type { Logger } from "pino";
 import { logToolExecution } from "./toolLogging.js";
 import { toolRegistrationOptions } from "./toolRegistrationOptions.js";
-import { toCallToolResult, toEvidenceToolResult } from "./toolResult.js";
 
 interface RuntimeToolRegistration {
   readonly logger: Logger;
@@ -30,9 +32,10 @@ interface RuntimeToolRegistration {
 
 /** Register passive Inspector tools even when policy keeps them unavailable. */
 export const registerJavaScriptRuntimeObservationTools = (
-  server: McpServer,
+  server: EvidenceMcpServer,
   options: RuntimeToolRegistration,
 ): void => {
+  const registration = { ...options, delivery: server.delivery };
   const listContract = toolContract("list_javascript_runtime_targets");
   const observeContract = toolContract("observe_javascript_runtime");
   server.registerTool(
@@ -40,7 +43,7 @@ export const registerJavaScriptRuntimeObservationTools = (
     toolRegistrationOptions(listContract),
     (input, context) =>
       runRuntimeTool(
-        options,
+        registration,
         listContract,
         { input, context },
         (parsed, signal) =>
@@ -52,7 +55,7 @@ export const registerJavaScriptRuntimeObservationTools = (
     toolRegistrationOptions(observeContract),
     (input, context) =>
       runRuntimeTool(
-        options,
+        registration,
         observeContract,
         { input, context },
         async (parsed, signal) => {
@@ -64,7 +67,7 @@ export const registerJavaScriptRuntimeObservationTools = (
 };
 
 const runRuntimeTool = async <Input>(
-  options: RuntimeToolRegistration,
+  options: RuntimeToolRegistration & { readonly delivery: ToolResultDelivery },
   contract: ToolContract,
   request: { readonly input: Input; readonly context: ServerContext },
   execute: (
@@ -74,14 +77,18 @@ const runRuntimeTool = async <Input>(
 ) => {
   const { input, context } = request;
   if (options.loadFailure !== undefined)
-    return toCallToolResult(
+    return options.delivery.toCallToolResult(
       err(optionalProviderUnavailable(options.loadFailure, contract.name)),
       contract,
     );
   const result = await logToolExecution(options.logger, contract.name, () =>
     execute(input, context.mcpReq.signal),
   );
-  if (!result.ok) return toCallToolResult(result, contract);
+  if (!result.ok) return options.delivery.toCallToolResult(result, contract);
   const recorded = options.recordEvidence?.(result.value);
-  return toEvidenceToolResult(result.value, contract, recorded);
+  return options.delivery.toEvidenceToolResult(
+    result.value,
+    contract,
+    recorded,
+  );
 };

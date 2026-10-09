@@ -1,3 +1,4 @@
+import { snapshotEnvironment } from "../process/snapshotEnvironment.js";
 import {
   createAnalysisExecution,
   type AnalysisClient,
@@ -20,7 +21,7 @@ import {
   artifactExtractionExecutionSchema,
   type ArtifactAnalysisOperation,
 } from "../contracts/artifactToolContracts.js";
-import type { BinaryTarget } from "../domain/binaryTarget.js";
+import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import {
   AnalysisCapabilityUnavailableError,
   AnalysisInputError,
@@ -30,28 +31,30 @@ import { ArtifactOperationError } from "../domain/artifactOperationError.js";
 import { type AnalysisError } from "../domain/analysisErrorBase.js";
 import type { JsonValue } from "../domain/jsonValue.js";
 import { interfaceBuilderLimitsSchema } from "../domain/apple/interfaceBuilderGraph.js";
-import { err, ok } from "../domain/result.js";
+import { err, ok, type Result } from "../domain/result.js";
 import { ArtifactReaderFailure } from "./ArtifactReader.js";
-import {
-  ARTIFACT_PROVIDER_IDENTITY as IDENTITY,
-  artifactCapabilities,
-} from "./ArtifactProviderMetadata.js";
+import { artifactCapabilities } from "./ArtifactProviderMetadata.js";
+import { ARTIFACT_GRAPH_PROVIDER } from "../application/InvestigationProviders.js";
 import { createEvidence } from "../domain/evidence.js";
 import { createArtifactInspection } from "../domain/artifactInspection.js";
-import { resolveArtifactIntegrityPolicy } from "./inventory/policy.js";
 
 /** Read-only inventory and exclusively owned extraction provider. */
 export class ArtifactProvider implements AnalysisProvider {
   readonly #capabilities: readonly CapabilityDescriptor[];
   readonly #platform: NodeJS.Platform;
+  private readonly environment: Readonly<NodeJS.ProcessEnv>;
 
-  constructor(platform: NodeJS.Platform = process.platform) {
+  constructor(
+    environment: Readonly<NodeJS.ProcessEnv>,
+    platform: NodeJS.Platform = process.platform,
+  ) {
+    this.environment = snapshotEnvironment(environment, platform);
     this.#capabilities = artifactCapabilities(platform);
     this.#platform = platform;
   }
 
   identity(): ProviderIdentity {
-    return IDENTITY;
+    return ARTIFACT_GRAPH_PROVIDER;
   }
 
   capabilities(): readonly CapabilityDescriptor[] {
@@ -59,13 +62,14 @@ export class ArtifactProvider implements AnalysisProvider {
   }
 
   createClient(target: BinaryTarget): AnalysisClient {
-    return new ArtifactClient(target, this.#platform);
+    return new ArtifactClient(target, this.environment, this.#platform);
   }
 }
 
 class ArtifactClient implements AnalysisClient {
   constructor(
     private readonly target: BinaryTarget,
+    private readonly environment: Readonly<NodeJS.ProcessEnv>,
     private readonly platform: NodeJS.Platform,
   ) {}
 
@@ -75,11 +79,11 @@ class ArtifactClient implements AnalysisClient {
     options?: ExecutionOptions,
   ) {
     if (operation === "health")
-      return ok(createAnalysisExecution(null, IDENTITY));
+      return ok(createAnalysisExecution(null, ARTIFACT_GRAPH_PROVIDER));
     if (!isArtifactOperation(operation))
       return err(
         new AnalysisCapabilityUnavailableError(
-          IDENTITY.id,
+          ARTIFACT_GRAPH_PROVIDER.id,
           operation,
           "Operation is not implemented by artifact graph provider.",
         ),
@@ -107,7 +111,7 @@ class ArtifactClient implements AnalysisClient {
           ...(options?.signal === undefined ? {} : { signal: options.signal }),
         });
         return ok(
-          createAnalysisExecution(result, IDENTITY, {
+          createAnalysisExecution(result, ARTIFACT_GRAPH_PROVIDER, {
             limitations: result.limitations,
             locations: result.documents.map(({ relative_path: path }) => ({
               kind: "artifact-path" as const,
@@ -160,7 +164,7 @@ class ArtifactClient implements AnalysisClient {
             `Active archive digest changed: expected ${this.target.sha256}, observed ${result.archive_sha256}`,
           );
         return ok(
-          createAnalysisExecution(result, IDENTITY, {
+          createAnalysisExecution(result, ARTIFACT_GRAPH_PROVIDER, {
             limitations: result.limitations,
             locations: [{ kind: "artifact-path", path: result.archive_path }],
           }),
@@ -178,11 +182,12 @@ class ArtifactClient implements AnalysisClient {
             inputPath: this.target.sourcePath ?? this.target.path,
             inputFormat: this.target.format,
             outputRoot: parsed.output_root,
+            environment: this.environment,
           },
           options?.signal,
         );
         return ok(
-          createAnalysisExecution(result, IDENTITY, {
+          createAnalysisExecution(result, ARTIFACT_GRAPH_PROVIDER, {
             rawResult: null,
             limitations: result.limitations,
             subject: subjectFor(
@@ -199,7 +204,7 @@ class ArtifactClient implements AnalysisClient {
       const parsed = artifactInventoryInputSchema.parse(parameters);
       const result = await this.inventory(parsed, options);
       return ok(
-        createAnalysisExecution(result, IDENTITY, {
+        createAnalysisExecution(result, ARTIFACT_GRAPH_PROVIDER, {
           rawResult: null,
           limitations: result.limitations,
           subject: subjectFor(
@@ -213,12 +218,12 @@ class ArtifactClient implements AnalysisClient {
         }),
       );
     } catch (cause: unknown) {
-      return err(translateFailure(operation, cause));
+      return err(translateArtifactFailure(operation, cause));
     }
   }
 
-  close(): Promise<void> {
-    return Promise.resolve();
+  close(): Promise<Result<null, AnalysisError>> {
+    return Promise.resolve(ok(null));
   }
 
   /** The active target's kind is outside this operation's supported targets. */
@@ -248,13 +253,14 @@ class ArtifactClient implements AnalysisClient {
         "inspect_asset_catalog requires an active .app bundle target",
       );
     const result = await analyzeAppleAssetCatalogs({
+      environment: this.environment,
       bundlePath,
       targetSha256: this.target.sha256,
       page: parameters,
       ...(options?.signal === undefined ? {} : { signal: options.signal }),
     });
     return ok(
-      createAnalysisExecution(result, IDENTITY, {
+      createAnalysisExecution(result, ARTIFACT_GRAPH_PROVIDER, {
         limitations: result.limitations,
         locations: result.catalogs.map(({ path }) => ({
           kind: "artifact-path" as const,
@@ -288,7 +294,7 @@ class ArtifactClient implements AnalysisClient {
       ...(options?.signal === undefined ? {} : { signal: options.signal }),
     });
     return ok(
-      createAnalysisExecution(result, IDENTITY, {
+      createAnalysisExecution(result, ARTIFACT_GRAPH_PROVIDER, {
         limitations: result.limitations,
         locations: result.images.map(({ path }) => ({
           kind: "artifact-path" as const,
@@ -321,7 +327,7 @@ class ArtifactClient implements AnalysisClient {
       kind: "artifact-path" as const,
       path,
     }));
-    const inventoryEvidence = createEvidence(subject, IDENTITY, {
+    const inventoryEvidence = createEvidence(subject, ARTIFACT_GRAPH_PROVIDER, {
       operation: "inventory_artifact",
       parameters: inventoryParameters,
       result: inventory,
@@ -337,7 +343,7 @@ class ArtifactClient implements AnalysisClient {
       message: "inventory substep completed",
     });
     return ok(
-      createAnalysisExecution(result, IDENTITY, {
+      createAnalysisExecution(result, ARTIFACT_GRAPH_PROVIDER, {
         rawResult: null,
         limitations: result.limitations,
         subject,
@@ -353,10 +359,9 @@ class ArtifactClient implements AnalysisClient {
     options?: ExecutionOptions,
   ) {
     return inventoryArtifact(this.target.sourcePath ?? this.target.path, {
+      environment: this.environment,
       ...(options?.signal === undefined ? {} : { signal: options.signal }),
-      integrity: resolveArtifactIntegrityPolicy({
-        mode: parsed.integrity_policy,
-      }),
+      integrity: { mode: parsed.integrity_policy },
     });
   }
 }
@@ -368,7 +373,8 @@ const isArtifactOperation = (
     operation as (typeof ARTIFACT_ANALYSIS_OPERATIONS)[number],
   );
 
-const translateFailure = (
+/** Translate one artifact boundary failure while retaining cleanup evidence. */
+export const translateArtifactFailure = (
   operation: ArtifactAnalysisOperation,
   cause: unknown,
 ): AnalysisError => {
@@ -378,6 +384,12 @@ const translateFailure = (
       cause.reason,
       cause.details,
       cause.message,
+      {
+        ...(cause.cleanup === undefined ? {} : { cleanup: cause.cleanup }),
+        ...(cause.partialObservation === undefined
+          ? {}
+          : { partialObservation: cause.partialObservation }),
+      },
     );
   // Caller-selection and unsupported-target failures are already typed; keep
   // their correction details instead of reducing them to an I/O failure.
@@ -393,7 +405,7 @@ const subjectFor = (
   path: string,
   manifest: {
     readonly root_sha256: string;
-    readonly root_format: import("../domain/artifactGraph.js").ArtifactNode["format"];
+    readonly root_format: import("../domain/artifactGraph.js").ArtifactInventoryResult["manifest"]["root_format"];
   },
 ) => ({
   path,

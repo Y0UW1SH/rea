@@ -11,7 +11,7 @@ import { projectAnalysisError } from "./domain/analysisErrorProjection.js";
 import { projectInputIssues } from "./domain/inputIssueProjection.js";
 import { browserScenarioSchema } from "./domain/browserScenario.js";
 import type { JsonValue } from "./domain/jsonValue.js";
-import type { Logger } from "./logger.js";
+import type { Logger } from "pino";
 
 const OPERATION = "capture_browser_scenario";
 
@@ -19,6 +19,7 @@ const OPERATION = "capture_browser_scenario";
 export const registerBrowserScenarioCommands = (
   cli: ReturnType<typeof Cli.create>,
   logger: Logger,
+  environment: Readonly<Record<string, string | undefined>>,
 ): void => {
   cli.command(CLI_COMMANDS.captureBrowserScenario, {
     description:
@@ -44,7 +45,7 @@ export const registerBrowserScenarioCommands = (
             ),
           );
         const result = await captureBrowserScenario(
-          createBrowserScenarioProvider(),
+          createBrowserScenarioProvider(environment),
           scenario.data,
         );
         return result.ok ? result.value : cliError(result.error);

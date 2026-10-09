@@ -147,7 +147,9 @@ it("retains resource-limit reasons at nested object property slots", () => {
     expect.objectContaining({
       family: "object-flow",
       reason: "resource-limit",
-      detail: expect.stringMatching(/Unknown value at property:value/u),
+      detail: expect.stringMatching(
+        /Unknown value at property:\/nested\/value/u,
+      ),
     }),
   );
 });
@@ -625,3 +627,321 @@ it("only records node loss when the budget rejects a new identity", () => {
   expect(blocked).toBeNull();
   expect(state.fileNodesDropped).toBe(true);
 });
+
+it("keeps full static property identities distinct through backward provenance", () => {
+  const graph = graphFor(`
+    const root = { a: { id: 'left' }, b: { id: 'right' }, 'a.id': 'dotted', '': { 'a/b~c': 'escaped' } };
+    const left = root.a.id;
+    const right = root['b']['id'];
+    const missing = root.id;
+    const dotted = root['a.id'];
+    const escaped = root['']['a/b~c'];
+  `);
+  const slots = graph.nodes.filter(({ kind }) => kind === "property-slot");
+  for (const [pointer, literal] of [
+    ["/a/id", "left"],
+    ["/b/id", "right"],
+    ["/a.id", "dotted"],
+    ["//a~1b~0c", "escaped"],
+    ["/id", null],
+  ]) {
+    const slot = slots.find(
+      ({ properties }) => properties.property_pointer === pointer,
+    );
+    if (slot === undefined) throw new Error(`Missing slot ${pointer}`);
+    expect(slot.properties.presence).toBe(
+      literal === null ? "absent" : "present",
+    );
+    const trace = queryJavaScriptSemanticGraph(graph, {
+      seed: { kind: "semantic-node", node_id: slot.node_id },
+      direction: "backward-provenance",
+      allowed_relations: ["defines"],
+    });
+    expect(
+      trace.nodes
+        .filter(({ kind }) => kind === "literal")
+        .map(({ properties }) => properties.value),
+    ).toEqual(literal === null ? [] : [literal]);
+    const reads = graph.relations.filter(
+      ({ source_node_id, relation }) =>
+        source_node_id === slot.node_id && relation === "reads-property",
+    );
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.resolution).toBe(
+      literal === null ? "candidate" : "resolved",
+    );
+  }
+});
+
+it("targets nested writes and destructuring without inventing leaf-level root slots", () => {
+  const graph = graphFor(`
+    const root = { left: { id: 'before' }, right: { id: 'untouched' } };
+    root.left.id = produce();
+    const { right: { id: selected } } = root;
+    const [first, missing] = [1, , 3];
+  `);
+  const rootSlots = graph.nodes.filter(
+    ({ kind, properties }) =>
+      kind === "property-slot" && properties.name === "id",
+  );
+  expect(
+    rootSlots.map(({ properties }) => properties.property_pointer).sort(),
+  ).toEqual(["/left/id", "/right/id"]);
+  const left = rootSlots.find(
+    ({ properties }) => properties.property_pointer === "/left/id",
+  );
+  const right = rootSlots.find(
+    ({ properties }) => properties.property_pointer === "/right/id",
+  );
+  expect(left?.properties.presence).toBe("unknown-coverage");
+  const write = graph.nodes.find(
+    ({ kind, properties }) =>
+      kind === "expression" && properties.operation_kind === "write",
+  );
+  expect(graph.relations).toContainEqual(
+    expect.objectContaining({
+      source_node_id: write?.node_id,
+      target_node_id: left?.node_id,
+      relation: "writes-property",
+      resolution: "resolved",
+    }),
+  );
+  const selected = graph.nodes.find(
+    ({ kind, label }) => kind === "binding" && label === "selected",
+  );
+  expect(graph.relations).toContainEqual(
+    expect.objectContaining({
+      source_node_id: right?.node_id,
+      target_node_id: selected?.node_id,
+      relation: "destructures",
+      resolution: "resolved",
+    }),
+  );
+});
+
+it("keeps dynamic intermediate receivers unresolved instead of selecting a static leaf", () => {
+  const graph = graphFor(`
+    const root = { id: 'root', a: { id: 'nested' } };
+    const selected = root[key].id;
+  `);
+  expect(
+    graph.relations.filter(({ relation }) => relation === "reads-property"),
+  ).toEqual([]);
+  expect(graph.unknowns).toContainEqual(
+    expect.objectContaining({
+      family: "object-flow",
+      relation_kinds: ["reads-property"],
+    }),
+  );
+  const selected = graph.nodes.find(
+    ({ kind, label }) => kind === "binding" && label === "selected",
+  );
+  if (selected === undefined) throw new Error("Missing selected binding");
+  const trace = queryJavaScriptSemanticGraph(graph, {
+    seed: { kind: "semantic-node", node_id: selected.node_id },
+    direction: "backward-provenance",
+    allowed_relations: ["defines"],
+  });
+  expect(trace.nodes.filter(({ kind }) => kind === "literal")).toEqual([]);
+});
+
+it.each([
+  {
+    initializer: "{}",
+    path: "missing.id",
+    pointer: "/missing/id",
+    resolved: false,
+  },
+  {
+    initializer: "{ a: null }",
+    path: "a.id",
+    pointer: "/a/id",
+    resolved: false,
+  },
+  { initializer: "{ a: 1 }", path: "a.id", pointer: "/a/id", resolved: false },
+  { initializer: "{ a: {} }", path: "a.id", pointer: "/a/id", resolved: true },
+  { initializer: "{ a: [] }", path: "a[0]", pointer: "/a/0", resolved: true },
+])(
+  "admits a write only through a retained container receiver: $initializer.$path",
+  ({ initializer, path, pointer, resolved }) => {
+    const graph = graphFor(
+      `const root = ${initializer}; root.${path} = produce();`,
+    );
+    const write = graph.nodes.find(
+      ({ kind, properties }) =>
+        kind === "expression" && properties.operation_kind === "write",
+    );
+    const slot = graph.nodes.find(
+      ({ kind, properties }) =>
+        kind === "property-slot" && properties.property_pointer === pointer,
+    );
+    if (write === undefined || slot === undefined)
+      throw new Error("Expected write and target slot");
+    expect(graph.relations).toContainEqual(
+      expect.objectContaining({
+        source_node_id: write.node_id,
+        target_node_id: slot.node_id,
+        relation: "writes-property",
+        resolution: resolved ? "resolved" : "candidate",
+      }),
+    );
+    const trace = queryJavaScriptSemanticGraph(graph, {
+      seed: { kind: "semantic-node", node_id: write.node_id },
+      direction: "forward-influence",
+      allowed_relations: ["writes-property"],
+    });
+    expect(trace.nodes.some(({ node_id }) => node_id === slot.node_id)).toBe(
+      resolved,
+    );
+    if (!resolved)
+      expect(graph.unknowns).toContainEqual(
+        expect.objectContaining({
+          node_id: slot.node_id,
+          relation_kinds: ["writes-property"],
+          detail: expect.stringContaining(
+            "receiver is unresolved or not a retained container",
+          ),
+        }),
+      );
+  },
+);
+
+it("retains array length presence without inventing an exact length", () => {
+  const graph = graphFor("const root = [, 1]; const length = root.length;");
+  const slot = graph.nodes.find(
+    ({ kind, properties }) =>
+      kind === "property-slot" && properties.property_pointer === "/length",
+  );
+  expect(slot?.properties).toMatchObject({
+    name: "length",
+    presence: "present",
+    value_status: "unknown",
+  });
+  const trace = queryJavaScriptSemanticGraph(graph, {
+    seed: { kind: "property", name: "length" },
+    direction: "forward-influence",
+    allowed_relations: ["reads-property"],
+  });
+  expect(trace.seed_node_ids).toEqual([slot?.node_id]);
+  expect(trace.relations).toContainEqual(
+    expect.objectContaining({
+      source_node_id: slot?.node_id,
+      relation: "reads-property",
+      resolution: "resolved",
+    }),
+  );
+  expect(
+    graph.relations.some(
+      ({ target_node_id, relation }) =>
+        target_node_id === slot?.node_id && relation === "defines",
+    ),
+  ).toBe(false);
+});
+
+it.each([
+  ["object spread", 'const root = { known: "value", ...dynamic };'],
+  ["array spread", 'const root = ["value", ...dynamic];'],
+])(
+  "keeps omitted initializer coverage on the owning binding: %s",
+  (_label, source) => {
+    const graph = graphFor(source);
+    const root = graph.nodes.find(
+      ({ kind, label }) => kind === "binding" && label === "root",
+    );
+    if (root === undefined) throw new Error("Expected root binding");
+    const result = queryJavaScriptSemanticGraph(graph, {
+      seed: { kind: "semantic-node", node_id: root.node_id },
+      direction: "forward-influence",
+    });
+
+    expect(result.coverage.status).toBe("partial");
+    expect(result.unknowns).toContainEqual(
+      expect.objectContaining({
+        node_id: root.node_id,
+        family: "object-flow",
+        reason: "ambiguous-target",
+        detail: expect.stringContaining("Initializer container has unknown"),
+      }),
+    );
+  },
+);
+
+it.each([
+  ["bare if", 'if (flag) alias = { mode: "other" }; alias.mode = "updated";'],
+  [
+    "logical expression",
+    'flag && (alias = { mode: "other" }); alias.mode = "updated";',
+  ],
+  [
+    "logical assignment",
+    'flag ||= (alias = { mode: "other" }); alias.mode = "updated";',
+  ],
+  ["or assignment", 'alias ||= { mode: "other" }; alias.mode = "updated";'],
+  [
+    "nullish assignment",
+    'alias ??= { mode: "other" }; alias.mode = "updated";',
+  ],
+  [
+    "conditional mutation",
+    'alias = { mode: "other" }; if (flag) alias.mode = "updated";',
+  ],
+  [
+    "short-circuit mutation",
+    'alias = { mode: "other" }; flag && (alias.mode = "updated");',
+  ],
+])(
+  "preserves possible alias mutation uncertainty in queries: %s",
+  (_label, body) => {
+    const graph = graphFor(`
+    const shared = { mode: "initial" };
+    let alias = shared;
+    ${body}
+  `);
+    const sharedMode = graph.nodes.find(
+      ({ kind, identity, properties }) =>
+        kind === "property-slot" &&
+        properties.property_pointer === "/mode" &&
+        identity.role_key.includes("binding:shared"),
+    );
+    if (sharedMode === undefined) throw new Error("Expected shared mode slot");
+    const result = queryJavaScriptSemanticGraph(graph, {
+      seed: { kind: "semantic-node", node_id: sharedMode.node_id },
+      direction: "backward-provenance",
+    });
+
+    expect(sharedMode.properties.presence).toBe("unknown-coverage");
+    expect(result.nodes).toContainEqual(
+      expect.objectContaining({ node_id: sharedMode.node_id }),
+    );
+    expect(result.coverage.status).toBe("partial");
+  },
+);
+
+it.each(["{}", "unknownRoot", "{ a: null }"])(
+  "preserves the requested deep leaf name after a blocked prefix: %s",
+  (initializer) => {
+    const graph = graphFor(
+      `const root = ${initializer}; const selected = root.a.b.c;`,
+    );
+    const slot = graph.nodes.find(
+      ({ kind, properties }) =>
+        kind === "property-slot" && properties.property_pointer === "/a/b/c",
+    );
+    expect(slot).toMatchObject({
+      label: "c",
+      properties: {
+        name: "c",
+        property_path: ["a", "b", "c"],
+        presence: "unknown-coverage",
+        value_status: "unknown",
+      },
+    });
+    const trace = queryJavaScriptSemanticGraph(graph, {
+      seed: { kind: "property", name: "c" },
+      direction: "backward-provenance",
+      allowed_relations: ["defines"],
+    });
+    expect(trace.seed_node_ids).toEqual([slot?.node_id]);
+    expect(trace.nodes.filter(({ kind }) => kind === "literal")).toEqual([]);
+  },
+);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { parseConfig } from "../config.js";
-import type { BinaryTarget } from "../domain/binaryTarget.js";
+import { parseConfig } from "../config/parseConfig.js";
+import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import { silentLogger } from "../logger.js";
 import { HopperProvider } from "./HopperProvider.js";
 
@@ -49,7 +49,7 @@ describe("Hopper provider discovery", () => {
 const provider = (launcherPath: string): HopperProvider => {
   const config = parseConfig({ HOPPER_LAUNCHER_PATH: launcherPath });
   if (!config.ok) throw config.error;
-  return new HopperProvider(config.value, silentLogger);
+  return new HopperProvider(config.value, silentLogger, {});
 };
 
 const databaseTarget = (): BinaryTarget => ({

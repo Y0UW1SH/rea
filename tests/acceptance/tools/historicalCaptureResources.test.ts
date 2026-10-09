@@ -7,6 +7,7 @@ import { expect, it } from "vitest";
 
 import { WEB_NETWORK_CAPTURE_LIMITS } from "../../../src/domain/webNetworkCapture.js";
 import { connectLocalToolsMcp } from "../../fixtures/localToolsMcp.js";
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
 const execute = promisify(execFile);
@@ -56,7 +57,7 @@ it("reports real HAR heap exhaustion through CLI and MCP and preserves server us
     sensitive_values: ["caller-marked"],
   });
   expect(response.isError).toBe(true);
-  expect(response.structuredContent).toMatchObject({
+  expect(parseMcpToolError(response)).toMatchObject({
     error: {
       code: "resource_constraint",
       retryable: false,
@@ -103,14 +104,14 @@ it("reports real HAR heap exhaustion through CLI and MCP and preserves server us
   });
   expect(control.isError, JSON.stringify(control)).not.toBe(true);
   expect(control.structuredContent).toMatchObject({
-    result: { total_records: 2 },
+    normalized_result: { total_records: 2 },
   });
   await truncate(path, WEB_NETWORK_CAPTURE_LIMITS.inputBytes + 1);
   const oversized = await call("inspect_web_network_capture", {
     capture_path: path,
     format: "har",
   });
-  expect(oversized.structuredContent).toMatchObject({
+  expect(parseMcpToolError(oversized)).toMatchObject({
     error: { code: "invalid_request" },
   });
 }, 60_000);

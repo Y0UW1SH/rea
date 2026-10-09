@@ -1,4 +1,5 @@
-import type { Logger } from "../logger.js";
+import type { DirectAnalysis } from "../composition/directAnalysis.js";
+import type { Logger } from "pino";
 import { registerCoreBinaryCommands } from "./coreBinaryCommands.js";
 import { registerCoreNativeCommands } from "./coreNativeCommands.js";
 import type { CliInstance } from "./types.js";
@@ -8,8 +9,9 @@ import type { CliResultOutput } from "./streamedJsonOutput.js";
 export const registerCoreAnalysisCommands = (
   cli: CliInstance,
   logger: Logger,
+  runDirectAnalysis: DirectAnalysis["runDirectAnalysis"],
   resultOutput?: CliResultOutput,
 ): void => {
-  registerCoreBinaryCommands(cli, logger, resultOutput);
-  registerCoreNativeCommands(cli, logger);
+  registerCoreBinaryCommands(cli, logger, runDirectAnalysis, resultOutput);
+  registerCoreNativeCommands(cli, logger, runDirectAnalysis);
 };

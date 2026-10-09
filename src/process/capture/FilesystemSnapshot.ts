@@ -2,16 +2,13 @@ import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { lstat, open, readdir, readlink } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+import type { ProcessScenario } from "../../domain/process/processScenario.js";
+import type { FilesystemCoverage } from "../../domain/process/processCaptureCoverage.js";
+import type { Stats } from "node:fs";
 import type {
   FileState,
-  ProcessScenario,
+  ProcessFilesystemSnapshot,
 } from "../../domain/process/processCapture.js";
-import type { Stats } from "node:fs";
-
-export interface SnapshotResult {
-  readonly files: readonly FileState[];
-  readonly truncated: boolean;
-}
 
 const hasSameIdentity = (
   before: Stats,
@@ -90,33 +87,43 @@ export const hashFile = async (
 export const snapshotRoots = async (
   scenario: ProcessScenario,
   signal?: AbortSignal,
-): Promise<SnapshotResult> => {
+): Promise<ProcessFilesystemSnapshot> => {
   const entries: FileState[] = [];
+  const completeRoots: string[] = [];
   let remainingBytes = scenario.limits.file_bytes;
   let truncated = false;
+  const enumerationReasons = new Set<
+    FilesystemCoverage["enumeration_reasons"][number]
+  >();
+  const hashOmissions: FilesystemCoverage["hash_omissions"] = [];
   const visit = async (
     root: string,
     rootAlias: string,
     path: string,
     depth: number,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     signal?.throwIfAborted();
     if (
       entries.length >= scenario.limits.files ||
       depth > scenario.limits.filesystem_depth
     ) {
       truncated = true;
-      return;
+      if (entries.length >= scenario.limits.files)
+        enumerationReasons.add("files_limit");
+      if (depth > scenario.limits.filesystem_depth)
+        enumerationReasons.add("depth_limit");
+      return false;
     }
     const stats = await lstatIfPresent(path);
-    if (stats === undefined) return;
+    if (stats === undefined) return true;
     const relativePath = relative(root, path) || ".";
     if (stats.isSymbolicLink()) {
       const target = resolve(dirname(path), await readlink(path));
       const afterRead = await lstat(path);
       if (!hasSameIdentity(stats, afterRead, "symlink")) {
         truncated = true;
-        return;
+        enumerationReasons.add("identity_changed");
+        return false;
       }
       entries.push({
         path: `${rootAlias}:${relativePath}`,
@@ -126,7 +133,7 @@ export const snapshotRoots = async (
         sha256: null,
         symlink_target: target,
       });
-      return;
+      return true;
     }
     if (stats.isFile()) {
       const sha256 =
@@ -134,7 +141,18 @@ export const snapshotRoots = async (
           ? await hashFile(path, stats, remainingBytes, signal)
           : null;
       remainingBytes -= sha256 === null ? 0 : stats.size;
-      if (sha256 === null) truncated = true;
+      if (sha256 === null) {
+        truncated = true;
+        hashOmissions.push({
+          path: `${rootAlias}:${relativePath}`,
+          size_bytes: stats.size,
+          remaining_budget_bytes: remainingBytes,
+          reason:
+            remainingBytes < stats.size
+              ? "file_bytes_budget"
+              : "file_changed_or_short_read",
+        });
+      }
       entries.push({
         path: `${rootAlias}:${relativePath}`,
         type: "file",
@@ -143,7 +161,7 @@ export const snapshotRoots = async (
         sha256,
         symlink_target: null,
       });
-      return;
+      return true;
     }
     const type = stats.isDirectory() ? "directory" : "other";
     entries.push({
@@ -154,22 +172,42 @@ export const snapshotRoots = async (
       sha256: null,
       symlink_target: null,
     });
-    if (type !== "directory") return;
+    if (type !== "directory") return true;
     const children = await readdir(path);
     const afterRead = await lstat(path);
     if (!hasSameIdentity(stats, afterRead, "directory")) {
       truncated = true;
-      return;
+      enumerationReasons.add("identity_changed");
+      return false;
     }
-    for (const child of children.sort())
-      await visit(root, rootAlias, join(path, child), depth + 1);
+    let complete = true;
+    for (const child of children.sort()) {
+      if (!(await visit(root, rootAlias, join(path, child), depth + 1)))
+        complete = false;
+    }
+    return complete;
   };
   for (const [index, root] of scenario.filesystem_observation_paths.entries()) {
+    const alias = `root_${String(index)}`;
     if ((await lstatIfPresent(root)) === undefined) {
-      truncated = true;
+      completeRoots.push(alias);
       continue;
     }
-    await visit(root, `root_${String(index)}`, root, 0);
+    if (await visit(root, alias, root, 0)) completeRoots.push(alias);
   }
-  return { files: entries, truncated };
+  return {
+    files: entries,
+    truncated,
+    completeRoots,
+    coverage: {
+      files_limit: scenario.limits.files,
+      depth_limit: scenario.limits.filesystem_depth,
+      enumeration_truncated:
+        completeRoots.length !== scenario.filesystem_observation_paths.length,
+      enumeration_reasons: [...enumerationReasons],
+      hash_budget_bytes: scenario.limits.file_bytes,
+      hashed_bytes: scenario.limits.file_bytes - remainingBytes,
+      hash_omissions: hashOmissions,
+    },
+  };
 };

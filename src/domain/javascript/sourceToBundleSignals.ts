@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 
-import { compareCodePoints } from "../canonicalOrdering.js";
+import { compareUnicodeCodePoints } from "../unicodeCodePointOrder.js";
 import type { ApplicationNode } from "./javascriptApplicationGraphSchemas.js";
 import type { HistoricalSourceGraph } from "../referenceSourceGraph.js";
 import {
@@ -9,7 +9,6 @@ import {
   type SourceToBundleSignal,
 } from "./sourceToBundleComparisonSchemas.js";
 import { isDigest } from "../digests.js";
-import { resolveJavaScriptSourceMapPath } from "./javascriptSourceMapPaths.js";
 
 type SourceFile = Extract<
   HistoricalSourceGraph["entries"][number],
@@ -71,7 +70,9 @@ export const sourceBearingNodes = (
 ): ApplicationNode[] =>
   nodes
     .filter(({ kind }) => RELEVANT_NODE_KINDS.has(kind))
-    .sort((left, right) => compareCodePoints(left.node_id, right.node_id));
+    .sort((left, right) =>
+      compareUnicodeCodePoints(left.node_id, right.node_id),
+    );
 
 /** Keep historical source files in stable path order. */
 export const historicalSourceFiles = (
@@ -82,7 +83,7 @@ export const historicalSourceFiles = (
       (entry): entry is SourceFile =>
         entry.kind === "file" && entry.classifications.includes("source"),
     )
-    .sort((left, right) => compareCodePoints(left.path, right.path));
+    .sort((left, right) => compareUnicodeCodePoints(left.path, right.path));
 
 /** Build deterministic candidate indices without assigning fuzzy matches. */
 export const buildSourceToBundleCandidateIndex = (
@@ -131,7 +132,7 @@ export const candidateIdsForSource = (
   const output: string[] = [];
   for (const group of groups) {
     if (group === undefined) continue;
-    for (const nodeId of [...group].sort(compareCodePoints)) {
+    for (const nodeId of [...group].sort(compareUnicodeCodePoints)) {
       if (seen.has(nodeId)) continue;
       seen.add(nodeId);
       output.push(nodeId);
@@ -174,40 +175,24 @@ const projectCurrentNode = (node: ApplicationNode): CurrentProjection => {
   if (node.identity.strategy === "source-map-original") {
     if (node.identity.source_sha256 !== null)
       digests.add(node.identity.source_sha256);
-    const mapLocations = node.observations.flatMap(({ evidence }) =>
-      evidence.extractor.operation === "parse-local-source-map" &&
-      evidence.location.available &&
-      evidence.location.value.kind === "artifact-path"
-        ? [evidence.location.value.path]
-        : [],
-    );
-    if (mapLocations.length === 0)
-      addPath(paths, "source-map-original", node.identity.original_source);
-    for (const mapPath of mapLocations)
-      addPath(
-        paths,
-        "source-map-original",
-        node.identity.original_source,
-        mapPath,
-      );
   }
   if (node.identity.strategy === "canonical-path")
     addPath(paths, "canonical-path", node.identity.path);
   for (const observation of node.observations) {
-    const sourceDigest = observation.properties.source_sha256;
-    if (typeof sourceDigest === "string" && isDigest(sourceDigest))
-      digests.add(sourceDigest);
-    for (const key of PATH_PROPERTIES) {
-      const location = observation.evidence.location;
-      const mapPath =
-        node.identity.strategy === "source-map-original" &&
-        observation.evidence.extractor.operation === "parse-local-source-map" &&
-        (key === "source" || key === "original_source") &&
-        location.available &&
-        location.value.kind === "artifact-path"
-          ? location.value.path
-          : undefined;
-      addJsonPath(paths, observation.properties[key], mapPath);
+    if (node.identity.strategy === "source-map-original") {
+      const resolution = observation.source_map_reference?.resolution;
+      if (resolution !== undefined && resolution.kind !== "unresolved")
+        paths.push({
+          kind: "source-map-original",
+          value: resolution.path,
+          allowSuffix: resolution.kind === "suffix",
+        });
+    } else {
+      const sourceDigest = observation.properties.source_sha256;
+      if (typeof sourceDigest === "string" && isDigest(sourceDigest))
+        digests.add(sourceDigest);
+      for (const key of PATH_PROPERTIES)
+        addJsonPath(paths, observation.properties[key]);
     }
   }
   return {
@@ -273,7 +258,7 @@ const signal = (
   kind,
   weight: signalWeight(kind),
   source_value: sourceValue,
-  current_values: [...new Set(currentValues)].sort(compareCodePoints),
+  current_values: [...new Set(currentValues)].sort(compareUnicodeCodePoints),
 });
 
 const candidateConfidence = (
@@ -298,31 +283,15 @@ const matchingPaths = (
     )
     .map(({ value }) => value);
 
-const addJsonPath = (
-  paths: CurrentPath[],
-  value: unknown,
-  mapPath?: string,
-): void => {
-  if (typeof value === "string")
-    addPath(paths, "observation-path", value, mapPath);
+const addJsonPath = (paths: CurrentPath[], value: unknown): void => {
+  if (typeof value === "string") addPath(paths, "observation-path", value);
 };
 
 const addPath = (
   paths: CurrentPath[],
   kind: CurrentPathKind,
   raw: string,
-  mapPath?: string,
 ): void => {
-  if (kind === "source-map-original" || mapPath !== undefined) {
-    const resolved = resolveJavaScriptSourceMapPath(raw, mapPath);
-    if (resolved !== null)
-      paths.push({
-        kind,
-        value: resolved.value,
-        allowSuffix: resolved.scope === "suffix",
-      });
-    return;
-  }
   const value = normalizeCurrentPath(raw);
   if (value !== null) paths.push({ kind, value, allowSuffix: true });
 };
@@ -358,7 +327,7 @@ const uniquePaths = (paths: readonly CurrentPath[]): CurrentPath[] =>
       ]),
     ).values(),
   ].sort((left, right) =>
-    compareCodePoints(
+    compareUnicodeCodePoints(
       `${left.kind}\0${left.value}`,
       `${right.kind}\0${right.value}`,
     ),

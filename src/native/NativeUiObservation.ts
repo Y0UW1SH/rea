@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { BinaryTarget } from "../domain/binaryTarget.js";
+import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import {
   nativeUiObservationInputSchema,
   nativeUiScenarioInputSchema,
@@ -43,9 +43,13 @@ export const observeNativeUi = async (
   target: BinaryTarget,
   operation: "observe_native_ui" | "capture_native_ui_scenario",
   parameters: unknown,
-  options: { signal?: AbortSignal | undefined; invoke?: NativeUiHelper } = {},
+  options: {
+    environment: Readonly<NodeJS.ProcessEnv>;
+    signal?: AbortSignal | undefined;
+    invoke?: NativeUiHelper;
+  },
 ): Promise<Result<z.infer<typeof nativeUiResultSchema>, AnalysisError>> => {
-  const runtime = createNativeUiHelperRuntime();
+  const runtime = createNativeUiHelperRuntime(options.environment);
   try {
     return await observeWithHelper(target, operation, parameters, {
       ...options,

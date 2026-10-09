@@ -6,6 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { describe, expect, onTestFinished } from "vitest";
 
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
+import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { cliTest } from "../../support/cli/cliFixture.js";
 
 const encodingFixture = () => {
@@ -155,7 +156,7 @@ describe.skipIf(process.platform !== "darwin")(
         });
         expect(inspected.isError, JSON.stringify(inspected)).not.toBe(true);
         expect(inspected.structuredContent).toMatchObject({
-          result: {
+          normalized_result: {
             value: {
               CFBundleExecutable: "App",
               CFBundleIdentifier: "dev.rea.encoding",
@@ -171,7 +172,7 @@ describe.skipIf(process.platform !== "darwin")(
           arguments: { path: app },
         });
         expect(invalid.isError).toBe(true);
-        expect(invalid.structuredContent).toMatchObject({
+        expect(parseMcpToolError(invalid)).toMatchObject({
           error: {
             details: {
               path: join(contents, "Info.plist"),

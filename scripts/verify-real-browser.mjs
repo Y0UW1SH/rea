@@ -10,13 +10,13 @@ import { fileURLToPath } from "node:url";
 
 import { CdpBrowserProvider } from "../dist/browser/CdpBrowserProvider.js";
 import { waitForBrowserDevtoolsPort } from "../dist/browser/BrowserProcessStartup.js";
-import { PlaywrightBrowserScenarioProvider } from "../dist/browser/PlaywrightBrowserScenarioProvider.js";
+import { createBrowserScenarioProvider } from "../dist/composition/browserScenario.js";
 import {
   inspectWebPageInputSchema,
   listBrowserTargetsInputSchema,
 } from "../dist/domain/browserObservation.js";
 import { observeWebSessionInputSchema } from "../dist/domain/browserSession.js";
-import { compareWebCapturesInputSchema } from "../dist/domain/webCaptureDiff.js";
+import { compareWebCapturesInputSchema } from "../dist/domain/webCaptureDiffSchemas.js";
 import {
   captureWebScreenshotInputSchema,
   compareWebScreenshotsInputSchema,
@@ -33,6 +33,7 @@ import {
   browserScenario,
   runScenarioCli,
   scenarioProfiles,
+  verifyScenarioFailureEvidence,
 } from "./lib/browser-scenario-verifier.mjs";
 import { completeVerifierRun, createVerifierRun } from "./lib/verifier-run.mjs";
 import { verifyLargeScreenshotE2e } from "./lib/browser-screenshot-e2e.mjs";
@@ -240,10 +241,9 @@ try {
   try {
     attachedScenario = await runScenarioCli(attachedScenarioInput);
   } catch (cliError) {
-    const direct =
-      await new PlaywrightBrowserScenarioProvider().captureScenario(
-        attachedScenarioInput,
-      );
+    const direct = await createBrowserScenarioProvider(
+      process.env,
+    ).captureScenario(attachedScenarioInput);
     if (!direct.ok) {
       const underlying = direct.error.cause;
       const details =
@@ -274,16 +274,17 @@ try {
     throw new Error("Scenario attachment terminated its external browser");
 
   const profilesBefore = await scenarioProfiles();
-  const launchedScenario =
-    await new PlaywrightBrowserScenarioProvider().captureScenario(
-      browserScenario(
-        {
-          mode: "launch",
-          executable_path: executable,
-        },
-        site.origin,
-      ),
-    );
+  const launchedScenario = await createBrowserScenarioProvider(
+    process.env,
+  ).captureScenario(
+    browserScenario(
+      {
+        mode: "launch",
+        executable_path: executable,
+      },
+      site.origin,
+    ),
+  );
   if (!launchedScenario.ok) throw launchedScenario.error;
   if (
     launchedScenario.value.browser.cleanup !== "terminated-owned-process" ||
@@ -294,6 +295,10 @@ try {
   if ([...profilesAfter].some((entry) => !profilesBefore.has(entry)))
     throw new Error("Scenario launch retained a temporary browser profile");
   assertScenarioCapture(launchedScenario.value);
+  const scenarioFailure = await verifyScenarioFailureEvidence(
+    executable,
+    site.origin,
+  );
   const scenarioResults = JSON.stringify([
     attachedScenario,
     launchedScenario.value,
@@ -360,6 +365,7 @@ try {
     browserScenarioCli: true,
     browserScenarioAttachCleanup: "disconnected-external",
     browserScenarioLaunchCleanup: "terminated-owned-process",
+    scenarioFailure,
     verified: true,
   };
 } finally {

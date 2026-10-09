@@ -17,9 +17,12 @@ it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
     const session = createTestBinarySession(() => {
       throw new Error("no binary provider should start");
     });
-    const server = createServer(session, session, {
-      javascriptRecovery: fixture.provider,
-    });
+    const server = createServer(
+      { kind: "session", session },
+      {
+        javascriptRecovery: fixture.provider,
+      },
+    );
     const client = new Client({ name: "recovery-contract", version: "1" });
     onTestFinished(async () => {
       await client.close();
@@ -55,9 +58,17 @@ it.skipIf(process.platform !== "linux" || process.arch !== "x64")(
     const parsed = toolContract(
       "recover_javascript_sources",
     ).outputSchema.parse(response.structuredContent);
-    const evidence = parseEvidence(parsed.evidence);
-    expect(parsed.result).toEqual(evidence.normalized_result);
-    expect(parsed.evidence_id).toBe(evidence.evidence_id);
+    const evidence = parseEvidence(parsed);
+    expect(evidence).toMatchObject({
+      operation: "recover_javascript_sources",
+      confidence: "derived",
+      authority: "shipped-artifact",
+      parameters: {
+        ...args,
+        extraction_mode: "structural",
+        rewrite_level: "standard",
+      },
+    });
     expect(session.evidenceById(evidence.evidence_id)).toEqual(evidence);
     await assertRecoveryCleanup(fixture.launches);
   },

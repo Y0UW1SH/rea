@@ -1,10 +1,7 @@
 import { expect, it } from "vitest";
 
-import {
-  digestProcessCommitment,
-  parseProcessCapture,
-  type UnverifiedProcessCapture,
-} from "./processCapture.js";
+import { digestProcessCommitment } from "./processScenario.js";
+import { parseProcessCapture } from "./processCaptureParsing.js";
 import {
   compareUnverifiedProcessCaptures as compareProcessCaptures,
   emptyUnverifiedProcessCapture as emptyCapture,
@@ -12,34 +9,20 @@ import {
 } from "./processCapture.fixture.js";
 
 it("never considers truncated captures equivalent", () => {
+  const complete = emptyCapture();
   const capture = {
-    manifest: emptyCapture().manifest,
-    settlement: emptyCapture().settlement,
-    normalization: {
-      paths: true,
-      pids: true,
-      ports: true,
-      time_bucket_ms: 10,
-      patterns: [],
-    },
-    frames: [],
-    rendered_frames: [],
-    interaction_events: [],
-    exit: { code: 0, signal: null, reason: "exited" as const },
-    process_samples: [],
-    filesystem_checkpoints: emptyCapture().filesystem_checkpoints,
-    files_before: [],
-    files_after: [],
-    filesystem_effects: [],
+    ...complete,
     truncated: true,
-    limitations: [],
-    residual_unknowns: [],
-    cleanup: {
-      owned_process_group: "verified" as const,
-      temporary_root: "removed" as const,
+    truncation_details: {
+      ...complete.truncation_details,
+      raw_terminal: {
+        ...complete.truncation_details.raw_terminal,
+        observed_bytes: 1,
+        observed_frames: 1,
+      },
     },
   };
-  expect(compareProcessCaptures(capture, capture).status).toBe("truncated");
+  expect(compareProcessCaptures(capture, capture).status).toBe("unknown");
 });
 
 it("rejects altered v4 commitments and accepts canonical key reordering", () => {
@@ -68,6 +51,14 @@ it("rejects altered v4 commitments and accepts canonical key reordering", () => 
   ).toThrow("executable_identity");
 });
 
+it("requires producer coverage accounting in every parsed capture", () => {
+  const capture = emptyCapture();
+  const { truncation_details: _details, ...missingCoverage } = capture;
+  expect(() => parseProcessCapture(missingCoverage)).toThrow(
+    "truncation_details",
+  );
+});
+
 it("rejects settlement and cleanup combinations that cannot occur", () => {
   const capture = emptyCapture();
   expect(() =>
@@ -92,10 +83,10 @@ it("rejects settlement and cleanup combinations that cannot occur", () => {
   ).toThrow("cleanup_outcome");
 });
 
-it("accepts old captures without a journal and validates complete journals", () => {
+it("requires an explicit journal and validates complete journals", () => {
   const capture = emptyCapture();
   const { event_journal: _eventJournal, ...oldCapture } = capture;
-  expect(parseProcessCapture(oldCapture).event_journal).toEqual([]);
+  expect(() => parseProcessCapture(oldCapture)).toThrow("event_journal");
 
   const eventJournal = [
     { capture_order: 0, collection: "filesystem_checkpoints", index: 0 },
@@ -142,90 +133,25 @@ it("accepts old captures without a journal and validates complete journals", () 
   }
 });
 
-it("migrates persisted v3 executable digests without claiming a selected digest", () => {
+it("rejects old executable identity representations without migration", () => {
   const capture = emptyCapture();
   const {
-    selected_executable_sha256: _selectedExecutableSha256,
-    executable_identity: _executableIdentity,
-    executable_sha256,
-    ...legacyManifest
+    selected_executable_sha256: _selected,
+    executable_identity: _identity,
+    ...oldManifest
   } = capture.manifest;
-  const legacyCapture = {
-    ...capture,
-    manifest: { ...legacyManifest, executable_sha256 },
-  };
-
-  const migrated = parseProcessCapture(legacyCapture);
-
-  expect(migrated.manifest).toMatchObject({
-    selected_executable_sha256: null,
-    executable_sha256: null,
-    executable_identity: {
-      state: "unknown",
-      reason: expect.stringContaining("did not distinguish"),
-    },
-    legacy_executable_sha256: executable_sha256,
-    scenario: capture.manifest.scenario,
-    full_scenario_sha256: capture.manifest.full_scenario_sha256,
-  });
-  expect(compareProcessCaptures(migrated, migrated)).toMatchObject({
-    status: "unchanged",
-  });
-  const exported = JSON.stringify(migrated);
-  expect(parseProcessCapture(JSON.parse(exported))).toEqual(migrated);
-
   expect(() =>
-    parseProcessCapture({
-      ...legacyCapture,
-      manifest: {
-        ...legacyCapture.manifest,
-        executable_sha256: "f".repeat(64),
-      },
-    }),
-  ).toThrow("legacy_executable_sha256");
-
-  const nullDigestScenario = {
-    ...legacyCapture.manifest.scenario,
-    executable_sha256: null,
-  };
-  const malformedLegacyBase = {
-    ...legacyCapture,
-    manifest: {
-      ...legacyCapture.manifest,
-      executable_sha256: null,
-      scenario: nullDigestScenario,
-      full_scenario_sha256: digestProcessCommitment(nullDigestScenario),
-    },
-  };
-  expect(() => parseProcessCapture(malformedLegacyBase)).toThrow();
-  expect(() =>
-    parseProcessCapture({
-      ...malformedLegacyBase,
-      manifest: {
-        ...malformedLegacyBase.manifest,
-        executable_sha256: "not-a-digest",
-      },
-    }),
+    parseProcessCapture({ ...capture, manifest: oldManifest }),
   ).toThrow();
-  const {
-    executable_sha256: _missingLegacyDigest,
-    ...manifestWithoutLegacyDigest
-  } = malformedLegacyBase.manifest;
-  expect(() =>
-    parseProcessCapture({
-      ...malformedLegacyBase,
-      manifest: manifestWithoutLegacyDigest,
-    }),
-  ).toThrow();
-
-  const { executable_identity: _missingIdentity, ...incompleteModernManifest } =
-    capture.manifest;
   expect(() =>
     parseProcessCapture({
       ...capture,
-      manifest: incompleteModernManifest,
+      manifest: {
+        ...capture.manifest,
+        legacy_executable_sha256: capture.manifest.executable_sha256,
+      },
     }),
-  ).toThrow();
+  ).toThrow("legacy_executable_sha256");
 });
 
 it("requires compatible contracts and enforces capture age through a clock seam", () => {

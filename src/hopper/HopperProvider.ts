@@ -1,3 +1,4 @@
+import { snapshotEnvironment } from "../process/snapshotEnvironment.js";
 import { fileURLToPath } from "node:url";
 import { accessSync, constants } from "node:fs";
 
@@ -13,11 +14,11 @@ import type {
   ProviderTargetSupport,
 } from "../application/AnalysisProvider.js";
 import type { AnalysisProfileCommitment } from "../domain/analysisProfile.js";
-import type { AppConfig } from "../config.js";
-import type { BinaryTarget } from "../domain/binaryTarget.js";
-import type { Logger } from "../logger.js";
+import type { AppConfig } from "../config/types.js";
+import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
+import type { Logger } from "pino";
 import { AnalysisCapabilityUnavailableError } from "../domain/analysisErrorCore.js";
-import { err } from "../domain/result.js";
+import { err, ok } from "../domain/result.js";
 import { HopperApplicationLauncher } from "./BridgeLauncher.js";
 import {
   hopperLoaderArgsForTarget,
@@ -33,15 +34,10 @@ import {
   HOPPER_PROVIDER_IDENTITY,
 } from "./HopperProviderCapabilities.js";
 
-export {
-  HOPPER_PROVIDER_IDENTITY,
-  HOPPER_OPERATIONS,
-} from "./HopperProviderCapabilities.js";
-
-const IDENTITY = HOPPER_PROVIDER_IDENTITY;
-
 /** Concrete analysis provider backed by REA's private Hopper bridge. */
 export class HopperProvider implements AnalysisProviderCandidate {
+  private readonly environment: Readonly<NodeJS.ProcessEnv>;
+
   /**
    * Host platform, injected so availability and launch-mode decisions can be
    * exercised for any host rather than only the machine running the suite.
@@ -51,11 +47,14 @@ export class HopperProvider implements AnalysisProviderCandidate {
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
+    environment: Readonly<NodeJS.ProcessEnv>,
     private readonly platform: NodeJS.Platform = process.platform,
-  ) {}
+  ) {
+    this.environment = snapshotEnvironment(environment, platform);
+  }
 
   identity(): ProviderIdentity {
-    return IDENTITY;
+    return HOPPER_PROVIDER_IDENTITY;
   }
 
   capabilities(): readonly CapabilityDescriptor[] {
@@ -137,7 +136,7 @@ export class HopperProvider implements AnalysisProviderCandidate {
     return resolveHopperAnalysisProfile(target, {
       launcherPath: this.config.hopperLauncherPath,
       loaderArgsOverride: this.config.hopperLoaderArgs,
-      provider: IDENTITY,
+      provider: HOPPER_PROVIDER_IDENTITY,
       ...(options?.signal === undefined ? {} : { signal: options.signal }),
     });
   }
@@ -153,13 +152,13 @@ export class HopperProvider implements AnalysisProviderCandidate {
           Promise.resolve(
             err(
               new AnalysisCapabilityUnavailableError(
-                IDENTITY.id,
+                HOPPER_PROVIDER_IDENTITY.id,
                 operation,
                 `Hopper cannot open ${target.kind} targets directly. Inventory or extract the artifact first.`,
               ),
             ),
           ),
-        close: () => Promise.resolve(),
+        close: () => Promise.resolve(ok(null)),
       };
     const preparation = profile?.parameters.prepared_image;
     const parsedImage =
@@ -172,13 +171,13 @@ export class HopperProvider implements AnalysisProviderCandidate {
           Promise.resolve(
             err(
               new AnalysisCapabilityUnavailableError(
-                IDENTITY.id,
+                HOPPER_PROVIDER_IDENTITY.id,
                 operation,
                 "Hopper prepared-image profile is malformed; resolve the analysis profile again.",
               ),
             ),
           ),
-        close: () => Promise.resolve(),
+        close: () => Promise.resolve(ok(null)),
       };
     const preparedImage = parsedImage?.data;
     const container =
@@ -194,11 +193,12 @@ export class HopperProvider implements AnalysisProviderCandidate {
     if (!derivedLoaderArgs.ok)
       return {
         execute: () => Promise.resolve(err(derivedLoaderArgs.error)),
-        close: () => Promise.resolve(),
+        close: () => Promise.resolve(ok(null)),
       };
-    const executionProvider = profile?.provider ?? IDENTITY;
+    const executionProvider = profile?.provider ?? HOPPER_PROVIDER_IDENTITY;
     const client = new HopperClient({
       launcher: new HopperApplicationLauncher({
+        environment: this.environment,
         launcherPath: this.config.hopperLauncherPath,
         targetPath: target.path,
         targetKind: target.kind,
@@ -300,13 +300,9 @@ export class HopperProvider implements AnalysisProviderCandidate {
         ];
       },
       operationHealthSnapshot: () => client.operationHealth(),
-      closeWithOutcome: async (options) => {
+      close: async (options) => {
         await regexSearch.close();
-        return client.closeWithOutcome(options);
-      },
-      close: async () => {
-        await regexSearch.close();
-        await client.close();
+        return client.close(options);
       },
     };
   }

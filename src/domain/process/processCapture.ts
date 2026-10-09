@@ -3,8 +3,12 @@ import { jsonValueSchema } from "../jsonValue.js";
 
 import { normalizationSchema } from "./processScenario.js";
 import { collectProcessCaptureIssues } from "./processCaptureValidation.js";
-
-export * from "./processScenario.js";
+import {
+  filesystemCoverageSchema,
+  processCaptureTruncationDetailsSchema,
+  type FilesystemCoverage,
+  type ProcessCaptureTruncationDetails,
+} from "./processCaptureCoverage.js";
 
 /** Normalized raw PTY chunk, preserving transport-level output differences. */
 export interface TerminalFrame {
@@ -64,6 +68,15 @@ export type FileState = FileStateIdentity &
       }
   );
 
+/** Complete metadata returned for one root-aliased filesystem checkpoint. */
+export interface ProcessFilesystemSnapshot {
+  readonly files: readonly FileState[];
+  readonly truncated: boolean;
+  /** Root aliases whose path enumeration was exhausted, regardless of hash coverage. */
+  readonly completeRoots: readonly string[];
+  readonly coverage: FilesystemCoverage;
+}
+
 interface FileEffectIdentity {
   readonly path: string;
 }
@@ -84,6 +97,12 @@ type FileEffect = FileEffectIdentity &
         readonly status: "modified" | "unchanged";
         readonly before: FileState;
         readonly after: FileState;
+      }
+    | {
+        readonly status: "unknown";
+        readonly before: FileState | null;
+        readonly after: FileState | null;
+        readonly reason: string;
       }
   );
 
@@ -176,11 +195,6 @@ export interface UnverifiedProcessCapture {
     readonly selected_executable_sha256: string | null;
     /** Digest associated with the launch only when path metadata stayed stable across spawn. */
     readonly executable_sha256: string | null;
-    /**
-     * Digest recorded by the original v3 format before selected and launch
-     * executable digests were distinguished. Kept only on migrated captures.
-     */
-    readonly legacy_executable_sha256?: string | undefined;
     readonly executable_identity: {
       readonly state: "path_metadata_unchanged" | "unknown";
       readonly reason: string | null;
@@ -199,16 +213,14 @@ export interface UnverifiedProcessCapture {
   readonly settlement: VerifiedProcessSettlement;
   readonly process_samples: readonly ProcessSample[];
   readonly filesystem_checkpoints: readonly FilesystemCheckpoint[];
-  /**
-   * Global observation order across independently recorded collections.
-   *
-   * Absence is accepted for captures written before this journal existed.
-   */
-  readonly event_journal?: readonly ProcessCaptureEventJournalEntry[];
+  /** Global observation order across independently recorded collections. */
+  readonly event_journal: readonly ProcessCaptureEventJournalEntry[];
   readonly files_before: readonly FileState[];
   readonly files_after: readonly FileState[];
   readonly filesystem_effects: readonly FileEffect[];
   readonly truncated: boolean;
+  /** Per-source accounting for the producer's actual capture coverage. */
+  readonly truncation_details: ProcessCaptureTruncationDetails;
   readonly limitations: readonly string[];
   readonly residual_unknowns: readonly {
     readonly scope:
@@ -264,14 +276,6 @@ export type PartialProcessObservationField<T> =
   | { readonly state: "available"; readonly value: T }
   | { readonly state: "unavailable"; readonly reason: string };
 
-/** Snapshot facts available before filesystem comparison can be completed. */
-/** Snapshot facts available before filesystem comparison can be completed. */
-export interface PartialFilesystemSnapshot {
-  readonly files: readonly FileState[];
-  readonly truncated: boolean;
-}
-
-/** Available and unavailable fields when a run never becomes a full capture. */
 /** Available and unavailable fields when a run never becomes a full capture. */
 export interface IncompleteProcessCaptureObservations {
   readonly target_pid: PartialProcessObservationField<number>;
@@ -295,8 +299,8 @@ export interface IncompleteProcessCaptureObservations {
     readonly ProcessSample[]
   >;
   readonly filesystem_snapshots: {
-    readonly before: PartialProcessObservationField<PartialFilesystemSnapshot>;
-    readonly after: PartialProcessObservationField<PartialFilesystemSnapshot>;
+    readonly before: PartialProcessObservationField<ProcessFilesystemSnapshot>;
+    readonly after: PartialProcessObservationField<ProcessFilesystemSnapshot>;
   };
   readonly event_journal: PartialProcessObservationField<
     readonly ProcessCaptureEventJournalEntry[]
@@ -329,6 +333,13 @@ const fileStateSchema = z.discriminatedUnion("type", [
     symlink_target: z.null(),
   }),
 ]);
+/** Canonical checkpoint facts retained even when capture completion fails. */
+export const processFilesystemSnapshotSchema = z.strictObject({
+  files: z.array(fileStateSchema),
+  truncated: z.boolean(),
+  completeRoots: z.array(z.string()),
+  coverage: filesystemCoverageSchema,
+});
 const fileEffectSchema = z.discriminatedUnion("status", [
   z.object({
     path: z.string(),
@@ -347,6 +358,13 @@ const fileEffectSchema = z.discriminatedUnion("status", [
     status: z.enum(["modified", "unchanged"]),
     before: fileStateSchema,
     after: fileStateSchema,
+  }),
+  z.object({
+    path: z.string(),
+    status: z.literal("unknown"),
+    before: fileStateSchema.nullable(),
+    after: fileStateSchema.nullable(),
+    reason: z.string().min(1),
   }),
 ]);
 /** Exact serialized shape of a process capture. */
@@ -388,10 +406,6 @@ const processCaptureShapeSchema = z.strictObject({
       .string()
       .regex(/^[a-f0-9]{64}$/u)
       .nullable(),
-    legacy_executable_sha256: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/u)
-      .optional(),
     executable_identity: z.strictObject({
       state: z.enum(["path_metadata_unchanged", "unknown"]),
       reason: z.string().nullable(),
@@ -466,19 +480,18 @@ const processCaptureShapeSchema = z.strictObject({
       truncated: z.boolean(),
     }),
   ),
-  event_journal: z
-    .array(
-      z.object({
-        capture_order: z.number().int().nonnegative(),
-        collection: z.enum(PROCESS_CAPTURE_EVENT_COLLECTIONS),
-        index: z.number().int().nonnegative(),
-      }),
-    )
-    .default([]),
+  event_journal: z.array(
+    z.object({
+      capture_order: z.number().int().nonnegative(),
+      collection: z.enum(PROCESS_CAPTURE_EVENT_COLLECTIONS),
+      index: z.number().int().nonnegative(),
+    }),
+  ),
   files_before: z.array(fileStateSchema),
   files_after: z.array(fileStateSchema),
   filesystem_effects: z.array(fileEffectSchema),
   truncated: z.boolean(),
+  truncation_details: processCaptureTruncationDetailsSchema,
   limitations: z.array(z.string()),
   residual_unknowns: z.array(
     z.object({
@@ -542,18 +555,8 @@ const incompleteProcessCaptureObservationsSchema = z.strictObject({
     processCaptureShapeSchema.shape.process_samples,
   ),
   filesystem_snapshots: z.strictObject({
-    before: partialObservationFieldSchema(
-      z.strictObject({
-        files: z.array(fileStateSchema),
-        truncated: z.boolean(),
-      }),
-    ),
-    after: partialObservationFieldSchema(
-      z.strictObject({
-        files: z.array(fileStateSchema),
-        truncated: z.boolean(),
-      }),
-    ),
+    before: partialObservationFieldSchema(processFilesystemSnapshotSchema),
+    after: partialObservationFieldSchema(processFilesystemSnapshotSchema),
   }),
   event_journal: partialObservationFieldSchema(
     processCaptureShapeSchema.shape.event_journal,
@@ -668,16 +671,5 @@ export const processCaptureSchema = processCaptureShapeSchema
       });
   })
   .describe(
-    "The capture must preserve its canonical scenario, comparison, and normalization SHA-256 commitments; ordered capture timestamps and contiguous sequence numbers; before and final filesystem snapshots with truncation propagated; and exit-code consistency with deadline termination. When parsing older input without an event journal, REA supplies an empty journal; empty journals are valid. A non-empty journal must reference every captured observation exactly once with unique in-range references. These cross-field invariants are checked by REA after capture.",
+    "The capture must preserve its canonical scenario, comparison, and normalization SHA-256 commitments; ordered capture timestamps and contiguous sequence numbers; before and final filesystem snapshots with truncation propagated; and exit-code consistency with deadline termination. The event journal is required; empty journals are valid. A non-empty journal must reference every captured observation exactly once with unique in-range references. These cross-field invariants are checked by REA after capture.",
   );
-
-export { parseProcessCapture } from "./processCaptureParsing.js";
-export type { ProcessCapture } from "./processCaptureParsing.js";
-
-export {
-  compareProcessCaptures,
-  comparisonStatusSchema,
-  deriveProcessComparisonStatus,
-  PROCESS_COMPARISON_DIMENSIONS,
-  processCaptureComparisonSchema,
-} from "./processComparison.js";

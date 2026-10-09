@@ -10,12 +10,10 @@ import { promisify } from "node:util";
 import { parseBinaryTarget } from "../dist/application/BinaryTargetResolver.js";
 import { resolveGhidraAnalysisProfile } from "../dist/ghidra/GhidraAnalysisProfile.js";
 import { GhidraClient } from "../dist/ghidra/GhidraClient.js";
-import {
-  inspectGhidraInstallation,
-  SUPPORTED_GHIDRA_VERSION,
-} from "../dist/ghidra/GhidraInstallation.js";
+import { inspectGhidraInstallation } from "../dist/ghidra/GhidraInstallation.js";
+import { SUPPORTED_GHIDRA_VERSION } from "../dist/ghidra/GhidraInstallationPolicy.js";
 import { GhidraHeadlessLauncher } from "../dist/ghidra/GhidraLauncher.js";
-import { GHIDRA_PROVIDER_IDENTITY } from "../dist/ghidra/GhidraProvider.js";
+import { GHIDRA_PROVIDER_IDENTITY } from "../dist/ghidra/GhidraProviderCapabilities.js";
 
 import {
   assertCleanup,
@@ -50,6 +48,7 @@ if (installDir === undefined || !isAbsolute(installDir))
     "Set GHIDRA_INSTALL_DIR to the absolute root of an extracted Ghidra 12.1.4 release.",
   );
 const installation = inspectGhidraInstallation({
+  environment: process.env,
   installDir,
   ...(process.env.JAVA_HOME === undefined
     ? {}
@@ -442,6 +441,7 @@ async function verifyTarget(targetPath, variant, expectedTarget = null) {
 
   const client = new GhidraClient({
     launcher: new GhidraHeadlessLauncher({
+      environment: process.env,
       analyzeHeadlessPath: installation.analyzeHeadlessPath,
       ...(process.env.JAVA_HOME === undefined
         ? {}
@@ -458,6 +458,7 @@ async function verifyTarget(targetPath, variant, expectedTarget = null) {
   });
 
   let runtimeCoordinates;
+  let primaryFailure;
   try {
     const started = await client.start();
     if (!started.ok) throw started.error;
@@ -539,8 +540,18 @@ async function verifyTarget(targetPath, variant, expectedTarget = null) {
       native_api_cli: nativeApiCli,
       native_values: nativeValues,
     };
+  } catch (cause) {
+    primaryFailure = cause;
+    throw cause;
   } finally {
-    await client.close();
+    const closed = await client.close();
+    if (!closed.ok)
+      throw primaryFailure === undefined
+        ? closed.error
+        : new AggregateError(
+            [primaryFailure, closed.error],
+            "Ghidra verification and cleanup failed",
+          );
     if (runtimeCoordinates !== undefined)
       await assertCleanup(runtimeCoordinates);
   }

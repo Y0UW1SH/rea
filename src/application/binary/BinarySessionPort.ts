@@ -1,6 +1,6 @@
 import type { InvestigationRecordPort } from "../investigation/InvestigationRecordPort.js";
 import type { ExecutableFormatHint } from "../../domain/dosCom.js";
-import type { BinaryTarget } from "../../domain/binaryTarget.js";
+import type { BinaryTarget } from "../../domain/binaryTargetTypes.js";
 import type { JsonValue } from "../../domain/jsonValue.js";
 import type { AnalysisSnapshot } from "../../domain/analysisSnapshot.js";
 import type { AnalysisProfileCommitment } from "../../domain/analysisProfile.js";
@@ -21,8 +21,7 @@ import type {
 export interface SavedAnalysisSnapshot {
   readonly path: string;
   readonly bytes: number;
-  readonly entries: number;
-  /** Eligible primitive query bindings; also reported by the legacy entries field. */
+  /** Eligible primitive query bindings. */
   readonly primitive_entries: number;
   /** Eligible composed workflow bindings, separate from primitive queries. */
   readonly workflow_entries: number;
@@ -33,6 +32,12 @@ export interface SavedAnalysisSnapshot {
 /** Target lifecycle used by CLI and MCP without exposing a concrete provider. */
 export interface BinarySessionPort
   extends AnalysisOperationPort, InvestigationRecordPort {
+  /** Hold the active target binding through a complete composed operation. */
+  withAdmittedAnalysis<Value>(
+    operationName: string,
+    signal: AbortSignal | undefined,
+    operation: (analysis: AnalysisOperationPort) => Promise<Value>,
+  ): Promise<Result<Value, AnalysisError>>;
   open(
     path: string,
     options?: {
@@ -68,7 +73,6 @@ export interface BinarySessionPort
   recordWorkflowSnapshot(
     input: WorkflowSnapshotRecordInput,
   ): Result<null, EvidenceIntegrityError>;
-  openCompatibility(): Readonly<Record<string, JsonValue>>;
   onAvailabilityChanged?(listener: () => void | Promise<void>): () => void;
   onAnalysisSnapshotChanged?(listener: () => void | Promise<void>): () => void;
 }

@@ -21,7 +21,10 @@ it("advertises exact valid schemas and records inline layout without a binary ta
   const session = createTestBinarySession(() => {
     throw new Error("deep provider must not start");
   });
-  const server = createServer(session, session, { binaryLayout: service });
+  const server = createServer(
+    { kind: "session", session },
+    { binaryLayout: service },
+  );
   const client = new Client({ name: "binary-layout-contract", version: "1" });
   onTestFinished(async () => {
     await client.close();
@@ -61,9 +64,10 @@ it("advertises exact valid schemas and records inline layout without a binary ta
   const parsed = toolContract("inspect_binary_layout").outputSchema.parse(
     response.structuredContent,
   );
-  const evidence = parseEvidence(parsed.evidence);
-  expect(parsed.result).toEqual(value);
-  expect(parsed.result).toEqual(evidence.normalized_result);
+  const evidence = parseEvidence(parsed);
+  expect(evidence.confidence).toBe("observed");
+  expect(evidence.subject?.digest.sha256).toBe(value.artifact.sha256);
+  expect(parsed.normalized_result).toEqual(value);
   expect(session.evidenceById(evidence.evidence_id)).toEqual(evidence);
   const viewed = await client.callTool({
     name: "inspect_analysis_view",
@@ -79,7 +83,7 @@ it("advertises exact valid schemas and records inline layout without a binary ta
   expect(
     toolContract("inspect_analysis_view").outputSchema.parse(
       viewed.structuredContent,
-    ).result,
+    ).normalized_result,
   ).toMatchObject({
     kind: "summary",
     parent_evidence_id: evidence.evidence_id,

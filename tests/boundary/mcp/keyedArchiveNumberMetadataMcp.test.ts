@@ -1,8 +1,9 @@
+import { silentLogger } from "../../../src/logger.js";
 import { expect } from "vitest";
 import { z } from "zod";
 
 import { createBinarySession } from "../../../src/composition/binary.js";
-import { parseConfig } from "../../../src/config.js";
+import { parseConfig } from "../../../src/config/parseConfig.js";
 import { keyedArchiveResultSchema } from "../../../src/domain/apple/keyedArchive.js";
 import { createServer } from "../../../src/server/createServer.js";
 import {
@@ -18,11 +19,17 @@ mcpTest.for(archiveNumberMetadataCases)(
     const fixture = await keyedArchiveNumberMetadataFixture(item);
     const configured = parseConfig({ REA_ANALYSIS_PROVIDER: "auto" });
     if (!configured.ok) throw configured.error;
-    const session = createBinarySession(configured.value);
+    const session = createBinarySession(
+      configured.value,
+      silentLogger,
+      process.env,
+    );
     onTestFinished(async () => {
       await session.close();
     });
-    const client = await mcp.connect(createServer(session, session));
+    const client = await mcp.connect(
+      createServer({ kind: "session", session }),
+    );
     const opened = await client.callTool({
       name: "open_binary",
       arguments: { path: fixture.path },
@@ -35,8 +42,8 @@ mcpTest.for(archiveNumberMetadataCases)(
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
     expectKeyedArchiveNumberMetadata(
       z
-        .object({ result: keyedArchiveResultSchema })
-        .parse(result.structuredContent).result,
+        .object({ normalized_result: keyedArchiveResultSchema })
+        .parse(result.structuredContent).normalized_result,
       item,
       fixture.digest,
     );
