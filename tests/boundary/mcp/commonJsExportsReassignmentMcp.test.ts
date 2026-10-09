@@ -55,9 +55,36 @@ it.each([
     status: "unavailable",
     loadedType: "object",
   },
+  {
+    source:
+      "module.exports.parse = (module.exports = () => ({ kind: 'result', count: COUNT }));",
+    status: "unavailable",
+    loadedType: "function",
+    exportName: "parse",
+  },
+  {
+    source:
+      "exports.parse = (module.exports = () => ({ kind: 'result', count: COUNT }));",
+    status: "unavailable",
+    loadedType: "function",
+    exportName: "parse",
+  },
+  {
+    source:
+      "function parse() { return { kind: 'result', count: COUNT }; } function configure() { const parse = () => ({ kind: 'result', count: 7 }); let local; module.exports = local = parse; } configure();",
+    status: "unavailable",
+    loadedType: "function",
+    runtimeCount: 7,
+  },
 ])(
   "does not compare an unexported CommonJS callable: $source",
-  async ({ source, status, loadedType }) => {
+  async ({
+    source,
+    status,
+    loadedType,
+    exportName = "default",
+    runtimeCount,
+  }) => {
     const { client, close } = await createApplicationMcpHarness();
     onTestFinished(close);
     const applications = [];
@@ -68,6 +95,17 @@ it.each([
       const actual: unknown = requireFixture(path);
       expect(typeof actual).toBe(loadedType);
       if (loadedType === "object") expect(actual).toEqual({});
+      if (exportName !== "default") {
+        if (typeof actual !== "function")
+          throw new Error("Expected the replacement default function");
+        expect(Reflect.get(actual, exportName)).toBeUndefined();
+      }
+      if (runtimeCount !== undefined) {
+        if (typeof actual !== "function")
+          throw new Error("Expected the local callable export");
+        const returned: unknown = actual();
+        expect(returned).toEqual({ kind: "result", count: runtimeCount });
+      }
       const analyzed = await client.callTool({
         name: "analyze_javascript_application",
         arguments: { input_path: root },
@@ -84,9 +122,9 @@ it.each([
         left,
         right,
         left_module_path: "parser.cjs",
-        left_export_name: "default",
+        left_export_name: exportName,
         right_module_path: "parser.cjs",
-        right_export_name: "default",
+        right_export_name: exportName,
       },
     });
     expect(response.isError).not.toBe(true);
@@ -117,6 +155,7 @@ it.each([
   { target: "module.exports.parse", exportName: "parse", suffix: "" },
   { target: "exports = module.exports", exportName: "default", suffix: "" },
   { target: "module.exports = exports", exportName: "default", suffix: "" },
+  { target: "module['exports'] = exports", exportName: "default", suffix: "" },
   {
     target: "module.exports = exports",
     exportName: "default",

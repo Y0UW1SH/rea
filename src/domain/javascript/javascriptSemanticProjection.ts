@@ -333,13 +333,18 @@ const collectCommonJsExport = (
 ): void => {
   const exportedName = commonJsExportName(node.left, state);
   if (exportedName === undefined) return;
-  // Plain assignment chains evaluate to their rightmost value. Retain the
-  // callable in `module.exports = exports = fn` without exporting the alias.
   // Compound and logical writes depend on the prior export value, so their
   // RHS alone cannot establish the assigned value or its callable identity.
   let value = node.operator === "=" ? node.right : null;
-  while (t.isAssignmentExpression(value, { operator: "=" }))
-    value = value.right;
+  // Recover only the CommonJS alias chain `module.exports = exports = fn`.
+  // General chains can replace an already captured property receiver or
+  // require lexical resolution beyond the module-level callable resolver.
+  if (isCommonJsModuleExports(node.left, state))
+    while (
+      t.isAssignmentExpression(value, { operator: "=" }) &&
+      isUnshadowedGlobal(value.left, state, "exports")
+    )
+      value = value.right;
   const origin = semanticRequireOrigin(value, state);
   addModuleLink(state, {
     kind: "commonjs-export",
@@ -607,15 +612,17 @@ const commonJsExportName = (
     return key === null ? "*" : key || "*";
   if (
     t.isMemberExpression(node.object) &&
-    isUnshadowedGlobal(node.object.object, state, "module") &&
-    semanticStaticPropertyKey(node.object.property, node.object.computed) ===
-      "exports"
+    isCommonJsModuleExports(node.object, state)
   )
     return key === null ? "*" : key || "default";
-  if (
-    isUnshadowedGlobal(node.object, state, "module") &&
-    semanticStaticPropertyKey(node.property, node.computed) === "exports"
-  )
-    return "default";
+  if (isCommonJsModuleExports(node, state)) return "default";
   return undefined;
 };
+
+const isCommonJsModuleExports = (
+  node: t.Node,
+  state: JavaScriptSemanticAnalysisState,
+): boolean =>
+  (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) &&
+  isUnshadowedGlobal(node.object, state, "module") &&
+  semanticStaticPropertyKey(node.property, node.computed) === "exports";
