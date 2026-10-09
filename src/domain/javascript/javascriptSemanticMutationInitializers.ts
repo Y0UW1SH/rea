@@ -114,7 +114,10 @@ export const semanticMutationInitializers = (
   const origins = [
     ...binding.initializers.map((initializer) => ({
       initializer,
-      position: directInitializerPosition(initializer.node, parents),
+      position:
+        initializer.entryBody === undefined
+          ? directInitializerPosition(initializer.node, parents)
+          : { body: initializer.entryBody.body, index: -1 },
     })),
     ...binding.referenceInitializers.map((initializer) => ({
       initializer,

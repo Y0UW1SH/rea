@@ -14,6 +14,7 @@ import type {
 interface JavaScriptSemanticInitializer {
   readonly node: t.Node;
   readonly projection: readonly (string | number | null)[];
+  readonly entryBody?: t.BlockStatement;
 }
 
 /** Additional references from destructuring copies and possible defaults. */
