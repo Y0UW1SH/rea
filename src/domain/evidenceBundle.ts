@@ -1,6 +1,8 @@
 import { z } from "zod";
 import canonicalize from "canonicalize";
 
+import { compareUnicodeCodePoints } from "./unicodeCodePointOrder.js";
+
 import {
   evidenceSchema,
   immutableEvidence,
@@ -72,7 +74,7 @@ export const createEvidenceBundle = (
   unknowns: readonly ResidualUnknown[] = [],
 ): EvidenceBundle => {
   const sortedRecords = [...records].sort((left, right) =>
-    left.evidence_id.localeCompare(right.evidence_id),
+    compareUnicodeCodePoints(left.evidence_id, right.evidence_id),
   );
   return {
     artifacts: uniqueSorted(
@@ -117,7 +119,7 @@ export const createEvidenceBundle = (
     ),
     unknowns: [...unknowns].sort(
       (left, right) =>
-        left.unknown_id.localeCompare(right.unknown_id) ||
+        compareUnicodeCodePoints(left.unknown_id, right.unknown_id) ||
         left.revision - right.revision,
     ),
     records: sortedRecords,
@@ -243,7 +245,20 @@ export const parseEvidenceBundle = (input: unknown): EvidenceBundle => {
     throw new TypeError("Evidence bundle contains duplicate record IDs");
   validateUnknownGraph(parsed.unknowns, parsed.records);
   const canonical = createEvidenceBundle(
-    parsed.records.map(parseEvidence),
+    parsed.records.map((record, index) => {
+      try {
+        return parseEvidence(record);
+      } catch (cause: unknown) {
+        if (cause instanceof z.ZodError)
+          throw new z.ZodError(
+            cause.issues.map((issue) => ({
+              ...issue,
+              path: ["records", index, ...issue.path],
+            })),
+          );
+        throw cause;
+      }
+    }),
     parsed.unknowns,
   );
   if (JSON.stringify(parsed) !== JSON.stringify(canonical))
@@ -504,6 +519,6 @@ const uniqueSorted = <Value>(values: readonly Value[]): Value[] => {
   const unique = new Map<string, Value>();
   for (const value of values) unique.set(JSON.stringify(value), value);
   return [...unique.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareUnicodeCodePoints(left, right))
     .map(([, value]) => value);
 };

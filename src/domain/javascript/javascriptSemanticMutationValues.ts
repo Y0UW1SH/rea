@@ -45,7 +45,13 @@ export const invalidateSemanticMutationPath = (
   };
   if (key === undefined || key === null) return unknown;
   if (value.status === "object" || value.status === "array") {
-    if (value.status === "array" && key === "length") return unknown;
+    if (value.status === "array" && key === "length")
+      return {
+        status: "array",
+        items: [],
+        unknownItems: true,
+        omittedItems: null,
+      };
     const slots = value.status === "object" ? value.properties : value.items;
     const observed = slots.some((property) =>
       semanticPropertyPathKeyMatches(key, property.name),
