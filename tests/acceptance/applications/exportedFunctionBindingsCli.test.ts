@@ -76,22 +76,9 @@ describe("exported function binding resolution through the CLI", () => {
     "keeps $name uncertain after reassignment",
     async ({ source, exportName }) => {
       const fixture = await analyzeVersions(source, exportName);
-      // Execute only these source-owned fixtures as an independent runtime oracle.
-      expect(await runtimeExport(fixture.leftPath, exportName)).toEqual({
-        count: 1,
-      });
-      expect(await runtimeExport(fixture.rightPath, exportName)).toEqual({
-        count: 2,
-      });
+      await expectRuntimeExports(fixture, (count) => ({ count }));
       const result = await compareThroughCli(fixture);
-      expect(result).toMatchObject({
-        left: { status: "unavailable" },
-        right: { status: "unavailable" },
-        summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
-        changes: [{ status: "unknown", path: "" }],
-        coverage: { status: "partial" },
-      });
-      expect(result.property_inventories).toEqual([]);
+      expectUncertainComparison(result);
       for (const evidence of [fixture.input.left, fixture.input.right]) {
         const { normalized_result: analysis } = z
           .object({
@@ -119,15 +106,9 @@ describe("exported function binding resolution through the CLI", () => {
        export { current as default };`,
       "default",
     );
-    expect(await runtimeExport(fixture.leftPath, "default")).toBe(1);
-    expect(await runtimeExport(fixture.rightPath, "default")).toBe(2);
+    await expectRuntimeExports(fixture, (count) => count);
     const cli = await compareThroughCli(fixture);
-    expect(cli).toMatchObject({
-      left: { status: "unavailable" },
-      right: { status: "unavailable" },
-      summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
-      coverage: { status: "partial" },
-    });
+    expectUncertainComparison(cli);
     expect(await compareThroughMcp(fixture.input)).toEqual(cli);
   });
 });
@@ -175,21 +156,7 @@ describe("stable exported function bindings through the CLI", () => {
     },
   ])("retains exact comparison for $name", async ({ source }) => {
     const fixture = await analyzeVersions(source, "default");
-    const result = await compareThroughCli(fixture);
-    expect(result).toMatchObject({
-      left: { status: "selected" },
-      right: { status: "selected" },
-      summary: { added: 0, removed: 0, changed: 1, unknown: 0 },
-      changes: [
-        {
-          path: "/count",
-          status: "changed",
-          left: { availability: "literal", value: 1 },
-          right: { availability: "literal", value: 2 },
-        },
-      ],
-      coverage: { status: "complete-within-inputs" },
-    });
+    expectCountChange(await compareThroughCli(fixture));
   });
 });
 
@@ -210,19 +177,8 @@ describe("export binding lexical scope and declaration order", () => {
     },
   ])("keeps $name uncertain", async ({ source }) => {
     const fixture = await analyzeVersions(source, "current");
-    expect(await runtimeExport(fixture.leftPath, "current")).toEqual({
-      count: 1,
-    });
-    expect(await runtimeExport(fixture.rightPath, "current")).toEqual({
-      count: 2,
-    });
-    const cli = await compareThroughCli(fixture);
-    expect(cli).toMatchObject({
-      left: { status: "unavailable" },
-      right: { status: "unavailable" },
-      summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
-      coverage: { status: "partial" },
-    });
+    await expectRuntimeExports(fixture, (count) => ({ count }));
+    expectUncertainComparison(await compareThroughCli(fixture));
   });
 
   it("does not let a later local declaration contaminate the exported outer binding", async () => {
@@ -236,21 +192,8 @@ describe("export binding lexical scope and declaration order", () => {
        isolated();`,
       "current",
     );
-    expect(await runtimeExport(fixture.leftPath, "current")).toEqual({
-      kind: "result",
-      count: 1,
-    });
-    expect(await runtimeExport(fixture.rightPath, "current")).toEqual({
-      kind: "result",
-      count: 2,
-    });
-    expect(await compareThroughCli(fixture)).toMatchObject({
-      left: { status: "selected" },
-      right: { status: "selected" },
-      summary: { added: 0, removed: 0, changed: 1, unknown: 0 },
-      changes: [{ path: "/count", status: "changed" }],
-      coverage: { status: "complete-within-inputs" },
-    });
+    await expectRuntimeExports(fixture, (count) => ({ kind: "result", count }));
+    expectCountChange(await compareThroughCli(fixture));
   });
 
   it("does not associate a nested CommonJS numeric export with an outer function", async () => {
@@ -262,15 +205,9 @@ describe("export binding lexical scope and declaration order", () => {
       "default",
       "app.cjs",
     );
-    expect(await runtimeExport(fixture.leftPath, "default")).toBe(1);
-    expect(await runtimeExport(fixture.rightPath, "default")).toBe(2);
+    await expectRuntimeExports(fixture, (count) => count);
     const cli = await compareThroughCli(fixture);
-    expect(cli).toMatchObject({
-      left: { status: "unavailable" },
-      right: { status: "unavailable" },
-      summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
-      coverage: { status: "partial" },
-    });
+    expectUncertainComparison(cli);
     expect(await compareThroughMcp(fixture.input)).toEqual(cli);
   });
 
@@ -294,28 +231,8 @@ describe("export binding lexical scope and declaration order", () => {
     },
   ])("compares $name through its real CommonJS binding", async ({ source }) => {
     const fixture = await analyzeVersions(source, "default", "app.cjs");
-    expect(await runtimeExport(fixture.leftPath, "default")).toEqual({
-      kind: "result",
-      count: 1,
-    });
-    expect(await runtimeExport(fixture.rightPath, "default")).toEqual({
-      kind: "result",
-      count: 2,
-    });
-    expect(await compareThroughCli(fixture)).toMatchObject({
-      left: { status: "selected" },
-      right: { status: "selected" },
-      summary: { added: 0, removed: 0, changed: 1, unknown: 0 },
-      changes: [
-        {
-          path: "/count",
-          status: "changed",
-          left: { availability: "literal", value: 1 },
-          right: { availability: "literal", value: 2 },
-        },
-      ],
-      coverage: { status: "complete-within-inputs" },
-    });
+    await expectRuntimeExports(fixture, (count) => ({ kind: "result", count }));
+    expectCountChange(await compareThroughCli(fixture));
   });
 });
 
@@ -364,18 +281,8 @@ describe("export writes in function evaluation contexts", () => {
     },
   ])("keeps an outer export write in $name uncertain", async ({ source }) => {
     const fixture = await analyzeVersions(source, "current");
-    expect(await runtimeExport(fixture.leftPath, "current")).toEqual({
-      count: 1,
-    });
-    expect(await runtimeExport(fixture.rightPath, "current")).toEqual({
-      count: 2,
-    });
-    expect(await compareThroughCli(fixture)).toMatchObject({
-      left: { status: "unavailable" },
-      right: { status: "unavailable" },
-      summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
-      coverage: { status: "partial" },
-    });
+    await expectRuntimeExports(fixture, (count) => ({ count }));
+    expectUncertainComparison(await compareThroughCli(fixture));
   });
 
   it("resolves a CommonJS export in a parameter default outside the function body", async () => {
@@ -387,23 +294,54 @@ describe("export writes in function evaluation contexts", () => {
       "default",
       "app.cjs",
     );
-    expect(await runtimeExport(fixture.leftPath, "default")).toEqual({
-      kind: "result",
-      count: 1,
-    });
-    expect(await runtimeExport(fixture.rightPath, "default")).toEqual({
-      kind: "result",
-      count: 2,
-    });
-    expect(await compareThroughCli(fixture)).toMatchObject({
-      left: { status: "selected" },
-      right: { status: "selected" },
-      summary: { added: 0, removed: 0, changed: 1, unknown: 0 },
-      changes: [{ path: "/count", status: "changed" }],
-      coverage: { status: "complete-within-inputs" },
-    });
+    await expectRuntimeExports(fixture, (count) => ({ kind: "result", count }));
+    expectCountChange(await compareThroughCli(fixture));
   });
 });
+
+const expectRuntimeExports = async (
+  fixture: Awaited<ReturnType<typeof analyzeVersions>>,
+  expected: (count: number) => unknown,
+): Promise<void> => {
+  // Execute only source-owned fixtures as an independent runtime oracle.
+  for (const [path, exportName, count] of [
+    [fixture.leftPath, fixture.input.left_export_name, 1],
+    [fixture.rightPath, fixture.input.right_export_name, 2],
+  ] as const)
+    expect(await runtimeExport(path, exportName)).toEqual(expected(count));
+};
+
+const expectUncertainComparison = (
+  result: Awaited<ReturnType<typeof compareThroughCli>>,
+): void => {
+  expect(result).toMatchObject({
+    left: { status: "unavailable" },
+    right: { status: "unavailable" },
+    summary: { added: 0, removed: 0, changed: 0, unknown: 1 },
+    changes: [{ status: "unknown", path: "" }],
+    coverage: { status: "partial" },
+  });
+  expect(result.property_inventories).toEqual([]);
+};
+
+const expectCountChange = (
+  result: Awaited<ReturnType<typeof compareThroughCli>>,
+): void => {
+  expect(result).toMatchObject({
+    left: { status: "selected" },
+    right: { status: "selected" },
+    summary: { added: 0, removed: 0, changed: 1, unknown: 0 },
+    changes: [
+      {
+        path: "/count",
+        status: "changed",
+        left: { availability: "literal", value: 1 },
+        right: { availability: "literal", value: 2 },
+      },
+    ],
+    coverage: { status: "complete-within-inputs" },
+  });
+};
 
 const runCli = async (args: readonly string[]): Promise<unknown> => {
   const { stdout } = await execute(
