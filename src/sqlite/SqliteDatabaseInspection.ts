@@ -181,9 +181,10 @@ const readColumns = (
   budget: OutputBudget,
 ): SqliteDatabase["schema"]["tables"][number]["columns"] => {
   const columns: SqliteDatabase["schema"]["tables"][number]["columns"] = [];
+  // Direct PRAGMA syntax cannot be shadowed by a stored table or view.
   for (const raw of db
-    .prepare("SELECT * FROM pragma_table_xinfo(?, 'main')")
-    .iterate(name)) {
+    .prepare(`PRAGMA main.table_xinfo(${quoteIdentifier(name)})`)
+    .iterate()) {
     const value = columnRow.parse(raw);
     const column = {
       cid: value.cid,

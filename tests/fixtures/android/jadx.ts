@@ -74,7 +74,10 @@ export const createJadxProtocolFixture = async (
             ownsProcessLifetime: true,
             cleanup: () => cleanupOwnedProcessGroup(spawned.ownership),
           });
-          expect((await supervisor.stop()).status).not.toBe("incomplete");
+          const stopped = await supervisor.stop();
+          expect(stopped.status, JSON.stringify(stopped)).not.toBe(
+            "incomplete",
+          );
           if (options.cwd !== undefined)
             await rm(options.cwd, { recursive: true, force: true });
         });

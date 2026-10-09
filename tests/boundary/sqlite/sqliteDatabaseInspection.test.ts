@@ -20,6 +20,41 @@ const createDatabase = async (sql: string): Promise<string> => {
   return path;
 };
 
+it.each(["table", "view"] as const)(
+  "inspects columns when a %s shadows the table-valued PRAGMA name",
+  async (kind) => {
+    const path = await createDatabase(`
+      CREATE TABLE "selected "" table" ("0" TEXT, "" INTEGER);
+      INSERT INTO "selected "" table" VALUES ('retained', 7);
+      ${kind === "table" ? "CREATE TABLE pragma_table_xinfo(value TEXT)" : "CREATE VIEW pragma_table_xinfo AS SELECT 1"};
+    `);
+    const result = inspectSqliteDatabaseSnapshot(path, {
+      path,
+      table: 'selected " table',
+    });
+    expect(result.schema.tables).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'selected " table',
+          columns: [
+            expect.objectContaining({ name: "0", declared_type: "TEXT" }),
+            expect.objectContaining({ name: "", declared_type: "INTEGER" }),
+          ],
+        }),
+      ]),
+    );
+    expect(result.rows).toMatchObject({
+      columns: ["0", ""],
+      values: [
+        [
+          { type: "text", value: "retained" },
+          { type: "integer", value: "7" },
+        ],
+      ],
+    });
+  },
+);
+
 it("rejects an oversized generated cell through SQLite's native value limit", async () => {
   const path = await createDatabase(`
     CREATE TABLE records (
