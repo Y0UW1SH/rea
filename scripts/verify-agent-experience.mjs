@@ -161,7 +161,7 @@ try {
       id: scenario.id,
       expectedFirstTool: scenario.expectedFirstTool,
       requiresEvidence: scenario.requiresEvidence,
-      qualityCriteria: scenario.requiredAnswerTermGroups,
+      requiredAnswerTermGroups: scenario.requiredAnswerTermGroups,
       requiredToolSubsequence: scenario.requiredToolSubsequence ?? [],
       exitCode: execution.exitCode,
       stderr: execution.stderr,
@@ -174,11 +174,14 @@ try {
   }
 
   const summary = {
+    schemaVersion: 2,
+    evaluationScope: "routing_workflow_and_answer_text_heuristics",
+    factualCorrectness: "not_assessed",
     verifier_run: await completeVerifierRun(verifierRun),
     codex,
     codexVersion,
     model: optionalModel ?? null,
-    scenarios: results.map(({ finalMessage: _message, ...result }) => result),
+    scenarios: results,
     totals: {
       scenarios: results.length,
       naturalUse: results.filter(({ naturalUse }) => naturalUse).length,
@@ -205,11 +208,11 @@ try {
         (total, { cachedInputTokens }) => total + cachedInputTokens,
         0,
       ),
-      completionQuality: results.filter(({ completionQuality }) =>
-        Boolean(completionQuality),
+      answerHeuristicsMet: results.filter(({ answerHeuristicsMet }) =>
+        Boolean(answerHeuristicsMet),
       ).length,
-      authorityHonesty: results.filter(({ authorityHonesty }) =>
-        Boolean(authorityHonesty),
+      epistemicCuePresent: results.filter(({ epistemicCuePresent }) =>
+        Boolean(epistemicCuePresent),
       ).length,
     },
   };
@@ -230,8 +233,8 @@ try {
       inputValidationFailureCount,
       requiredToolSubsequenceMet,
       inputTokens,
-      completionQuality,
-      authorityHonesty,
+      answerHeuristicsMet,
+      epistemicCuePresent,
     }) =>
       exitCode !== 0 ||
       !naturalUse ||
@@ -240,12 +243,12 @@ try {
       inputValidationFailureCount !== 0 ||
       !requiredToolSubsequenceMet ||
       inputTokens <= 0 ||
-      !completionQuality ||
-      !authorityHonesty,
+      !answerHeuristicsMet ||
+      !epistemicCuePresent,
   );
   if (failed.length > 0)
     throw new Error(
-      `Codex agent release evaluation failed: ${failed.map(({ id }) => id).join(", ")}`,
+      `Codex agent routing/workflow/text heuristic checks failed: ${failed.map(({ id }) => id).join(", ")}`,
     );
 } finally {
   if (process.env.REA_AGENT_EVAL_KEEP_FIXTURES !== "true")
@@ -283,13 +286,13 @@ async function createTargets(root, includeManaged) {
     mkdir(javascriptShapeRight, { recursive: true }),
   ]);
   await Promise.all([
-    writeFile(
+    cp(
+      join(repositoryRoot, "tests/fixtures/replay/parser.mjs"),
       join(javascriptShapeLeft, "parser.mjs"),
-      'export default function parse() { return { heading: "Title" }; }\n',
     ),
-    writeFile(
+    cp(
+      join(repositoryRoot, "tests/fixtures/replay/parser-v2.mjs"),
       join(javascriptShapeRight, "parser.mjs"),
-      'export default function parse() { return { heading: { text: "Title", level: 1 } }; }\n',
     ),
   ]);
 

@@ -885,8 +885,26 @@ real local Codex CLI with:
 npm run verify:agent
 ```
 
-Its report records tool selection, repeated calls, token use, completion quality,
-and handling of permissions and unknowns.
+Its report records tool selection, repeated calls, token use, workflow checks,
+and answer text heuristics. `answerTermCoverageMet` checks case-insensitive
+substrings, `epistemicCuePresent` checks for words such as "observed" or "unknown",
+and `answerHeuristicsMet` combines those checks with answer length and the
+configured workflow and Evidence-ID requirements. `finalCitesEvidence` only
+checks whether a produced Evidence ID occurs in the answer; it does not verify
+that the Evidence supports any claim. Negated or fabricated claims can pass all
+of these heuristics.
+
+The report explicitly records `factualCorrectness: "not_assessed"` and preserves
+each final answer for review against the fixture and tool results. A successful
+exit checks routing, workflow, and text heuristics; it does not establish factual
+correctness, completion quality, or honest handling of authority. For the full
+tool results, set `REA_AGENT_EVAL_TRANSCRIPT_DIR` to save the scenario transcripts.
+
+Report schema version 2 replaces `completionQuality` with `answerHeuristicsMet`,
+`authorityHonesty` with `epistemicCuePresent`, `contentCriteriaMet` with
+`answerTermCoverageMet`, and scenario `qualityCriteria` with
+`requiredAnswerTermGroups`. Update report consumers to use these narrower names;
+the previous booleans did not assess the qualities their names implied.
 
 Regenerate the managed conformance manifest and Evidence completion ledger from
 live verification results, or check them for drift:
