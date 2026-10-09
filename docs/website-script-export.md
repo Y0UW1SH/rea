@@ -13,6 +13,10 @@ For passive inspection, select `include_script_sources: true` (CLI:
 or its normalized result as UTF-8 JSON. The compact MCP wrapper's `evidence`
 field contains the complete Evidence record.
 
+The capture must be a regular file. A symlink to a regular file is accepted;
+directories, named pipes and device files are rejected before reading capture
+bytes or creating output.
+
 ```sh
 rea export-web-scripts /analysis/capture.json /analysis/exported-scripts --json
 rea analyze-javascript-application /analysis/exported-scripts/files --json
