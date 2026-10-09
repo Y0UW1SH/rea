@@ -7,10 +7,44 @@ import {
   createGoBinaryByteStringFixture,
   createGoBinaryDiagnosticFixtures,
   createGoBinaryFixture,
+  createGoBinaryPathFailureFixture,
   GO_MODULE_TEXT,
 } from "../fixtures/go/image.js";
 import { createTestTempDirectory } from "../fixtures/temporaryDirectory.js";
 import { cliTest } from "../support/cli/cliFixture.js";
+
+for (const expectedErrno of ["ELOOP", "ENAMETOOLONG"] as const) {
+  cliTest.skipIf(expectedErrno === "ELOOP" && process.platform === "win32")(
+    `reports native ${expectedErrno} path failure as invalid selected-path input through the public Go CLI`,
+    async ({ cli }) => {
+      const root = await createTestTempDirectory("rea-go-cli-path-failure-");
+      const { path, errno } = await createGoBinaryPathFailureFixture(
+        root,
+        expectedErrno,
+      );
+      const result = await cli.run({
+        arguments: ["inspect-go-binary", path, "--json"],
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.json).toMatchObject({
+        code: "invalid_request",
+        details: {
+          operation: "inspect_go_binary",
+          issues: [
+            {
+              path: ["path"],
+              reason: "invalid_value",
+              message: expect.stringContaining(errno),
+            },
+          ],
+        },
+      });
+      expect(result.json).toMatchObject({
+        details: { issues: [{ message: expect.stringContaining(path) }] },
+      });
+    },
+  );
+}
 
 cliTest(
   "preserves invalid embedded Go text bytes through the public CLI",

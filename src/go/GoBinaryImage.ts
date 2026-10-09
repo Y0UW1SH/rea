@@ -4,6 +4,7 @@ import {
   GoBinaryReader,
   goUtf8,
   mappedFileOffset,
+  isZeroFilledSpan,
   type GoBinaryContainer,
   type GoFileMapping,
 } from "./GoBinaryContainer.js";
@@ -58,7 +59,14 @@ export const readGoBinaryImage = (bytes: Buffer): GoBinaryImage => {
     return { format, architecture, bits, byte_order, build_info: null };
   const verifyMapping = (size: number): void => {
     const address = search.address + BigInt(header - search.offset);
-    if (mappedFileOffset(container.mappings, address, size) !== header)
+    if (
+      mappedFileOffset(
+        container.mappings,
+        address,
+        size,
+        container.zero_fills,
+      ) !== header
+    )
       throw new GoBinaryFormatFailure(
         "malformed",
         "Go build-info bytes disagree with their virtual mapping",
@@ -103,15 +111,15 @@ export const readGoBinaryImage = (bytes: Buffer): GoBinaryImage => {
     const pointerBits = ptrSize === 8 ? 64 : 32;
     version = readPointerString(
       reader,
-      container.mappings,
+      container,
       reader.word(header + 16, pointerBits),
-      pointerBits,
     );
-    module = readPointerString(
+    const moduleField = header + 16 + ptrSize;
+    module = readOptionalModuleString(
       reader,
-      container.mappings,
-      reader.word(header + 16 + ptrSize, pointerBits),
-      pointerBits,
+      container,
+      reader.word(moduleField, pointerBits),
+      moduleField,
     );
   }
   if (version.location.bytes + module.location.bytes > MAX_BUILD_INFO_BYTES)
@@ -266,12 +274,12 @@ const readInlineString = (
 
 const readPointerString = (
   reader: GoBinaryReader,
-  mappings: readonly GoFileMapping[],
+  container: GoBinaryContainer,
   address: bigint,
-  bits: 32 | 64,
 ): LocatedString => {
+  const { mappings, zero_fills: zeroFills, bits } = container;
   const width = bits / 8;
-  const header = mappedFileOffset(mappings, address, width * 2);
+  const header = mappedFileOffset(mappings, address, width * 2, zeroFills);
   const valueAddress = reader.word(header, bits);
   const length = reader.word(header + width, bits);
   if (length > BigInt(MAX_BUILD_INFO_BYTES))
@@ -285,9 +293,24 @@ const readPointerString = (
   const offset =
     size === 0 && valueAddress === 0n
       ? header
-      : mappedFileOffset(mappings, valueAddress, size);
+      : mappedFileOffset(mappings, valueAddress, size, zeroFills);
   return {
     bytes: reader.range(offset, size, "Go build-info pointer string"),
     location: { offset, bytes: size },
   };
 };
+
+const readOptionalModuleString = (
+  reader: GoBinaryReader,
+  container: GoBinaryContainer,
+  address: bigint,
+  pointerField: number,
+): LocatedString =>
+  isZeroFilledSpan(
+    container.mappings,
+    container.zero_fills,
+    address,
+    (container.bits / 8) * 2,
+  )
+    ? { bytes: Buffer.alloc(0), location: { offset: pointerField, bytes: 0 } }
+    : readPointerString(reader, container, address);

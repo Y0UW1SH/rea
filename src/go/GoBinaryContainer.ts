@@ -28,6 +28,12 @@ export interface GoFileMapping {
   readonly size: number;
 }
 
+/** Declared zero-initialized virtual memory with no corresponding file bytes. */
+export interface GoZeroFillMapping {
+  readonly address: bigint;
+  readonly size: bigint;
+}
+
 /** Native container facts and its producer-defined build-info search area. */
 export interface GoBinaryContainer {
   readonly format: "elf" | "pe" | "macho";
@@ -35,6 +41,7 @@ export interface GoBinaryContainer {
   readonly bits: 32 | 64;
   readonly byte_order: "little" | "big";
   readonly mappings: readonly GoFileMapping[];
+  readonly zero_fills: readonly GoZeroFillMapping[];
   readonly search: GoFileMapping | null;
 }
 
@@ -108,6 +115,7 @@ export const mappedFileOffset = (
   mappings: readonly GoFileMapping[],
   address: bigint,
   size: number,
+  zeroFills: readonly GoZeroFillMapping[] = [],
 ): number => {
   let found: number | undefined;
   for (const mapping of mappings) {
@@ -131,6 +139,13 @@ export const mappedFileOffset = (
       "malformed",
       "Virtual address or string range is not file mapped",
     );
+  for (const zeroFill of zeroFills) {
+    if (spansOverlap(address, BigInt(size), zeroFill.address, zeroFill.size))
+      throw new GoBinaryFormatFailure(
+        "malformed",
+        "Virtual address has ambiguous file and zero-fill mappings",
+      );
+  }
   const end = address + BigInt(size);
   for (const mapping of mappings) {
     const start = address > mapping.address ? address : mapping.address;
@@ -148,6 +163,43 @@ export const mappedFileOffset = (
   }
   return found;
 };
+
+/** Recognize a wholly zero-filled span while refusing even partial file aliases. */
+export const isZeroFilledSpan = (
+  mappings: readonly GoFileMapping[],
+  zeroFills: readonly GoZeroFillMapping[],
+  address: bigint,
+  size: number,
+): boolean => {
+  const bytes = BigInt(size);
+  if (
+    !zeroFills.some(
+      (mapping) =>
+        address >= mapping.address &&
+        address + bytes <= mapping.address + mapping.size,
+    )
+  )
+    return false;
+  for (const mapping of mappings) {
+    if (spansOverlap(address, bytes, mapping.address, BigInt(mapping.size)))
+      throw new GoBinaryFormatFailure(
+        "malformed",
+        "Virtual address has ambiguous file and zero-fill mappings",
+      );
+  }
+  return true;
+};
+
+const spansOverlap = (
+  address: bigint,
+  size: bigint,
+  otherAddress: bigint,
+  otherSize: bigint,
+): boolean =>
+  size > 0n &&
+  otherSize > 0n &&
+  address < otherAddress + otherSize &&
+  otherAddress < address + size;
 
 /** Decode metadata text without replacing invalid bytes or stripping an initial BOM. */
 export const goUtf8 = (bytes: Buffer, label: string): string => {

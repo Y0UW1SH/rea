@@ -30,3 +30,21 @@ it("does not confuse adjacent mappings with overlapping byte spans", () => {
   expect(mappedFileOffset([selected, adjacent], 140n, 24)).toBe(56);
   expect(mappedFileOffset([selected, adjacent], 164n, 0)).toBe(80);
 });
+
+it.each([
+  { address: 132n, size: 4n },
+  { address: 112n, size: 12n },
+])(
+  "rejects zero-fill aliases overlapping part of file-backed bytes",
+  (zeroFill) => {
+    expect(() =>
+      mappedFileOffset([selected], 120n, 24, [zeroFill]),
+    ).toThrowError(/ambiguous/i);
+  },
+);
+
+it("keeps adjacent zero-filled memory outside the selected file span", () => {
+  expect(
+    mappedFileOffset([selected], 140n, 24, [{ address: 164n, size: 32n }]),
+  ).toBe(56);
+});

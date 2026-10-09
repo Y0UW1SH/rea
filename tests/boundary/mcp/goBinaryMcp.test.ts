@@ -13,6 +13,7 @@ import {
   createGoBinaryByteStringFixture,
   createGoBinaryDiagnosticFixtures,
   createGoBinaryFixture,
+  createGoBinaryPathFailureFixture,
 } from "../../fixtures/go/image.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
@@ -38,6 +39,40 @@ const goMcpTest = mcpTest.extend<{
     }
   },
 });
+
+for (const expectedErrno of ["ELOOP", "ENAMETOOLONG"] as const) {
+  goMcpTest.skipIf(expectedErrno === "ELOOP" && process.platform === "win32")(
+    `reports native ${expectedErrno} path failure as invalid selected-path input through Go MCP`,
+    async ({ go: { client } }) => {
+      const root = await createTestTempDirectory("rea-go-mcp-path-failure-");
+      const { path, errno } = await createGoBinaryPathFailureFixture(
+        root,
+        expectedErrno,
+      );
+      const response = await client.callTool({
+        name: "inspect_go_binary",
+        arguments: { path },
+      });
+      const diagnostic = parseMcpToolError(response);
+      expect(diagnostic.error).toMatchObject({
+        code: "invalid_request",
+        details: {
+          operation: "inspect_go_binary",
+          issues: [
+            {
+              path: ["path"],
+              reason: "invalid_value",
+              message: expect.stringContaining(errno),
+            },
+          ],
+        },
+      });
+      expect(diagnostic.error.details).toMatchObject({
+        issues: [{ message: expect.stringContaining(path) }],
+      });
+    },
+  );
+}
 
 goMcpTest(
   "preserves invalid embedded Go text bytes through MCP",

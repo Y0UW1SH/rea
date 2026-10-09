@@ -4,6 +4,7 @@ import {
   mappedFileOffset,
   type GoBinaryContainer,
   type GoFileMapping,
+  type GoZeroFillMapping,
 } from "./GoBinaryContainer.js";
 
 /** Read thin Mach-O images, retaining the slice's exact file-backed mappings. */
@@ -28,6 +29,7 @@ export const readGoMachoImage = (bytes: Buffer): GoBinaryContainer => {
       "Mach-O command count exceeds its load-command range",
     );
   const mappings: GoFileMapping[] = [];
+  const zeroFills: GoZeroFillMapping[] = [];
   const named: GoFileMapping[] = [];
   let fallback: GoFileMapping | null = null;
   let offset = commandStart;
@@ -72,13 +74,20 @@ export const readGoMachoImage = (bytes: Buffer): GoBinaryContainer => {
           "Mach-O section table exceeds its segment command",
         );
       const mapping = {
-        ...reader.fileRange(fileOffset, fileSize, "Mach-O segment"),
+        ...(fileSize === 0n
+          ? { offset: 0, size: 0 }
+          : reader.fileRange(fileOffset, fileSize, "Mach-O segment")),
         address,
       };
       const name = fixedName(
         reader.range(offset + 8, 16, "Mach-O segment name"),
       );
       if (mapping.size !== 0 && name !== "__PAGEZERO") mappings.push(mapping);
+      if (memorySize > fileSize && name !== "__PAGEZERO")
+        zeroFills.push({
+          address: address + fileSize,
+          size: memorySize - fileSize,
+        });
       if (
         fallback === null &&
         address !== 0n &&
@@ -148,6 +157,7 @@ export const readGoMachoImage = (bytes: Buffer): GoBinaryContainer => {
     bits,
     byte_order: little ? "little" : "big",
     mappings,
+    zero_fills: zeroFills,
     search: named[0] ?? fallback,
   };
 };

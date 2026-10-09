@@ -1,4 +1,39 @@
 import { dosMz } from "../../../src/domain/binaryTarget.fixture.js";
+import { lstat, symlink } from "node:fs/promises";
+import { join } from "node:path";
+
+/** Actual filesystem paths that fail before Go artifact acquisition begins. */
+export const createGoBinaryPathFailureFixture = async (
+  root: string,
+  expectedErrno: "ELOOP" | "ENAMETOOLONG",
+): Promise<{ path: string; errno: string }> => {
+  let path = join(root, "a".repeat(256));
+  if (expectedErrno === "ELOOP") {
+    const loop = join(root, "loop");
+    await symlink(loop, loop, "dir");
+    path = join(loop, "application");
+  }
+  try {
+    await lstat(path);
+  } catch (cause: unknown) {
+    if (
+      !(cause instanceof Error) ||
+      !("code" in cause) ||
+      typeof cause.code !== "string"
+    )
+      throw cause;
+    if (
+      (expectedErrno === "ELOOP" || process.platform === "linux") &&
+      cause.code !== expectedErrno
+    )
+      throw new Error(
+        `Path fixture expected ${expectedErrno}, but native lstat returned ${cause.code}.`,
+        { cause },
+      );
+    return { path, errno: cause.code };
+  }
+  throw new Error(`Expected native lstat to reject path fixture: ${path}`);
+};
 
 /** Producer-shaped Go metadata used for portable binary format regressions. */
 export const GO_MODULE_TEXT =

@@ -313,3 +313,283 @@ const extendedElfFixture = (): Buffer => {
   fixture.bytes.subarray(320, 384).copy(bytes, tableOffset + (count - 1) * 64);
   return bytes;
 };
+
+const legacyLayouts = [
+  ["elf", 32, "little"],
+  ["elf", 32, "big"],
+  ["elf", 64, "little"],
+  ["elf", 64, "big"],
+  ["pe", 32, "little"],
+  ["pe", 64, "little"],
+  ["macho", 32, "little"],
+  ["macho", 32, "big"],
+  ["macho", 64, "little"],
+  ["macho", 64, "big"],
+] as const;
+
+it.each(legacyLayouts)(
+  "reads moduleless legacy %s %d-bit %s metadata with a zero-filled module header",
+  (format, bits, byteOrder) => {
+    const fixture = zeroFilledModuleFixture(format, bits, byteOrder);
+    expect(readGoBinaryImage(fixture.bytes).build_info).toMatchObject({
+      encoding: "pointer",
+      go_version: "go1.17",
+      module_text: "",
+      module_bytes_base64: "",
+      module_location: { offset: fixture.moduleField, bytes: 0 },
+    });
+  },
+);
+
+it.each(["elf", "pe", "macho"] as const)(
+  "recognizes a module header in a %s segment containing only zero-filled memory",
+  (format) => {
+    const fixture = zeroFilledModuleFixture(format, 64, "little", true);
+    expect(readGoBinaryImage(fixture.bytes).build_info).toMatchObject({
+      go_version: "go1.17",
+      module_text: "",
+      module_location: { offset: fixture.moduleField, bytes: 0 },
+    });
+  },
+);
+
+it.each(["elf", "pe", "macho"] as const)(
+  "keeps unmapped and partial zero-filled %s module headers invalid",
+  (format) => {
+    const fixture = zeroFilledModuleFixture(format, 64, "little");
+    fixture.bytes.writeBigUInt64LE(
+      fixture.moduleAddress + 8n,
+      fixture.moduleField,
+    );
+    expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(
+      /mapped|range/i,
+    );
+    fixture.bytes.writeBigUInt64LE(0x30000n, fixture.moduleField);
+    expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(
+      /mapped|range/i,
+    );
+  },
+);
+
+it.each(["elf", "pe", "macho"] as const)(
+  "keeps compiler headers in zero-filled %s memory invalid",
+  (format) => {
+    const fixture = zeroFilledModuleFixture(format, 64, "little");
+    fixture.bytes.writeBigUInt64LE(
+      fixture.moduleAddress,
+      fixture.headerOffset + 16,
+    );
+    expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(
+      /mapped|range/i,
+    );
+  },
+);
+
+it.each(["elf", "pe", "macho"] as const)(
+  "keeps nonempty string contents in zero-filled %s memory invalid",
+  (format) => {
+    const version = zeroFilledModuleFixture(format, 64, "little");
+    version.bytes.writeBigUInt64LE(version.moduleAddress, 1536);
+    expect(() => readGoBinaryImage(version.bytes)).toThrowError(
+      /mapped|range/i,
+    );
+    const module = zeroFilledModuleFixture(format, 64, "little");
+    module.bytes.writeBigUInt64LE(0x10000n + 1552n, module.moduleField);
+    module.bytes.writeBigUInt64LE(module.moduleAddress, 1552);
+    expect(() => readGoBinaryImage(module.bytes)).toThrowError(/mapped|range/i);
+  },
+);
+
+it.each(["elf", "pe", "macho"] as const)(
+  "rejects zero-filled %s extents overflowing the image address width",
+  (format) => {
+    const fixture = zeroFilledModuleFixture(format, 64, "little", true);
+    if (format === "elf")
+      fixture.bytes.writeBigUInt64LE(0xfffffffffffffff8n, 184 + 16);
+    else if (format === "pe")
+      fixture.bytes.writeBigUInt64LE(0xfffffffffffeffffn, 152 + 24);
+    else fixture.bytes.writeBigUInt64LE(0xfffffffffffffff8n, 184 + 24);
+    expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(
+      /overflow|addresses/i,
+    );
+  },
+);
+
+it.each(["elf", "pe", "macho"] as const)(
+  "ignores unused file offsets for %s memory with no file bytes",
+  (format) => {
+    const fixture = zeroFilledModuleFixture(format, 64, "little", true);
+    if (format === "elf")
+      fixture.bytes.writeBigUInt64LE(0xffffffffffffffffn, 184 + 8);
+    else if (format === "pe") fixture.bytes.writeUInt32LE(0xffffffff, 304 + 20);
+    else fixture.bytes.writeBigUInt64LE(0xffffffffffffffffn, 184 + 40);
+    expect(readGoBinaryImage(fixture.bytes).build_info?.go_version).toBe(
+      "go1.17",
+    );
+  },
+);
+
+it("does not treat Mach-O __PAGEZERO as a module string header", () => {
+  const fixture = zeroFilledModuleFixture("macho", 64, "little", true);
+  fixture.bytes.fill(0, 184 + 8, 184 + 24);
+  fixture.bytes.write("__PAGEZERO", 184 + 8);
+  expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(/mapped|range/i);
+});
+
+it.each(["elf", "pe", "macho"] as const)(
+  "refuses file aliases overlapping only part of a zero-filled %s module header",
+  (format) => {
+    const fixture = zeroFilledModuleFixture(format, 64, "little");
+    addLegacyMapping(fixture.bytes, format, {
+      address: fixture.moduleAddress + 8n,
+      fileOffset: 512,
+      fileSize: 8,
+      memorySize: 8,
+    });
+    expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(/ambiguous/i);
+  },
+);
+
+it.each(["elf", "pe", "macho"] as const)(
+  "refuses a file alias covering a zero-filled %s module header even when file bytes are zero",
+  (format) => {
+    const fixture = zeroFilledModuleFixture(format, 64, "little");
+    addLegacyMapping(fixture.bytes, format, {
+      address: fixture.moduleAddress,
+      fileOffset: 512,
+      fileSize: 16,
+      memorySize: 16,
+    });
+    expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(/ambiguous/i);
+  },
+);
+
+it("does not infer PE zero-fill from raw padding beyond a smaller virtual size", () => {
+  const fixture = createGoBinaryFixture({ format: "pe", encoding: "pointer" });
+  fixture.bytes.writeUInt32LE(1024, 264 + 8);
+  expect(readGoBinaryImage(fixture.bytes).build_info?.go_version).toBe(
+    "go1.26.0",
+  );
+});
+
+it.each(["inline", "pointer"] as const)(
+  "refuses zero-filled aliases overlapping only %s string bytes",
+  (encoding) => {
+    const fixture = createGoBinaryFixture({ format: "pe", encoding });
+    addLegacyMapping(fixture.bytes, "pe", {
+      address: 0x10000n + BigInt(fixture.moduleOffset + 32),
+      fileOffset: 0,
+      fileSize: 0,
+      memorySize: 8,
+    });
+    expect(() => readGoBinaryImage(fixture.bytes)).toThrowError(/ambiguous/i);
+  },
+);
+
+const zeroFilledModuleFixture = (
+  format: "elf" | "pe" | "macho",
+  bits: 32 | 64,
+  byteOrder: "little" | "big",
+  separateSegment = false,
+) => {
+  const fixture = createGoBinaryFixture({
+    format,
+    bits,
+    byteOrder,
+    encoding: "pointer",
+    goVersion: "go1.17",
+  });
+  const view = new DataView(
+    fixture.bytes.buffer,
+    fixture.bytes.byteOffset,
+    fixture.bytes.byteLength,
+  );
+  const little = byteOrder === "little";
+  const moduleAddress = separateSegment
+    ? 0x20000n
+    : format === "pe"
+      ? 0x10c00n
+      : 0x11000n;
+  const moduleField = fixture.headerOffset + 16 + bits / 8;
+  if (bits === 64) view.setBigUint64(moduleField, moduleAddress, little);
+  else view.setUint32(moduleField, Number(moduleAddress), little);
+  if (separateSegment) {
+    addLegacyMapping(
+      fixture.bytes,
+      format,
+      { address: moduleAddress, fileOffset: 0, fileSize: 0, memorySize: 16 },
+      { bits, little },
+    );
+  } else if (format === "elf") {
+    if (bits === 64) view.setBigUint64(168, 4112n, little);
+    else view.setUint32(148, 4112, little);
+  } else if (format === "pe") {
+    view.setUint32(152 + (bits === 64 ? 112 : 96) + 8, 2064, little);
+  } else if (bits === 64) {
+    view.setBigUint64(32 + 32, 4112n, little);
+  } else {
+    view.setUint32(28 + 28, 4112, little);
+  }
+  return { ...fixture, moduleAddress, moduleField };
+};
+
+const addLegacyMapping = (
+  bytes: Buffer,
+  format: "elf" | "pe" | "macho",
+  {
+    address,
+    fileOffset,
+    fileSize,
+    memorySize,
+  }: {
+    address: bigint;
+    fileOffset: number;
+    fileSize: number;
+    memorySize: number;
+  },
+  { bits, little }: { bits: 32 | 64; little: boolean } = {
+    bits: 64,
+    little: true,
+  },
+): void => {
+  const wide = bits === 64;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const u32 = (offset: number, value: number) =>
+    view.setUint32(offset, value, little);
+  const word = (offset: number, value: bigint) => {
+    if (wide) view.setBigUint64(offset, value, little);
+    else u32(offset, Number(value));
+  };
+  if (format === "elf") {
+    view.setUint16(wide ? 56 : 44, 2, little);
+    const entry = 128 + (wide ? 56 : 32);
+    u32(entry, 1);
+    u32(entry + (wide ? 4 : 24), 6);
+    word(entry + (wide ? 8 : 4), BigInt(fileOffset));
+    word(entry + (wide ? 16 : 8), address);
+    word(entry + (wide ? 32 : 16), BigInt(fileSize));
+    word(entry + (wide ? 40 : 20), BigInt(memorySize));
+  } else if (format === "pe") {
+    view.setUint16(134, 2, little);
+    const entry = 152 + (wide ? 112 : 96) + 40;
+    u32(entry + 8, memorySize);
+    u32(entry + 12, Number(address - 0x10000n));
+    u32(entry + 16, fileSize);
+    u32(entry + 20, fileOffset);
+    u32(entry + 36, 0xc0000040);
+  } else {
+    const entry = wide ? 32 + 72 + 80 : 28 + 56 + 68;
+    const size = wide ? 72 : 56;
+    u32(16, 2);
+    u32(20, entry + size - (wide ? 32 : 28));
+    u32(entry, wide ? 0x19 : 1);
+    u32(entry + 4, size);
+    bytes.write("__EXTRA", entry + 8);
+    word(entry + 24, address);
+    word(entry + (wide ? 32 : 28), BigInt(memorySize));
+    word(entry + (wide ? 40 : 32), BigInt(fileOffset));
+    word(entry + (wide ? 48 : 36), BigInt(fileSize));
+    u32(entry + (wide ? 56 : 40), 3);
+    u32(entry + (wide ? 60 : 44), 3);
+  }
+};

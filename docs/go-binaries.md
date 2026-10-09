@@ -58,6 +58,14 @@ original stable file snapshot, including pointer-backed strings. It does not
 scan arbitrary byte strings as compiler metadata or interpret a fat Mach-O
 container as one selected architecture.
 
+Historical moduleless Go binaries can store their empty module-string header in
+declared zero-initialized virtual memory rather than file-backed bytes. The reader
+recognizes this only when the complete optional module header lies in that memory
+without a conflicting file mapping. Its module contents are empty and
+`module_location` has zero bytes, anchored at the build-info field containing the
+module-header pointer. Compiler strings and other unmapped pointers remain strict
+file-backed reads.
+
 `build_info: null` means no recognized record was found in the inspected image.
 It does not prove that the binary is not Go. Stripping, old builds, deliberate
 removal and obfuscation can limit metadata. A malformed supported container or

@@ -88,7 +88,11 @@ const failureFor = (
       return new AnalysisAccessDeniedError(OPERATION, path, cause.code, {
         cause,
       });
-    if (cause.code === "ENOENT" || cause.code === "ENOTDIR")
+    if (
+      ["ENOENT", "ENOTDIR", "ELOOP", "ENAMETOOLONG"].includes(
+        String(cause.code),
+      )
+    )
       return new AnalysisInputError(OPERATION, { cause }, [
         {
           path: ["path"],

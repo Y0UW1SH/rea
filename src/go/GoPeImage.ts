@@ -4,6 +4,7 @@ import {
   GoBinaryReader,
   type GoBinaryContainer,
   type GoFileMapping,
+  type GoZeroFillMapping,
 } from "./GoBinaryContainer.js";
 
 const peHeaderOffset = (reader: GoBinaryReader): number => {
@@ -77,6 +78,7 @@ export const readGoPeImage = (bytes: Buffer): GoBinaryContainer => {
     "PE sections",
   );
   const mappings: GoFileMapping[] = [];
+  const zeroFills: GoZeroFillMapping[] = [];
   let search: GoFileMapping | null = null;
   for (let index = 0; index < count; index++) {
     const entry = start + index * 40;
@@ -92,10 +94,17 @@ export const readGoPeImage = (bytes: Buffer): GoBinaryContainer => {
         "PE section virtual address overflows its address width",
       );
     const mapping = {
-      ...reader.fileRange(BigInt(offset), BigInt(size), "PE section"),
+      ...(size === 0
+        ? { offset: 0, size: 0 }
+        : reader.fileRange(BigInt(offset), BigInt(size), "PE section")),
       address,
     };
     if (size !== 0) mappings.push(mapping);
+    if (virtualSize > size)
+      zeroFills.push({
+        address: address + BigInt(size),
+        size: BigInt(virtualSize - size),
+      });
     // Match debug/buildinfo's first initialized, readable, writable data section.
     if (
       search === null &&
@@ -121,6 +130,7 @@ export const readGoPeImage = (bytes: Buffer): GoBinaryContainer => {
     bits,
     byte_order: "little",
     mappings,
+    zero_fills: zeroFills,
     search,
   };
 };

@@ -4,6 +4,7 @@ import {
   mappedFileOffset,
   type GoBinaryContainer,
   type GoFileMapping,
+  type GoZeroFillMapping,
 } from "./GoBinaryContainer.js";
 
 /** Read ELF build-info sections and file-backed program mappings. */
@@ -110,6 +111,7 @@ export const readGoElfImage = (bytes: Buffer): GoBinaryContainer => {
     "ELF program headers",
   );
   const mappings: GoFileMapping[] = [];
+  const zeroFills: GoZeroFillMapping[] = [];
   let fallback: GoFileMapping | null = null;
   for (let index = 0; index < phCount; index++) {
     const offset = phStart + index * phWidth;
@@ -125,10 +127,14 @@ export const readGoElfImage = (bytes: Buffer): GoBinaryContainer => {
         "ELF load segment sizes or addresses are invalid",
       );
     const mapping = {
-      ...reader.fileRange(fileOffset, size, "ELF load segment"),
+      ...(size === 0n
+        ? { offset: 0, size: 0 }
+        : reader.fileRange(fileOffset, size, "ELF load segment")),
       address,
     };
     if (mapping.size !== 0) mappings.push(mapping);
+    if (memorySize > size)
+      zeroFills.push({ address: address + size, size: memorySize - size });
     if (fallback === null && (flags & 3) === 2) fallback = mapping;
   }
   let search: GoFileMapping | null = null;
@@ -200,7 +206,10 @@ export const readGoElfImage = (bytes: Buffer): GoBinaryContainer => {
           ),
           address,
         };
-        if (mappedFileOffset(mappings, address, search.size) !== search.offset)
+        if (
+          mappedFileOffset(mappings, address, search.size, zeroFills) !==
+          search.offset
+        )
           throw new GoBinaryFormatFailure(
             "malformed",
             "ELF build-info section disagrees with its load mapping",
@@ -215,6 +224,7 @@ export const readGoElfImage = (bytes: Buffer): GoBinaryContainer => {
     bits,
     byte_order: reader.little ? "little" : "big",
     mappings,
+    zero_fills: zeroFills,
     search: search ?? fallback,
   };
 };
