@@ -303,6 +303,11 @@ const collectDefinitions = (
     readonly node: t.Node;
     readonly scope: JavaScriptSemanticScopeState;
   }[] = [];
+  const functionBodies: {
+    readonly body: t.BlockStatement;
+    readonly scope: JavaScriptSemanticScopeState;
+    readonly parameters: t.Function["params"];
+  }[] = [];
   traverseJavaScriptAst(program, {
     enter: (node, parent, readAncestors) => {
       let parentScope = currentSemanticScope(stack);
@@ -346,6 +351,12 @@ const collectDefinitions = (
       if (nested !== undefined) {
         stack.push(nested);
         openedScopes.set(node, (openedScopes.get(node) ?? 0) + 1);
+        if (t.isBlockStatement(node) && t.isFunction(parent))
+          functionBodies.push({
+            body: node,
+            scope: nested,
+            parameters: parent.params,
+          });
       }
       const scope = currentSemanticScope(stack);
       state.scopeByNode.set(node, scope);
@@ -381,6 +392,53 @@ const collectDefinitions = (
   // All declarations must exist before resolving writes, including hoisted
   // functions and local declarations that shadow an outer binding.
   for (const { node, scope } of assignments) bindAssignment(node, scope, state);
+  for (const { body, scope, parameters } of functionBodies)
+    for (const parameter of parameters)
+      for (const identifier of assignedPatternIdentifiers(
+        t.isTSParameterProperty(parameter) ? parameter.parameter : parameter,
+      ))
+        copyParameterToBody({ identifier, body, scope, state });
+};
+
+const copyParameterToBody = (input: {
+  readonly identifier: t.Identifier;
+  readonly body: t.BlockStatement;
+  readonly scope: JavaScriptSemanticScopeState;
+  readonly state: JavaScriptSemanticAnalysisState;
+}): void => {
+  const { identifier, body, scope, state } = input;
+  const binding = scope.bindings.get(identifier.name);
+  if (
+    binding === undefined ||
+    binding.kind !== "variable" ||
+    binding.definitions.some(({ kind }) => kind === "function")
+  )
+    return;
+  // A separate body var environment starts with the parameter's value. The
+  // real parameter identifier retains its scope and source location; entryBody
+  // records when the copy occurs without inventing an expression in the AST.
+  binding.initializers.unshift({
+    node: identifier,
+    projection: [],
+    entryBody: body,
+  });
+  for (let index = binding.initializers.length - 1; index >= 0; index -= 1) {
+    const initializer = binding.initializers[index];
+    if (
+      initializer !== undefined &&
+      initializer.entryBody === undefined &&
+      initializer.projection.length === 0 &&
+      t.isIdentifier(initializer.node) &&
+      resolveSemanticBindingState(
+        state,
+        initializer.node,
+        initializer.node.name,
+      ) === binding
+    )
+      // Direct self-initialization preserves the prior value, including any
+      // actual overwrite before it. Keep the source definition/reference facts.
+      binding.initializers.splice(index, 1);
+  }
 };
 
 const hasConditionalInitializer = (ancestors: readonly t.Node[]): boolean => {

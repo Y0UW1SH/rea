@@ -19,7 +19,8 @@ interface CommonJsExportCase {
   readonly status: string;
   readonly loadedType: string;
   readonly exportName?: string;
-  readonly runtimeCount?: number;
+  readonly runtimeCount?: number | "version";
+  readonly uncertainCount?: boolean;
 }
 
 it.each<CommonJsExportCase>([
@@ -102,6 +103,21 @@ it.each<CommonJsExportCase>([
     status: "unavailable",
     loadedType: "string",
   },
+  ...[
+    { body: "var arg; arg.value = COUNT;", uncertain: true },
+    { body: "var arg = arg; arg.value = COUNT;", uncertain: true },
+    { body: "arg.value = COUNT; var arg;", uncertain: true },
+    { body: "arg.value = COUNT; var arg = {};", uncertain: true },
+    { body: "var arg = {}; arg.value = COUNT;", uncertain: false },
+    { body: "var arg; arg = {}; arg.value = COUNT;", uncertain: false },
+    { body: "function arg() {} arg.value = COUNT;", uncertain: false },
+  ].map(({ body, uncertain }) => ({
+    source: `const source = { value: 0 }; module.exports = exports = function current(arg = null, set = (arg = source)) { ${body} return { kind: 'result', count: source.value }; };`,
+    status: "selected",
+    loadedType: "function",
+    runtimeCount: uncertain ? ("version" as const) : 0,
+    uncertainCount: uncertain,
+  })),
   ...["parse", "var parse"].map((target) => ({
     source: `function configure(parse) { if (false) ${target} = () => ({ kind: 'result', count: COUNT }); module.exports = exports = parse; } configure(() => ({ kind: 'result', count: 7 }));`,
     status: "unavailable",
@@ -119,13 +135,14 @@ it.each<CommonJsExportCase>([
     runtimeCount: 7,
   })),
 ])(
-  "does not compare an unexported CommonJS callable: $source",
+  "avoids definite CommonJS differences unsupported by Node: $source",
   async ({
     source,
     status,
     loadedType,
     exportName = "default",
     runtimeCount,
+    uncertainCount,
   }) => {
     const { client, close } = await createApplicationMcpHarness();
     onTestFinished(close);
@@ -146,14 +163,42 @@ it.each<CommonJsExportCase>([
         if (typeof actual !== "function")
           throw new Error("Expected the local callable export");
         const returned: unknown = actual();
-        expect(returned).toEqual({ kind: "result", count: runtimeCount });
+        expect(returned).toEqual({
+          kind: "result",
+          count: runtimeCount === "version" ? count : runtimeCount,
+        });
       }
       const analyzed = await client.callTool({
         name: "analyze_javascript_application",
         arguments: { input_path: root },
       });
       expect(analyzed.isError).not.toBe(true);
-      applications.push(parseEvidence(analyzed.structuredContent));
+      const evidence = parseEvidence(analyzed.structuredContent);
+      applications.push(evidence);
+      if (uncertainCount !== undefined) {
+        const analysis = javascriptApplicationAnalysisResultSchema.parse(
+          evidence.normalized_result,
+        );
+        const shapes = findExportNode(
+          analysis.graph,
+          "parser.cjs",
+          exportName,
+        )?.observations.find(
+          ({ properties }) =>
+            properties.semantic_role === "export-return-shapes",
+        )?.properties.static_return_shapes;
+        expect(shapes).toEqual([
+          expect.objectContaining({
+            fields: expect.arrayContaining([
+              expect.objectContaining({
+                path: "/count",
+                state: uncertainCount ? "unknown" : "literal",
+                value: uncertainCount ? null : 0,
+              }),
+            ]),
+          }),
+        ]);
+      }
     }
     const [left, right] = applications;
     if (left === undefined || right === undefined)
