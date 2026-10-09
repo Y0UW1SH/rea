@@ -403,6 +403,97 @@ describe("JavaScript escaped references through async and destructuring syntax",
 });
 
 describe("JavaScript shared array iteration", () => {
+  it.each([
+    "mutate(...source);",
+    "mutate?.(...source);",
+    "new Factory(...source);",
+    "const copy = [...source]; mutate(copy);",
+    "const copy = [{}, ...source]; mutate(copy[1]);",
+    "const copy = [...source]; copy[0].value = 2;",
+    "const [...copy] = source; mutate(copy);",
+    "const [...copy] = source; copy[0].value = 2;",
+    "const wrapper = { source }; const { source: [...copy] } = wrapper; mutate(copy);",
+    "const [copy] = source; mutate(copy);",
+    "let copy; [copy] = source; mutate(copy);",
+    "const { nested: [copy] } = { nested: source }; mutate(copy);",
+    "for (const copy of source) mutate(copy);",
+    "let copy; for (copy of source) mutate(copy);",
+  ])("invalidates an iterable that yields itself through %s", (effect) => {
+    expect(
+      resultValue(`
+        const source = { *[Symbol.iterator]() { yield this; }, value: "TOKEN" };
+        ${effect}
+        return source.value;
+      `)?.status,
+    ).toBe("unknown");
+  });
+
+  it.each([
+    "const [copy] = source;",
+    "const copy = [...source];",
+    "for (const copy of source) {}",
+    "const { nested: [copy] } = { nested: source };",
+    "const [...[[copy]]] = [source];",
+    "const [...{ 0: [copy] }] = [source];",
+    "for (const [copy] of [source]) {}",
+    "const { missing: [copy] = source } = {};",
+    "function consume([copy] = source) {} consume();",
+    "function* copies() { yield* source; } consume(copies());",
+  ])("accounts for custom iterator receiver effects in %s", (iteration) => {
+    expect(
+      resultValue(`
+        const source = { *[Symbol.iterator]() { this.value = "changed"; yield this; }, value: "TOKEN" };
+        ${iteration}
+        return source.value;
+      `)?.status,
+    ).toBe("unknown");
+  });
+
+  it.each([
+    "const [copy] = source;",
+    "const copy = [...source];",
+    "for (const copy of source) {}",
+    "const { nested: [copy] } = { nested: source };",
+    "const [...[[copy]]] = [source];",
+    "const [...{ 0: [copy] }] = [source];",
+    "for (const [copy] of [source]) {}",
+  ])("preserves ordinary array values after %s", (iteration) => {
+    expect(
+      resultValue(`const source = ["TOKEN"]; ${iteration} return source[0];`),
+    ).toEqual({ status: "literal", value: "TOKEN" });
+  });
+
+  it.each([
+    "const { nested: [copy] = source } = { nested: [] };",
+    "const [[copy] = source] = [[]];",
+    "const { a: { b: [copy] = source } = { b: [] } } = {};",
+    "for (const { nested: [copy] = source } of [{ nested: [] }]) {}",
+    "for (const [[copy] = source] of [[[]]]) {}",
+    "for (const { nested: [copy] = source } of []) {}",
+  ])("does not execute unused iterator defaults in %s", (iteration) => {
+    expect(
+      resultValue(`
+        const source = { *[Symbol.iterator]() { yield this; }, value: "TOKEN" };
+        ${iteration}
+        return source.value;
+      `),
+    ).toEqual({ status: "literal", value: "TOKEN" });
+  });
+
+  it.each([
+    "source[Symbol.iterator] = function* () { yield this; };",
+    "Array.prototype[Symbol.iterator] = function* () { yield this; };",
+  ])("invalidates a custom array iterator's root after %s", (override) => {
+    expect(
+      resultValue(`
+        const source = ["TOKEN"];
+        ${override}
+        mutate(...source);
+        return source[0];
+      `)?.status,
+    ).toBe("unknown");
+  });
+
   it.each(["globalThis", "global", "window", "self"])(
     "retains uncertainty after %s.Array.prototype changes",
     (globalName) => {

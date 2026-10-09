@@ -1,5 +1,6 @@
 import * as t from "@babel/types";
 
+import { semanticStaticPropertyKey } from "./javascriptAstValues.js";
 import type { JavaScriptSemanticBindingState } from "./javascriptSemanticState.js";
 
 interface StatementPosition {
@@ -46,6 +47,19 @@ const directMutationPosition = (
   node: t.Node,
   parents: WeakMap<t.Node, t.Node>,
 ): StatementPosition | null => {
+  if (t.isForOfStatement(node)) return statementPosition(node, parents);
+  if (t.isVariableDeclarator(node)) {
+    const declaration = parents.get(node);
+    return t.isVariableDeclaration(declaration)
+      ? statementPosition(declaration, parents)
+      : null;
+  }
+  if (t.isSpreadElement(node)) {
+    const array = parents.get(node);
+    return t.isArrayExpression(array)
+      ? semanticCapturePosition(array, parents)
+      : null;
+  }
   if (
     !t.isAssignmentExpression(node) &&
     !t.isUpdateExpression(node) &&
@@ -148,7 +162,7 @@ export const semanticCapturePosition = (
     if (
       t.isObjectProperty(parent) &&
       parent.value === current &&
-      !parent.computed
+      semanticStaticPropertyKey(parent.key, parent.computed) !== null
     )
       current = parent;
     else if (t.isObjectExpression(parent) || t.isArrayExpression(parent))

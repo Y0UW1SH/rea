@@ -10,7 +10,11 @@ import {
   evaluateSemanticBinding,
   evaluateSemanticExpression,
 } from "./javascriptSemanticValues.js";
-import { semanticSlotAtPath } from "./javascriptSemanticSlots.js";
+import {
+  semanticContainer,
+  semanticSlotAtPath,
+} from "./javascriptSemanticSlots.js";
+import { semanticIterationSources } from "./javascriptSemanticIterationSources.js";
 import { semanticMutationInitializers } from "./javascriptSemanticMutationInitializers.js";
 import {
   semanticArrayIndex,
@@ -62,6 +66,17 @@ export const collectSemanticMemberMutations = (
       reference.mutation?.end,
       reference.originAt?.start,
       reference.originAt?.end,
+      reference.iterationOnly,
+      reference.requiredSources?.map((source) => [
+        source.node.start,
+        source.node.end,
+        source.projection,
+      ]),
+      reference.fallbackSources?.map((source) => [
+        source.node.start,
+        source.node.end,
+        source.projection,
+      ]),
       [...reference.bindings].sort(compareUnicodeCodePoints),
     ]);
     if (keys.has(key)) return;
@@ -273,7 +288,17 @@ export const collectSemanticMemberMutations = (
     }
   };
   traverseJavaScriptAst(program, {
-    enter: (node) => {
+    enter: (node, parent) => {
+      for (const source of semanticIterationSources(node, parent))
+        deferIterable({
+          ...source,
+          path: source.projection,
+          fallbackPath: source.projection,
+          bindings: new Set(),
+          effect: "escape",
+          originAt: source.mutation,
+          iterationOnly: true,
+        });
       if (t.isAssignmentExpression(node)) markTarget(node.left, node);
       else if (t.isUpdateExpression(node)) markTarget(node.argument, node);
       else if (t.isUnaryExpression(node, { operator: "delete" }))
@@ -287,7 +312,16 @@ export const collectSemanticMemberMutations = (
       ) {
         for (const argument of node.arguments)
           if (t.isSpreadElement(argument))
-            markEscaped(argument.argument, node, [null]);
+            deferIterable({
+              node: argument.argument,
+              projection: [],
+              path: [null],
+              fallbackPath: [],
+              bindings: new Set(),
+              effect: "escape",
+              mutation: node,
+              originAt: node,
+            });
           else markEscaped(argument, node);
         // Constructing a member does not pass its container as `this`.
         if (!t.isNewExpression(node)) markReceiver(node.callee, node);
@@ -306,22 +340,7 @@ export const collectSemanticMemberMutations = (
     const iterationBefore: boolean = arrayIterationUnknown;
     for (const reference of pendingReferences.splice(0)) {
       const { initializer } = reference;
-      if (
-        initializer.requiredSources?.some(
-          (source) =>
-            selectedReferenceSlot(source, state)?.presence === "absent",
-        ) ||
-        initializer.fallbackSources?.some((source) => {
-          const slot = selectedReferenceSlot(source, state);
-          return (
-            slot?.presence === "present" &&
-            (slot.value.status === "literal" ||
-              slot.value.status === "union" ||
-              slot.value.status === "object" ||
-              slot.value.status === "array")
-          );
-        })
-      )
+      if (referenceSourcesInactive(initializer, state))
         pendingReferences.push(reference);
       else if (
         initializer.copyKind === "array-rest" &&
@@ -333,11 +352,7 @@ export const collectSemanticMemberMutations = (
           node: initializer.node,
           projection,
           path: reference.path,
-          fallbackPath: [
-            ...projection,
-            null,
-            ...reference.path.slice(offset + 1),
-          ],
+          fallbackPath: projection,
           bindings: reference.bindings,
           effect: reference.effect,
           originAt: reference.originAt,
@@ -356,19 +371,29 @@ export const collectSemanticMemberMutations = (
         );
     }
     for (const reference of [...iterableReferences]) {
+      if (referenceSourcesInactive(reference, state)) continue;
+      if (reference.iterationOnly) {
+        const expanded = expandedIterationReferences(reference, state);
+        if (expanded !== null) {
+          for (const selected of expanded) deferIterable(selected);
+          continue;
+        }
+      }
       const slot = selectedReferenceSlot(reference, state);
-      // Custom iteration can reorder values or yield non-indexed children.
+      // Custom iteration can yield the iterable itself as well as any child.
+      // Treat its root as escaped, including writes through yielded references.
       const knownArray =
         !arrayIterationUnknown &&
         slot?.value.status === "array" &&
         slot.value.items.every(
           (item) => semanticArrayIndex(item.name) !== null,
         );
+      if (knownArray && reference.iterationOnly) continue;
       markValue(
         reference.node,
         knownArray ? reference.path : reference.fallbackPath,
         reference.bindings,
-        reference.effect,
+        knownArray ? reference.effect : "escape",
         reference.mutation,
         reference.originAt,
       );
@@ -398,7 +423,86 @@ interface IterableReference extends ReferencedValue {
   readonly effect: ValueEffect;
   readonly mutation?: t.Node;
   readonly originAt: t.Node | undefined;
+  readonly iterationOnly?: boolean;
+  readonly requiredSources?: readonly {
+    readonly node: t.Node;
+    readonly projection: PropertyPath;
+  }[];
+  readonly fallbackSources?: readonly {
+    readonly node: t.Node;
+    readonly projection: PropertyPath;
+  }[];
 }
+
+const referenceSourcesInactive = (
+  reference: Pick<IterableReference, "requiredSources" | "fallbackSources">,
+  state: JavaScriptSemanticAnalysisState,
+): boolean =>
+  reference.requiredSources?.some(
+    (source) => selectedReferenceSlot(source, state)?.presence === "absent",
+  ) === true ||
+  reference.fallbackSources?.some((source) => {
+    const slot = selectedReferenceSlot(source, state);
+    return (
+      slot?.presence === "present" &&
+      (slot.value.status === "literal" ||
+        slot.value.status === "union" ||
+        slot.value.status === "object" ||
+        slot.value.status === "array")
+    );
+  }) === true;
+
+const expandedIterationReferences = (
+  reference: IterableReference,
+  state: JavaScriptSemanticAnalysisState,
+): readonly IterableReference[] | null => {
+  if (!t.isForOfStatement(reference.mutation)) return null;
+  const iterable = reference.mutation.right;
+  // Expand only the loop's yielded-item selector. Enumerating dynamic property
+  // selections would multiply paths through shared object aliases.
+  const source = [
+    reference,
+    ...(reference.requiredSources ?? []),
+    ...(reference.fallbackSources ?? []),
+  ].find((source) => source.node === iterable && source.projection[0] === null);
+  if (source === undefined) return null;
+  const slot = selectedReferenceSlot({ node: iterable, projection: [] }, state);
+  const container = slot === undefined ? null : semanticContainer(slot.value);
+  if (container?.coverage.status !== "complete") return null;
+  const select = (
+    candidate: { readonly node: t.Node; readonly projection: PropertyPath },
+    name: string,
+  ) => ({
+    ...candidate,
+    projection:
+      candidate.node === iterable && candidate.projection[0] === null
+        ? [name, ...candidate.projection.slice(1)]
+        : candidate.projection,
+  });
+  return container.slots.map((slot) => {
+    const { projection } = select(reference, slot.name);
+    return {
+      ...reference,
+      projection,
+      path: projection,
+      fallbackPath: projection,
+      ...(reference.requiredSources === undefined
+        ? {}
+        : {
+            requiredSources: reference.requiredSources.map((source) =>
+              select(source, slot.name),
+            ),
+          }),
+      ...(reference.fallbackSources === undefined
+        ? {}
+        : {
+            fallbackSources: reference.fallbackSources.map((source) =>
+              select(source, slot.name),
+            ),
+          }),
+    };
+  });
+};
 
 const referencedValues = (
   node: t.Node,
@@ -526,9 +630,7 @@ const arrayReferencedValues = (
         references.push({
           node: element.argument,
           path: [sourceKey, ...remaining],
-          ...(sourceKey === null
-            ? {}
-            : { iterableFallbackPath: [null, ...remaining] }),
+          iterableFallbackPath: [],
         });
       }
       uncertainIndex = true;

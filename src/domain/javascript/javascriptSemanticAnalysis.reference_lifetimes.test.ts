@@ -10,6 +10,20 @@ const resultValue = (body: string) =>
   ).returnSites[0]?.value;
 
 describe("reference lifetimes across calls and shallow copies", () => {
+  it("bounds dynamic destructuring across shared alias branches", () => {
+    const declarations = Array.from(
+      { length: 9 },
+      (_, index) =>
+        `const alias${index + 1} = { left: alias${index}, right: alias${index} };`,
+    ).join("\n");
+    const pattern = "{ [key]: ".repeat(9) + "[copy]" + " }".repeat(9);
+    const start = performance.now();
+    resultValue(
+      `const alias0 = [1]; ${declarations} const ${pattern} = alias9; return alias0[0];`,
+    );
+    expect(performance.now() - start).toBeLessThan(2000);
+  }, 30000);
+
   it("bounds conditional shallow-copy traversal while retaining shared children", () => {
     const declarations = Array.from(
       { length: 20 },
@@ -92,9 +106,44 @@ describe("reference lifetimes across calls and shallow copies", () => {
 
 describe("primitive snapshots across calls", () => {
   it.each([
+    "const [copy] = source;",
+    "const copy = [...source];",
+    "for (const copy of source) {}",
+  ])("preserves snapshots taken before custom iteration: %s", (iteration) => {
+    expect(
+      resultValue(`
+        const source = { *[Symbol.iterator]() { yield this; }, value: 1 };
+        const snapshot = source.value;
+        ${iteration}
+        return snapshot;
+      `),
+    ).toEqual({ status: "literal", value: 1 });
+  });
+
+  it.each([
+    "const [copy] = alias;",
+    "const copy = [...alias];",
+    "for (const copy of alias) {}",
+  ])("ignores iterable aliases replaced before %s", (iteration) => {
+    expect(
+      resultValue(`
+        const source = { *[Symbol.iterator]() { yield this; }, value: 1 };
+        let alias = source;
+        alias = [];
+        ${iteration}
+        return source.value;
+      `),
+    ).toEqual({ status: "literal", value: 1 });
+  });
+
+  it.each([
     ["const snapshot=source.value;", "snapshot"],
     ["const {value:snapshot}=source;", "snapshot"],
     ["const copy={value:source.value};", "copy.value"],
+    ['const copy={["snapshot"]:source.value};', "copy.snapshot"],
+    ['const copy={[""]:source.value};', 'copy[""]'],
+    ["const copy={[0]:source.value};", "copy[0]"],
+    ['const copy={[("snapshot" as string)]:source.value};', "copy.snapshot"],
     ["const copy=[source.value];", "copy[0]"],
   ])("preserves primitive capture before escape: %s", (capture, result) => {
     expect(
