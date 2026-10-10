@@ -43,7 +43,8 @@ ordinary tables remain selectable. Schema inventory does not execute views,
 triggers or arbitrary SQL.
 
 Rows are optional. `table` selects one exact ordinary-table name. `row_limit`
-requires `table`, defaults to 100 and accepts 1 through 1000. The result reports
+requires `table`, defaults to 100 and accepts positive safe integers. Samples
+remain subject to the byte and worker resource limits below, regardless of row count. The result reports
 the selected limit, returned count and whether more rows were observed. Row
 order is unspecified; a truncated sample does not prove anything about omitted
 records. View, virtual-table and shadow-table row reads are unsupported.

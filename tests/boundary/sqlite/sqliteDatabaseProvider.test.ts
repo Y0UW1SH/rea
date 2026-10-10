@@ -4,16 +4,21 @@ import { access, lstat, readFile, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { expect, it, onTestFinished } from "vitest";
+import { expect, it as nativeTest, onTestFinished } from "vitest";
 import { SqliteDatabaseProvider } from "../../../src/sqlite/SqliteDatabaseProvider.js";
 import { spawnOwnedProviderProcess } from "../../../src/process/ProviderProcess.js";
 import { PrivateRuntimeRoot } from "../../../src/process/PrivateRuntimeRoot.js";
 import { waitForProviderProcessReady } from "../../fixtures/providerProcess.js";
-import { createSqliteDatabaseFixture } from "../../fixtures/sqlite/database.js";
+import {
+  createSqliteDatabaseFixture,
+  SQLITE_NATIVE_LIMITS_AVAILABLE,
+} from "../../fixtures/sqlite/database.js";
 import {
   createTestWorkspace,
   removeTestWorkspace,
 } from "../../support/workspace/workspaceFixture.js";
+
+const it = nativeTest.runIf(SQLITE_NATIVE_LIMITS_AVAILABLE);
 
 const workerUrl = new URL(
   "../../../dist/sqlite/SqliteDatabaseWorker.js",
@@ -282,7 +287,7 @@ it("rejects malformed databases without altering the selected file", async () =>
   expect(await readFile(path)).toEqual(bytes);
 });
 
-it.runIf(process.platform !== "win32")(
+nativeTest.runIf(process.platform !== "win32")(
   "rejects a symlink database",
   async () => {
     const { database, workspace } = await createFixture();
@@ -296,32 +301,35 @@ it.runIf(process.platform !== "win32")(
   },
 );
 
-it("rejects an actual open rollback transaction without changing its journal", async () => {
-  const { database } = await createFixture();
-  const writer = new DatabaseSync(database.path);
-  writer.exec(
-    "BEGIN IMMEDIATE; INSERT INTO records(id, text_value) VALUES (4, 'uncommitted')",
-  );
-  try {
-    const main = await readFile(database.path);
-    const journalPath = `${database.path}-journal`;
-    const journal = await readFile(journalPath);
-    expect(journal.length).toBeGreaterThan(0);
-    expect(
-      await createProvider().inspect({ path: database.path }),
-    ).toMatchObject({
-      ok: false,
-      error: { _tag: "AnalysisInputError" },
-    });
-    expect(await readFile(database.path)).toEqual(main);
-    expect(await readFile(journalPath)).toEqual(journal);
-  } finally {
-    writer.exec("ROLLBACK");
-    writer.close();
-  }
-});
+nativeTest(
+  "rejects an actual open rollback transaction without changing its journal",
+  async () => {
+    const { database } = await createFixture();
+    const writer = new DatabaseSync(database.path);
+    writer.exec(
+      "BEGIN IMMEDIATE; INSERT INTO records(id, text_value) VALUES (4, 'uncommitted')",
+    );
+    try {
+      const main = await readFile(database.path);
+      const journalPath = `${database.path}-journal`;
+      const journal = await readFile(journalPath);
+      expect(journal.length).toBeGreaterThan(0);
+      expect(
+        await createProvider().inspect({ path: database.path }),
+      ).toMatchObject({
+        ok: false,
+        error: { _tag: "AnalysisInputError" },
+      });
+      expect(await readFile(database.path)).toEqual(main);
+      expect(await readFile(journalPath)).toEqual(journal);
+    } finally {
+      writer.exec("ROLLBACK");
+      writer.close();
+    }
+  },
+);
 
-it.runIf(process.platform !== "win32")(
+nativeTest.runIf(process.platform !== "win32")(
   "rejects FIFO input without waiting for a writer",
   async () => {
     const workspace = await createTestWorkspace("rea-sqlite-fifo-");
@@ -336,44 +344,50 @@ it.runIf(process.platform !== "win32")(
   },
 );
 
-it("honors a cancelled caller before opening the database", async () => {
-  const { database } = await createFixture();
-  const controller = new AbortController();
-  controller.abort();
-  expect(
-    await createProvider().inspect(
-      { path: database.path },
-      { signal: controller.signal },
-    ),
-  ).toMatchObject({ ok: false, error: { _tag: "AnalysisCancelledError" } });
-});
+nativeTest(
+  "honors a cancelled caller before opening the database",
+  async () => {
+    const { database } = await createFixture();
+    const controller = new AbortController();
+    controller.abort();
+    expect(
+      await createProvider().inspect(
+        { path: database.path },
+        { signal: controller.signal },
+      ),
+    ).toMatchObject({ ok: false, error: { _tag: "AnalysisCancelledError" } });
+  },
+);
 
-it("removes an acquired private root when cancelled before snapshot creation", async () => {
-  const { database } = await createFixture();
-  const controller = new AbortController();
-  let ownedRoot = "";
-  const provider = new SqliteDatabaseProvider(
-    {},
-    () => {
-      throw new Error("Cancelled request must not launch SQLite");
-    },
-    async () => {
-      const root = await PrivateRuntimeRoot.create({
-        prefix: "rea-sqlite-cancel-root-",
-      });
-      ownedRoot = root.path;
-      controller.abort();
-      return root;
-    },
-  );
-  expect(
-    await provider.inspect(
-      { path: database.path },
-      { signal: controller.signal },
-    ),
-  ).toMatchObject({ ok: false, error: { _tag: "AnalysisCancelledError" } });
-  await expect(access(ownedRoot)).rejects.toMatchObject({ code: "ENOENT" });
-});
+nativeTest(
+  "removes an acquired private root when cancelled before snapshot creation",
+  async () => {
+    const { database } = await createFixture();
+    const controller = new AbortController();
+    let ownedRoot = "";
+    const provider = new SqliteDatabaseProvider(
+      {},
+      () => {
+        throw new Error("Cancelled request must not launch SQLite");
+      },
+      async () => {
+        const root = await PrivateRuntimeRoot.create({
+          prefix: "rea-sqlite-cancel-root-",
+        });
+        ownedRoot = root.path;
+        controller.abort();
+        return root;
+      },
+    );
+    expect(
+      await provider.inspect(
+        { path: database.path },
+        { signal: controller.signal },
+      ),
+    ).toMatchObject({ ok: false, error: { _tag: "AnalysisCancelledError" } });
+    await expect(access(ownedRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
 
 it.each(["UTF-8", "UTF-16le", "UTF-16be"] as const)(
   "preserves %s text, a leading BOM and empty table selection",
@@ -452,42 +466,45 @@ it("retains an unavailable virtual module definition without executing it", asyn
   expect(await readFile(path)).toEqual(bytes);
 });
 
-it("cancels an acquired SQLite worker and removes its private snapshot", async () => {
-  const { database } = await createFixture();
-  const controller = new AbortController();
-  let ownedRoot = "";
-  let pid: number | undefined;
-  const provider = new SqliteDatabaseProvider({}, async (spawn) => {
-    ownedRoot = spawn.cwd ?? "";
-    const requestPath = spawn.arguments[2];
-    if (requestPath === undefined)
-      throw new Error("SQLite worker arguments missing");
-    const launched = await spawnOwnedProviderProcess({
-      ...spawn,
-      arguments: [
-        "--input-type=module",
-        "-e",
-        `await import(${JSON.stringify(workerUrl.href)}); process.stdout.write('ready\\n'); setInterval(() => {}, 1000);`,
-        "sqlite-worker-test",
-        requestPath,
-      ],
+nativeTest(
+  "cancels an acquired SQLite worker and removes its private snapshot",
+  async () => {
+    const { database } = await createFixture();
+    const controller = new AbortController();
+    let ownedRoot = "";
+    let pid: number | undefined;
+    const provider = new SqliteDatabaseProvider({}, async (spawn) => {
+      ownedRoot = spawn.cwd ?? "";
+      const requestPath = spawn.arguments[2];
+      if (requestPath === undefined)
+        throw new Error("SQLite worker arguments missing");
+      const launched = await spawnOwnedProviderProcess({
+        ...spawn,
+        arguments: [
+          "--input-type=module",
+          "-e",
+          `await import(${JSON.stringify(workerUrl.href)}); process.stdout.write('ready\\n'); setInterval(() => {}, 1000);`,
+          "sqlite-worker-test",
+          requestPath,
+        ],
+      });
+      pid = launched.process.pid;
+      await waitForProviderProcessReady(launched.process);
+      await access(`${ownedRoot}/reply.json`);
+      setImmediate(() => controller.abort());
+      return launched;
     });
-    pid = launched.process.pid;
-    await waitForProviderProcessReady(launched.process);
-    await access(`${ownedRoot}/reply.json`);
-    setImmediate(() => controller.abort());
-    return launched;
-  });
-  const result = await provider.inspect(
-    { path: database.path, table: "records" },
-    { signal: controller.signal },
-  );
-  expect(result).toMatchObject({
-    ok: false,
-    error: { _tag: "AnalysisCancelledError" },
-  });
-  if (pid === undefined) throw new Error("SQLite worker not acquired");
-  const acquiredPid = pid;
-  expect(() => process.kill(acquiredPid, 0)).toThrow();
-  await expect(access(ownedRoot)).rejects.toMatchObject({ code: "ENOENT" });
-});
+    const result = await provider.inspect(
+      { path: database.path, table: "records" },
+      { signal: controller.signal },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { _tag: "AnalysisCancelledError" },
+    });
+    if (pid === undefined) throw new Error("SQLite worker not acquired");
+    const acquiredPid = pid;
+    expect(() => process.kill(acquiredPid, 0)).toThrow();
+    await expect(access(ownedRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);

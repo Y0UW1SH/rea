@@ -3,8 +3,6 @@ import { localPathStringSchema } from "../localPath.js";
 
 /** Default ordinary-table sample size when the caller selects a table. */
 export const SQLITE_ROW_LIMIT_DEFAULT = 100;
-/** Maximum selected sample size before row/value representation expansion. */
-export const SQLITE_ROW_LIMIT_MAX = 1000;
 
 const nonnegative = z.number().int().nonnegative();
 const hex = z.string().regex(/^(?:[0-9a-f]{2})*$/);
@@ -31,10 +29,9 @@ export const inspectSqliteDatabaseInputSchema = z
       .number()
       .int()
       .min(1)
-      .max(SQLITE_ROW_LIMIT_MAX)
       .optional()
       .describe(
-        "Selected-table sample size, default 100; bounded to 1000 rows for output safety",
+        "Selected-table sample size, default 100; subject to byte and worker resource limits",
       ),
   })
   .superRefine((input, context) => {
@@ -134,7 +131,7 @@ export const sqliteDatabaseSchema = z
         table: z.string(),
         columns: z.array(z.string()),
         values: z.array(z.array(sqliteValueSchema)),
-        row_limit: z.number().int().min(1).max(SQLITE_ROW_LIMIT_MAX),
+        row_limit: z.number().int().min(1),
         returned_rows: nonnegative,
         truncated: z.boolean(),
         order: z.literal("unspecified"),

@@ -4,7 +4,6 @@ import { createSqliteDatabaseService } from "../composition/sqlite.js";
 import { CLI_COMMANDS } from "../cliCommandNames.js";
 import { logCliCommand } from "../cliLogging.js";
 import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
-import { SQLITE_ROW_LIMIT_MAX } from "../domain/sqlite/sqliteDatabase.js";
 import type { Logger } from "pino";
 import type { CliInstance } from "./types.js";
 import { withCommandCancellation } from "./commandCancellation.js";
@@ -31,24 +30,33 @@ export const registerSqliteCommands = (
         .number()
         .int()
         .min(1)
-        .max(SQLITE_ROW_LIMIT_MAX)
         .optional()
-        .describe("Selected row count, 1–1000; default 100; requires table"),
+        .describe(
+          "Positive safe integer row count; default 100; requires table",
+        ),
     }),
     run: ({ args, options }) =>
       withCommandCancellation((signal) =>
         logCliCommand(logger, CLI_COMMANDS.inspectSqliteDatabase, async () => {
-          const result = await service.inspect(
-            {
-              path: resolve(args.path),
-              ...(options.table === undefined ? {} : { table: options.table }),
-              ...(options.rowLimit === undefined
-                ? {}
-                : { row_limit: options.rowLimit }),
-            },
-            { signal },
-          );
-          return result.ok ? result.value : projectAnalysisError(result.error);
+          try {
+            const result = await service.inspect(
+              {
+                path: resolve(args.path),
+                ...(options.table === undefined
+                  ? {}
+                  : { table: options.table }),
+                ...(options.rowLimit === undefined
+                  ? {}
+                  : { row_limit: options.rowLimit }),
+              },
+              { signal },
+            );
+            return result.ok
+              ? result.value
+              : projectAnalysisError(result.error);
+          } finally {
+            await service.close();
+          }
         }),
       ),
   });

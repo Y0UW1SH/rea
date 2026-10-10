@@ -20,6 +20,23 @@ files when neither `--provider` nor `--snapshot` is supplied. See
 [JavaScript artifact reconstruction](javascript-artifact-reconstruction.md)
 for results, integrity checks and coverage.
 
+The complete application Evidence can be hundreds of megabytes for a real
+application. When an agent or a person reads the result, save it to a file and
+project a summary, a module page or one module from the saved Evidence:
+
+```bash
+rea analyze-javascript-application /absolute/path/to/app --json > app-evidence.json
+jq -c '{source: {kind: "inline", evidence: .}, view: {kind: "summary"}}' app-evidence.json > app-view.json
+rea inspect-analysis-view app-view.json
+```
+
+For example, a 334 MB Obsidian application Evidence file yields a summary view
+of about 10 KB. Replace the view with
+`{"kind": "page", "collection": "modules", "offset": 0, "limit": 32}` for a
+module page. See
+[JavaScript application workflows](javascript-application-workflows.md) for
+views, feature traces and comparisons that take the same saved Evidence.
+
 ## SQLite snapshots
 
 For a local database snapshot, use `rea inspect-sqlite-database PATH --json`.
@@ -88,7 +105,7 @@ or close. Provider failures are returned with their original reason. For an
 `ambiguous` selection error, choose from `details.candidate_ids`; for
 `provider_unavailable`, run `rea doctor --provider ID --json` to diagnose the
 selected engine. See [task readiness](installation.md#check-readiness-for-your-task)
-and [provider selection](adr/0001-provider-selection-and-analysis-profiles.md).
+and [provider selection](mcp-contracts.md#identity-and-discovery).
 
 The session reports work still in progress through `analysis_activity`.
 A client timeout can end its wait while the provider continues analyzing.
@@ -103,6 +120,12 @@ A snapshot retains successful analysis results for later queries. REA reuses
 an exact result when the target bytes, operation, parameters, provider and
 settings match. Mutations and cursor-dependent calls are excluded from the
 cache. Snapshot files are local and use owner-only permissions.
+
+Snapshots retain eligible target-scoped question histories in full, including
+mutation Evidence recorded while another target was active. Observations and
+related questions must still belong to the saved target. If those dependencies
+cannot be retained, the entire history is excluded instead of reverting the
+question to an earlier revision or disposition.
 
 ```bash
 rea analyze /absolute/path/to/program --provider ghidra --snapshot /absolute/path/to/analysis/program.json
@@ -181,7 +204,10 @@ user permissions; consult the chosen guide for host requirements and effects.
 ## Output and exit status
 
 The default terminal format is TOON. Use `--json` when saving results for a
-JSON consumer. Output selection and formatting do not change operation status.
+JSON consumer. `--json` is indented on a terminal and compact when piped or
+redirected, which keeps large results smaller for agents and scripts; pipe
+through `jq .` for indented files. Output selection and formatting do not change
+operation status.
 
 | Status    | Meaning                                                                                                                                              |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |

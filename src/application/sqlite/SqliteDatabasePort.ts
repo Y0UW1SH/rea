@@ -8,6 +8,8 @@ import type { Result } from "../../domain/result.js";
 
 /** Offline database inspection boundary shared by CLI and MCP. */
 export interface SqliteDatabasePort {
+  /** Await and retry provider-owned snapshot cleanup. */
+  close?(): Promise<void>;
   inspect(
     input: InspectSqliteDatabaseInput,
     options?: ExecutionOptions,

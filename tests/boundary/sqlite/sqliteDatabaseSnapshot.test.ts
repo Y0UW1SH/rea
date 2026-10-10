@@ -14,7 +14,10 @@ import type { StableArtifactFileSystem } from "../../../src/artifacts/readStable
 import { captureSqliteDatabaseSnapshot } from "../../../src/sqlite/SqliteDatabaseSnapshot.js";
 import { inspectSqliteDatabaseSnapshot } from "../../../src/sqlite/SqliteDatabaseInspection.js";
 import { sqliteDatabaseFailure } from "../../../src/sqlite/SqliteDatabaseFailures.js";
-import { createSqliteDatabaseFixture } from "../../fixtures/sqlite/database.js";
+import {
+  createSqliteDatabaseFixture,
+  SQLITE_NATIVE_LIMITS_AVAILABLE,
+} from "../../fixtures/sqlite/database.js";
 import {
   createTestWorkspace,
   removeTestWorkspace,
@@ -32,7 +35,7 @@ const fixture = async (wal = false) => {
   return { workspace, database, root };
 };
 
-it.each(["PERSIST", "TRUNCATE"])(
+it.runIf(SQLITE_NATIVE_LIMITS_AVAILABLE).each(["PERSIST", "TRUNCATE"])(
   "inspects a committed %s journal without modifying the source file set",
   async (mode) => {
     const { database, root } = await fixture();

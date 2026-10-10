@@ -8,8 +8,36 @@ import { HopperRemoteError } from "../../../src/domain/hopperErrors.js";
 import { err } from "../../../src/domain/result.js";
 import { observed as ok } from "../../fixtures/analysisExecution.js";
 import { createServer } from "../../../src/server/createServer.js";
+import { SqliteDatabaseService } from "../../../src/application/sqlite/SqliteDatabaseService.js";
 
 const resources: Array<{ close(): Promise<void> }> = [];
+
+it("awaits SQLite cleanup and retries its retained owner after failed server shutdown", async () => {
+  let removalAllowed = false;
+  let attempts = 0;
+  const sqliteDatabase = new SqliteDatabaseService({
+    inspect: async () => {
+      throw new Error("No inspection requested");
+    },
+    close: async () => {
+      attempts += 1;
+      if (!removalAllowed) throw new Error("SQLite snapshot removal denied");
+    },
+  });
+  const server = createServer(
+    { kind: "fixed", analysis: { execute: async () => ok(null) } },
+    { sqliteDatabase },
+  );
+  resources.push(server);
+  try {
+    await expect(server.close()).rejects.toBeInstanceOf(AggregateError);
+    expect(attempts).toBe(1);
+  } finally {
+    removalAllowed = true;
+  }
+  await server.close();
+  expect(attempts).toBe(2);
+});
 
 afterEach(async () => {
   await Promise.all(

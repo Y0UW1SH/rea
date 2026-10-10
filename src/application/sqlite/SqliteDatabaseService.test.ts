@@ -37,7 +37,11 @@ it.each([
   { path: "/selected.db", row_limit: 1 },
   { path: "/selected.db", table: 1 },
   { path: "/selected.db", table: "data", row_limit: 0 },
-  { path: "/selected.db", table: "data", row_limit: 1001 },
+  {
+    path: "/selected.db",
+    table: "data",
+    row_limit: Number.MAX_SAFE_INTEGER + 1,
+  },
 ])(
   "rejects invalid SQLite selection before provider effects: %j",
   async (input) => {

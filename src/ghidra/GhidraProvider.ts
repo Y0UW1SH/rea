@@ -30,6 +30,7 @@ import {
   type GhidraInstallationInspection,
 } from "./GhidraInstallation.js";
 import { resolveGhidraAnalysisProfile } from "./GhidraAnalysisProfile.js";
+import { ghidraMipsUnsupportedReason } from "./GhidraMipsProfile.js";
 import { resolveGhidraExtensions } from "./extensions/GhidraExtensions.js";
 import {
   CAPABILITIES,
@@ -47,7 +48,13 @@ import {
   windowsNativeCapabilities,
 } from "../process/WindowsAuthority.js";
 
-const SUPPORTED_ARCHITECTURES = new Set(["x86", "x86_64", "arm", "arm64"]);
+const SUPPORTED_ARCHITECTURES = new Set([
+  "x86",
+  "x86_64",
+  "arm",
+  "arm64",
+  "mips",
+]);
 
 /** Ghidra candidate backed by an isolated ephemeral headless import. */
 export class GhidraProvider implements AnalysisProviderCandidate {
@@ -135,6 +142,14 @@ export class GhidraProvider implements AnalysisProviderCandidate {
       };
     if (hostPlatform === "win32")
       return inspectWindowsP0TargetSupport(target, diagnostics);
+    const mipsReason = ghidraMipsUnsupportedReason(target);
+    if (mipsReason !== null)
+      return {
+        status: "unsupported",
+        code: "architecture_unsupported",
+        reason: mipsReason,
+        diagnostics,
+      };
     if (target.format === "mach-o" && target.availableArchitectures.length > 1)
       return {
         status: "unsupported",
@@ -148,7 +163,7 @@ export class GhidraProvider implements AnalysisProviderCandidate {
         status: "unsupported",
         code: "architecture_unsupported",
         reason:
-          "Ghidra v1 requires a concrete x86, x86_64, arm, or arm64 target architecture.",
+          "Ghidra v1 requires a supported x86, x86_64, arm, arm64, or MIPS target profile.",
         diagnostics,
       };
     return {
@@ -247,12 +262,15 @@ const inspectWindowsP0TargetSupport = (
       reason: "Windows Ghidra P0 accepts x86 and x86-64 PE targets only.",
       diagnostics,
     };
-  if (target.executableRole !== "application")
+  if (
+    target.executableRole !== "application" &&
+    target.executableRole !== "shared-library"
+  )
     return {
       status: "unsupported",
       code: "target_role_unsupported",
       reason:
-        "Windows Ghidra P0 accepts PE applications, not DLL or non-executable images.",
+        "Windows Ghidra P0 accepts PE applications and DLLs, not non-executable or unclassified images.",
       diagnostics,
     };
   if (target.managed !== false)
@@ -260,7 +278,7 @@ const inspectWindowsP0TargetSupport = (
       status: "unsupported",
       code: "managed_target_unsupported",
       reason:
-        "Windows Ghidra P0 accepts native PE applications; managed or unclassified PE targets are unsupported.",
+        "Windows Ghidra P0 accepts native PE applications and DLLs; managed or unclassified PE targets are unsupported.",
       diagnostics,
     };
   return {

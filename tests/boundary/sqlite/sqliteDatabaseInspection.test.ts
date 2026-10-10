@@ -1,12 +1,15 @@
 import { DatabaseSync } from "node:sqlite";
 import { readFile, writeFile } from "node:fs/promises";
-import { expect, it, onTestFinished } from "vitest";
+import { expect, it as nativeTest, onTestFinished } from "vitest";
+import { SQLITE_NATIVE_LIMITS_AVAILABLE } from "../../fixtures/sqlite/database.js";
 import { inspectSqliteDatabaseSnapshot } from "../../../src/sqlite/SqliteDatabaseInspection.js";
 import { SqliteInspectionFailure } from "../../../src/sqlite/SqliteDatabaseLimits.js";
 import {
   createTestWorkspace,
   removeTestWorkspace,
 } from "../../support/workspace/workspaceFixture.js";
+
+const it = nativeTest.runIf(SQLITE_NATIVE_LIMITS_AVAILABLE);
 
 const createDatabase = async (sql: string): Promise<string> => {
   const workspace = await createTestWorkspace("rea-sqlite-expansion-");
@@ -268,3 +271,31 @@ it("rejects the combined representation of individually small generated cells", 
     expect(cause).toMatchObject({ reason: "output-limit" });
   }
 });
+
+it("samples above 1000 rows and safe integer limits within the byte budget", async () => {
+  const path = await createDatabase(`CREATE TABLE items(value INTEGER);
+    WITH RECURSIVE numbers(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM numbers WHERE value < 1002)
+    INSERT INTO items SELECT value FROM numbers;`);
+  for (const row_limit of [1001, Number.MAX_SAFE_INTEGER]) {
+    const result = inspectSqliteDatabaseSnapshot(path, {
+      path,
+      table: "items",
+      row_limit,
+    });
+    expect(result.rows).toMatchObject({
+      row_limit,
+      returned_rows: Math.min(row_limit, 1002),
+      truncated: row_limit < 1002,
+    });
+  }
+});
+
+nativeTest.skipIf(SQLITE_NATIVE_LIMITS_AVAILABLE)(
+  "rejects a runtime without native limits before querying the snapshot",
+  async () => {
+    const path = await createDatabase("CREATE TABLE items(value INTEGER)");
+    expect(() => inspectSqliteDatabaseSnapshot(path, { path })).toThrow(
+      "DatabaseSync.limits",
+    );
+  },
+);

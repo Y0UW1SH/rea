@@ -1,6 +1,16 @@
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 
+/** Engine-dependent cases require the same native limit capability as the worker. */
+export const SQLITE_NATIVE_LIMITS_AVAILABLE = (() => {
+  const database = new DatabaseSync(":memory:");
+  try {
+    return "limits" in database;
+  } finally {
+    database.close();
+  }
+})();
+
 /** Exact selected SQLite fixture with committed rows and optional live WAL. */
 export interface SqliteDatabaseFixture {
   readonly path: string;

@@ -1,42 +1,72 @@
-import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { lstat, stat, type FileHandle } from "node:fs/promises";
 
-/** The opened input cannot supply regular-file bytes. */
-export class NonRegularFileReadError extends Error {
-  readonly code: "EISDIR" | "ENOTFILE";
+import {
+  openRegularFile,
+  sameRegularFileState,
+  RegularFileChangedError,
+} from "../filesystem/RegularFile.js";
+import { readBoundedFileBytes } from "../process/BoundedFileBytes.js";
 
-  constructor(
-    readonly path: string,
-    directory: boolean,
-  ) {
-    super(`Selected input must be a regular file: ${path}`);
-    this.name = "NonRegularFileReadError";
-    this.code = directory ? "EISDIR" : "ENOTFILE";
-  }
+/** Filesystem admission policy for one selected regular input. */
+export interface RegularFileReadOptions {
+  readonly signal?: AbortSignal | undefined;
+  readonly symlinks?: "follow" | "reject";
 }
 
-/** Admit a regular file without waiting for a pipe, then read its verified handle. */
-export const readRegularFile = async (
+/** Admit one regular-file handle, retain it through the consumer, and always close it. */
+export const withRegularFile = async <Value>(
   path: string,
-  signal?: AbortSignal,
-): Promise<Buffer> => {
-  signal?.throwIfAborted();
-  const handle = await open(
-    path,
-    constants.O_RDONLY |
-      (constants.O_NONBLOCK ?? 0) |
-      (constants.O_NOCTTY ?? 0),
-  );
+  read: (handle: FileHandle, stats: Stats) => Promise<Value>,
+  options: RegularFileReadOptions = {},
+): Promise<Value> => {
+  const { signal } = options;
+  const handle = await openRegularFile(path, {
+    symlinks: options.symlinks ?? "follow",
+    signal,
+  });
   try {
-    signal?.throwIfAborted();
     const stats = await handle.stat();
     signal?.throwIfAborted();
-    if (!stats.isFile())
-      throw new NonRegularFileReadError(path, stats.isDirectory());
-    const bytes = await handle.readFile({ signal });
+    const value = await read(handle, stats);
     signal?.throwIfAborted();
-    return bytes;
+    const [opened, currentPath] = await Promise.all([
+      handle.stat(),
+      options.symlinks === "reject" ? lstat(path) : stat(path),
+    ]);
+    if (
+      !sameRegularFileState(stats, opened) ||
+      !sameRegularFileState(stats, currentPath)
+    )
+      throw new RegularFileChangedError(path);
+    return value;
   } finally {
     await handle.close();
   }
 };
+
+/** Admit a regular file without waiting for a pipe, then read its verified handle. */
+export const readRegularFile = (
+  path: string,
+  options: RegularFileReadOptions = {},
+): Promise<Buffer> =>
+  withRegularFile(
+    path,
+    async (handle, stats) => {
+      const bytes = await readBoundedFileBytes(
+        handle,
+        stats.size,
+        options.signal,
+      );
+      if (bytes === undefined || bytes.length !== stats.size)
+        throw new RegularFileChangedError(path);
+      return bytes;
+    },
+    options,
+  );
+
+/** Read one admitted regular file as UTF-8 without waiting on a pipe. */
+export const readRegularFileText = async (
+  path: string,
+  options: RegularFileReadOptions = {},
+): Promise<string> => (await readRegularFile(path, options)).toString("utf8");

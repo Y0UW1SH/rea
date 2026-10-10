@@ -4,12 +4,92 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, onTestFinished } from "vitest";
 
+import { SQLITE_NATIVE_LIMITS_AVAILABLE } from "../fixtures/sqlite/database.js";
 import { connectLocalToolsMcp } from "../fixtures/localToolsMcp.js";
+import { parseMcpToolError } from "../fixtures/mcpToolError.js";
 import { createTestTempDirectory } from "../fixtures/temporaryDirectory.js";
 import { cliTest } from "../support/cli/cliFixture.js";
 
 const digest = (bytes: Buffer): string =>
   createHash("sha256").update(bytes).digest("hex");
+
+cliTest.skipIf(SQLITE_NATIVE_LIMITS_AVAILABLE)(
+  "reports the required native SQLite limits capability through CLI and MCP",
+  async ({ cli }) => {
+    const root = await createTestTempDirectory("rea-sqlite-unavailable-");
+    const path = join(root, "selected.db");
+    const database = new DatabaseSync(path);
+    try {
+      database.exec("CREATE TABLE items(value INTEGER)");
+    } finally {
+      database.close();
+    }
+    const result = await cli.run({
+      arguments: ["inspect-sqlite-database", path, "--json"],
+      environment: { REA_LOG_LEVEL: "silent" },
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.json).toMatchObject({
+      code: "capability_unavailable",
+      message: expect.stringContaining("DatabaseSync.limits"),
+    });
+    const { call } = await connectLocalToolsMcp();
+    const response = await call("inspect_sqlite_database", { path });
+    expect(response.isError).toBe(true);
+    expect(parseMcpToolError(response).error).toMatchObject({
+      code: "capability_unavailable",
+      message: expect.stringContaining("DatabaseSync.limits"),
+    });
+  },
+);
+
+cliTest.runIf(SQLITE_NATIVE_LIMITS_AVAILABLE)(
+  "accepts small samples above 1000 rows within the real resource budgets",
+  async ({ cli }) => {
+    const root = await createTestTempDirectory("rea-sqlite-row-budget-");
+    const path = join(root, "rows.db");
+    const database = new DatabaseSync(path);
+    try {
+      database.exec(`CREATE TABLE items(value INTEGER);
+      WITH RECURSIVE numbers(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM numbers WHERE value < 1002)
+      INSERT INTO items SELECT value FROM numbers;`);
+    } finally {
+      database.close();
+    }
+    const { call } = await connectLocalToolsMcp();
+    for (const limit of [1001, Number.MAX_SAFE_INTEGER]) {
+      const result = await cli.run({
+        arguments: [
+          "inspect-sqlite-database",
+          path,
+          "--table",
+          "items",
+          "--row-limit",
+          String(limit),
+          "--json",
+        ],
+        environment: { REA_LOG_LEVEL: "silent" },
+      });
+      expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+      expect(result.json).toMatchObject({
+        normalized_result: {
+          rows: {
+            row_limit: limit,
+            returned_rows: Math.min(limit, 1002),
+            truncated: limit < 1002,
+          },
+        },
+      });
+      const response = await call("inspect_sqlite_database", {
+        path,
+        table: "items",
+        row_limit: limit,
+      });
+      expect(response.isError, JSON.stringify(response)).not.toBe(true);
+      expect(response.structuredContent).toEqual(result.json);
+    }
+  },
+);
 
 const sourceState = async (path: string) => {
   const bytes = await readFile(path);
@@ -24,7 +104,9 @@ const sourceState = async (path: string) => {
   };
 };
 
-cliTest.for(["DELETE", "PERSIST", "TRUNCATE"])(
+cliTest
+  .runIf(SQLITE_NATIVE_LIMITS_AVAILABLE)
+  .for(["DELETE", "PERSIST", "TRUNCATE"])(
   "inspects a real %s SQLite schema and lossless selected records identically through CLI and MCP",
   async (journalMode, { cli }) => {
     const root = await createTestTempDirectory("rea-sqlite-public-");
@@ -174,7 +256,7 @@ cliTest.for(["DELETE", "PERSIST", "TRUNCATE"])(
   },
 );
 
-cliTest(
+cliTest.runIf(SQLITE_NATIVE_LIMITS_AVAILABLE)(
   "includes uncheckpointed committed WAL data without modifying the source database or sidecars",
   async ({ cli }) => {
     const root = await createTestTempDirectory("rea-sqlite-wal-public-");
@@ -235,7 +317,7 @@ cliTest(
   },
 );
 
-cliTest(
+cliTest.runIf(SQLITE_NATIVE_LIMITS_AVAILABLE)(
   "returns actionable public errors for corrupt input, unknown or ambiguous tables and invalid record choices",
   async ({ cli }) => {
     const root = await createTestTempDirectory("rea-sqlite-errors-public-");

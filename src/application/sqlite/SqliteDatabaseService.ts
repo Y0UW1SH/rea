@@ -43,6 +43,11 @@ const matchesSelectedDatabase = (
 export class SqliteDatabaseService {
   constructor(readonly provider: SqliteDatabasePort) {}
 
+  /** Await provider shutdown, retaining failed cleanup owners for retry. */
+  close(): Promise<void> {
+    return this.provider.close?.() ?? Promise.resolve();
+  }
+
   /** Inspect an explicit database snapshot and preserve its original database/WAL identity. */
   async inspect(
     rawInput: unknown,

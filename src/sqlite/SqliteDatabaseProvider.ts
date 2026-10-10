@@ -33,8 +33,22 @@ import {
 } from "./SqliteDatabaseWorkerExecution.js";
 
 const operation = "inspect_sqlite_database";
+type SqliteOutcome = Result<AnalysisExecution, AnalysisError>;
+type SqliteRuntimeRoot = Pick<PrivateRuntimeRoot, "path" | "close">;
+interface PendingSnapshotCleanup {
+  readonly result: SqliteOutcome;
+  readonly output: AnalysisCapturedOutput | undefined;
+}
 /** Inspect a provider-owned copy through a cancellable SQLite child, without source writes. */
 export class SqliteDatabaseProvider implements SqliteDatabasePort {
+  readonly #active = new Set<Promise<SqliteOutcome>>();
+  readonly #pendingCleanup = new Map<
+    SqliteRuntimeRoot,
+    PendingSnapshotCleanup
+  >();
+  #closed = false;
+  #closePromise: Promise<void> | undefined;
+  #retryPromise: Promise<Result<null, AnalysisError>> | undefined;
   constructor(
     readonly environment: Readonly<NodeJS.ProcessEnv> = process.env,
     readonly launcher?: SqliteWorkerLauncher,
@@ -47,7 +61,68 @@ export class SqliteDatabaseProvider implements SqliteDatabasePort {
   async inspect(
     input: InspectSqliteDatabaseInput,
     options?: ExecutionOptions,
-  ): Promise<Result<AnalysisExecution, AnalysisError>> {
+  ): Promise<SqliteOutcome> {
+    if (this.#closed) return err(new AnalysisCancelledError(operation));
+    const inspection = this.#inspect(input, options);
+    this.#active.add(inspection);
+    try {
+      return await inspection;
+    } finally {
+      this.#active.delete(inspection);
+    }
+  }
+
+  /** Await active inspections and retry retained roots; failed closes remain retryable. */
+  close(): Promise<void> {
+    this.#closed = true;
+    this.#closePromise ??= Promise.allSettled(this.#active)
+      .then(async () => {
+        const cleaned = await this.#retryCleanup();
+        if (!cleaned.ok) throw cleaned.error;
+      })
+      .catch((cause: unknown) => {
+        this.#closePromise = undefined;
+        throw cause;
+      });
+    return this.#closePromise;
+  }
+
+  #retryCleanup(): Promise<Result<null, AnalysisError>> {
+    this.#retryPromise ??= this.#cleanupPending().finally(() => {
+      this.#retryPromise = undefined;
+    });
+    return this.#retryPromise;
+  }
+
+  async #cleanupPending(): Promise<Result<null, AnalysisError>> {
+    const failures: AnalysisError[] = [];
+    for (const [root, pending] of [...this.#pendingCleanup]) {
+      const cleaned = await cleanupSqliteRoot(
+        root,
+        pending.result,
+        pending.output,
+      );
+      if (cleaned.ok) this.#pendingCleanup.delete(root);
+      else failures.push(cleaned.error);
+    }
+    if (failures.length === 1 && failures[0] !== undefined)
+      return err(failures[0]);
+    return failures.length === 0
+      ? ok(null)
+      : err(
+          new ProviderCleanupError(
+            SQLITE_PROVIDER_IDENTITY.id,
+            failures.flatMap((failure) => failure.cleanupResources),
+            { failures: failures.map(projectAnalysisError) },
+            { operation },
+          ),
+        );
+  }
+
+  async #inspect(
+    input: InspectSqliteDatabaseInput,
+    options?: ExecutionOptions,
+  ): Promise<SqliteOutcome> {
     let root: Pick<PrivateRuntimeRoot, "path" | "close"> | undefined;
     let retainedOutput: AnalysisCapturedOutput | undefined;
     let phase = "configuration";
@@ -55,6 +130,10 @@ export class SqliteDatabaseProvider implements SqliteDatabasePort {
     try {
       if (options?.signal?.aborted) throw new AnalysisCancelledError(operation);
       validateSqliteInput(input);
+      const retired = await this.#retryCleanup();
+      if (!retired.ok) return retired;
+      if (this.#closed || options?.signal?.aborted)
+        throw new AnalysisCancelledError(operation);
       root = await this.createRuntime();
       phase = "artifact-read";
       const snapshot = await captureSqliteDatabaseSnapshot(
@@ -95,7 +174,10 @@ export class SqliteDatabaseProvider implements SqliteDatabasePort {
     }
     if (root !== undefined) {
       const cleaned = await cleanupSqliteRoot(root, result, retainedOutput);
-      if (!cleaned.ok) return cleaned;
+      if (!cleaned.ok) {
+        this.#pendingCleanup.set(root, { result, output: retainedOutput });
+        return cleaned;
+      }
     }
     return completedResult(result, options?.signal, retainedOutput);
   }
