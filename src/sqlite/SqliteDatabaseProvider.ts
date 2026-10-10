@@ -23,6 +23,8 @@ import {
 } from "../domain/sqlite/sqliteDatabase.js";
 import { isAbsolute } from "node:path";
 import { PrivateRuntimeRoot } from "../process/PrivateRuntimeRoot.js";
+import { OwnedCommandFailure } from "../process/OwnedCommand.js";
+import type { ProviderProcessSupervisor } from "../process/ProviderProcess.js";
 import { sqliteDatabaseFailure } from "./SqliteDatabaseFailures.js";
 import { SQLITE_PROVIDER_IDENTITY } from "./SqliteDatabaseLimits.js";
 import { captureSqliteDatabaseSnapshot } from "./SqliteDatabaseSnapshot.js";
@@ -38,6 +40,7 @@ type SqliteRuntimeRoot = Pick<PrivateRuntimeRoot, "path" | "close">;
 interface PendingSnapshotCleanup {
   readonly result: SqliteOutcome;
   readonly output: AnalysisCapturedOutput | undefined;
+  process: ProviderProcessSupervisor | undefined;
 }
 /** Inspect a provider-owned copy through a cancellable SQLite child, without source writes. */
 export class SqliteDatabaseProvider implements SqliteDatabasePort {
@@ -97,6 +100,33 @@ export class SqliteDatabaseProvider implements SqliteDatabasePort {
   async #cleanupPending(): Promise<Result<null, AnalysisError>> {
     const failures: AnalysisError[] = [];
     for (const [root, pending] of [...this.#pendingCleanup]) {
+      if (pending.process !== undefined) {
+        const stopped = await pending.process.stop();
+        if (stopped.status === "incomplete") {
+          failures.push(
+            new ProviderCleanupError(
+              SQLITE_PROVIDER_IDENTITY.id,
+              [
+                pending.process.launch.ownership?.runId ??
+                  "owned-sqlite-worker",
+                root.path,
+              ],
+              {
+                reason: stopped.reason,
+                previous_error: pending.result.ok
+                  ? null
+                  : projectAnalysisError(pending.result.error),
+                ...(pending.output === undefined
+                  ? {}
+                  : { captured_output: { ...pending.output } }),
+              },
+              { operation },
+            ),
+          );
+          continue;
+        }
+        pending.process = undefined;
+      }
       const cleaned = await cleanupSqliteRoot(
         root,
         pending.result,
@@ -124,6 +154,7 @@ export class SqliteDatabaseProvider implements SqliteDatabasePort {
     options?: ExecutionOptions,
   ): Promise<SqliteOutcome> {
     let root: Pick<PrivateRuntimeRoot, "path" | "close"> | undefined;
+    let processOwner: ProviderProcessSupervisor | undefined;
     let retainedOutput: AnalysisCapturedOutput | undefined;
     let phase = "configuration";
     let result: Result<AnalysisExecution, AnalysisError>;
@@ -168,14 +199,28 @@ export class SqliteDatabaseProvider implements SqliteDatabasePort {
         );
       result = ok(createSqliteObservation(validated.data, input.path));
     } catch (cause: unknown) {
+      if (cause instanceof OwnedCommandFailure)
+        processOwner = cause.cleanupOwner;
       const failure = sqliteDatabaseFailure(cause, input.path, phase);
       retainedOutput ??= failure.capturedOutput;
       result = err(selectedFailure(failure, options?.signal, retainedOutput));
     }
     if (root !== undefined) {
+      if (processOwner !== undefined) {
+        this.#pendingCleanup.set(root, {
+          result,
+          output: retainedOutput,
+          process: processOwner,
+        });
+        return result;
+      }
       const cleaned = await cleanupSqliteRoot(root, result, retainedOutput);
       if (!cleaned.ok) {
-        this.#pendingCleanup.set(root, { result, output: retainedOutput });
+        this.#pendingCleanup.set(root, {
+          result,
+          output: retainedOutput,
+          process: undefined,
+        });
         return cleaned;
       }
     }
