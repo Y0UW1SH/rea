@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   open,
+  readdir,
   realpath,
   rm,
   type FileHandle,
@@ -14,6 +15,7 @@ import { streamChunkToBuffer } from "./StreamBytes.js";
 
 import {
   ArtifactPathRegistry,
+  destinationCaseCollisionMessage,
   normalizeArtifactPath,
 } from "./ArtifactPaths.js";
 import { ArtifactReaderFailure } from "./ArtifactReader.js";
@@ -103,7 +105,26 @@ export class SafeOutputTree {
       }
       return new SafeOutputTree(canonicalOutput, platform);
     } catch (cause: unknown) {
-      await rm(canonicalOutput, { recursive: true, force: true });
+      let removalFailure: unknown;
+      try {
+        await rm(canonicalOutput, { recursive: true, force: true });
+      } catch (cleanupCause: unknown) {
+        removalFailure = cleanupCause;
+      }
+      let absent = false;
+      try {
+        absent = await isAbsent(canonicalOutput);
+      } catch (cleanupCause: unknown) {
+        removalFailure ??= cleanupCause;
+      }
+      if (!absent)
+        throw ArtifactReaderFailure.withCleanup(cause, {
+          reason:
+            removalFailure instanceof Error
+              ? removalFailure.message
+              : "Extraction output root remains after setup failure",
+          resources: [canonicalOutput],
+        });
       throw cause;
     }
   }
@@ -120,55 +141,84 @@ export class SafeOutputTree {
   async write(
     relativePath: string,
     source: Readable,
-    expectedSha256: string,
+    expected: { readonly sha256: string; readonly bytes: number },
     signal?: AbortSignal,
   ): Promise<SafeOutputFile> {
-    this.#assertWritable();
-    const path = normalizeArtifactPath(relativePath);
-    this.#registry.add(path, "file");
-    const destination = await this.#prepareParent(path);
-    const handle = await open(
-      destination,
-      constants.O_CREAT |
-        constants.O_EXCL |
-        constants.O_WRONLY |
-        constants.O_NOFOLLOW,
-      0o600,
-    ).catch((cause: unknown) => {
-      throw new ArtifactReaderFailure(
-        "path",
-        `Could not exclusively create extraction path: ${path}`,
-        { cause },
-      );
-    });
-    const hash = createHash("sha256");
-    let bytes = 0;
     try {
-      for await (const raw of source) {
-        abortIfNeeded(signal);
-        const chunk = streamChunkToBuffer(raw);
-        bytes += chunk.length;
-        hash.update(chunk);
-        await writeAll(handle, chunk);
+      this.#assertWritable();
+      if (!Number.isSafeInteger(expected.bytes) || expected.bytes < 0)
+        throw new ArtifactReaderFailure(
+          "format",
+          `Invalid expected extraction size for ${relativePath}`,
+        );
+      const path = normalizeArtifactPath(relativePath);
+      this.#registry.add(path, "file");
+      const destination = await this.#prepareParent(path);
+      const handle = await open(
+        destination,
+        constants.O_CREAT |
+          constants.O_EXCL |
+          constants.O_WRONLY |
+          constants.O_NOFOLLOW,
+        0o600,
+      ).catch(async (cause: unknown) => {
+        await throwIfDestinationCaseCollision(
+          dirname(destination),
+          path,
+          cause,
+        );
+        throw new ArtifactReaderFailure(
+          "path",
+          `Could not exclusively create extraction path: ${path}`,
+          { cause },
+        );
+      });
+      const hash = createHash("sha256");
+      let bytes = 0;
+      try {
+        for await (const raw of source) {
+          abortIfNeeded(signal);
+          const chunk = streamChunkToBuffer(raw);
+          if (chunk.length > expected.bytes - bytes)
+            throw new ArtifactReaderFailure(
+              "integrity",
+              `Extracted content exceeds the inventoried size: ${path}`,
+            );
+          bytes += chunk.length;
+          hash.update(chunk);
+          await writeAll(handle, chunk);
+        }
+        if (bytes !== expected.bytes)
+          throw new ArtifactReaderFailure(
+            "integrity",
+            `Extracted content size disagrees with inventory: ${path}`,
+          );
+        const sha256 = hash.digest("hex");
+        if (sha256 !== expected.sha256)
+          throw new ArtifactReaderFailure(
+            "integrity",
+            `Extracted content disagrees with inventory: ${path}`,
+          );
+        await handle.sync();
+        await handle.close();
+        const readback = await hashFile(destination, bytes, signal);
+        if (readback.sha256 !== sha256 || readback.bytes !== bytes)
+          throw new ArtifactReaderFailure(
+            "integrity",
+            `Durable readback verification failed: ${path}`,
+          );
+        return { relativePath: path, sha256, bytesWritten: bytes };
+      } catch (cause: unknown) {
+        // best-effort cleanup: file-handle close must not mask the write failure.
+        await handle.close().catch(() => undefined);
+        throw cause;
       }
-      const sha256 = hash.digest("hex");
-      if (sha256 !== expectedSha256)
-        throw new ArtifactReaderFailure(
-          "integrity",
-          `Extracted content disagrees with inventory: ${path}`,
-        );
-      await handle.sync();
-      await handle.close();
-      const readback = await hashFile(destination, bytes, signal);
-      if (readback.sha256 !== sha256 || readback.bytes !== bytes)
-        throw new ArtifactReaderFailure(
-          "integrity",
-          `Durable readback verification failed: ${path}`,
-        );
-      return { relativePath: path, sha256, bytesWritten: bytes };
     } catch (cause: unknown) {
-      // best-effort cleanup: file-handle close must not mask the write failure.
-      await handle.close().catch(() => undefined);
+      try {
+        source.destroy();
+      } catch {
+        // Preserve the write refusal or failure as the caller-visible error.
+      }
       throw cause;
     }
   }
@@ -245,17 +295,28 @@ export class SafeOutputTree {
     if (fileName === undefined)
       throw new ArtifactReaderFailure("path", "Invalid extraction path");
     let current = this.#outputRoot;
+    let logicalParent = "";
     for (const part of parts) {
+      const parentDirectory = current;
+      const logicalPath =
+        logicalParent.length === 0 ? part : `${logicalParent}/${part}`;
       current = join(current, part);
+      let created = true;
       await mkdir(current, { mode: 0o700 }).catch((cause: unknown) => {
         if (!isAlreadyExists(cause)) throw cause;
+        created = false;
       });
+      if (!created)
+        await throwIfDestinationCaseCollision(parentDirectory, logicalPath);
       const metadata = await lstat(current);
-      if (!metadata.isDirectory() || metadata.isSymbolicLink())
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        await throwIfDestinationCaseCollision(parentDirectory, logicalPath);
         throw new ArtifactReaderFailure(
           "path",
           `Unsafe extraction parent: ${relativePath}`,
         );
+      }
+      logicalParent = logicalPath;
     }
     return join(current, fileName);
   }
@@ -329,6 +390,23 @@ const isNotFound = (cause: unknown): boolean =>
 
 const isAlreadyExists = (cause: unknown): boolean =>
   cause instanceof Error && "code" in cause && cause.code === "EEXIST";
+
+/** Fail when this directory already holds another spelling of the requested segment. */
+const throwIfDestinationCaseCollision = async (
+  parentDirectory: string,
+  logicalPath: string,
+  cause?: unknown,
+): Promise<void> => {
+  const names = await readdir(parentDirectory).catch(() => undefined);
+  if (names === undefined) return;
+  const message = destinationCaseCollisionMessage(logicalPath, names);
+  if (message === undefined) return;
+  throw new ArtifactReaderFailure(
+    "path",
+    message,
+    cause === undefined ? undefined : { cause },
+  );
+};
 
 const abortIfNeeded = (signal?: AbortSignal): void => {
   if (signal?.aborted === true)

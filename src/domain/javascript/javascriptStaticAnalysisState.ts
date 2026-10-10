@@ -47,6 +47,8 @@ export interface JavaScriptAnalysisAccumulator {
   readonly utilityProcesses: LocatedJavaScriptFinding<ElectronUtilityProcessFinding>[];
   readonly nativeAddonBindings: LocatedJavaScriptFinding<ElectronNativeAddonBindingFinding>[];
   readonly moduleRangeIndex: JavaScriptModuleRangeIndex;
+  /** `preload` attributes of audio and video elements, which are not scripts. */
+  readonly mediaElementPreloads: WeakSet<t.Node>;
   readonly seen: Set<string>;
   visitedNodes: number;
   unknownFindings: number;
@@ -65,6 +67,8 @@ export interface JavaScriptFindingContext {
     | "local-indexed-db"
     | "local-cache-storage"
   >;
+  /** Electron export paths for renamed call roots, by identifier offset. */
+  readonly electronBindings?: ReadonlyMap<number, string>;
 }
 
 /** Candidate import, require, worker, or service-worker reference. */
@@ -109,6 +113,7 @@ export const createJavaScriptAnalysisAccumulator = (
   utilityProcesses: [],
   nativeAddonBindings: [],
   moduleRangeIndex: new JavaScriptModuleRangeIndex(sourceLength),
+  mediaElementPreloads: new WeakSet(),
   seen: new Set(),
   visitedNodes: 0,
   unknownFindings: 0,

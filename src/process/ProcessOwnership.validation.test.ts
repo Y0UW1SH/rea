@@ -140,6 +140,42 @@ describe("owned process-group cleanup validation: ownership and lineage", () => 
   });
 });
 
+describe("owned process-group cleanup validation: refreshed descendant lineage", () => {
+  it.each(["planning", "signaling"])(
+    "retains cleanup uncertainty for newly detached descendants during %s",
+    async (phase) => {
+      const child = { ...launcher, pid: 101, parentPid: 100 };
+      const stale = { ...launcher, command: "[MainThread]" };
+      const signalGroup = vi.fn();
+      let reads = 0;
+      const adapter: ProcessOwnershipHost = {
+        listProcesses: () => {
+          reads += 1;
+          if (phase === "signaling" && reads === 1)
+            return Promise.resolve([launcher, child]);
+          if (reads === (phase === "planning" ? 1 : 2))
+            return Promise.resolve([stale, child]);
+          return Promise.resolve([
+            { ...child, parentPid: 1 },
+            { ...child, pid: 102, parentPid: 101 },
+            { ...child, pid: 103, parentPid: 102, processGroupId: 103 },
+          ]);
+        },
+        environment: () =>
+          Promise.resolve({ REA_PROCESS_RUN_ID: ownership.runId }),
+        signalGroup,
+      };
+      await expect(
+        cleanupOwnedProcessGroup(
+          { ...ownership, expectedCommand: "fixture" },
+          adapter,
+        ),
+      ).resolves.toMatchObject({ cleaned: false });
+      expect(signalGroup).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("owned process-group cleanup validation: launcher exit races", () => {
   it.each([101, 999])(
     "retains cleanup uncertainty for a detached descendant in group %s after launcher exit",
