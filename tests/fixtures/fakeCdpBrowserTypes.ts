@@ -1,3 +1,4 @@
+import type { JsonValue } from "../../src/domain/jsonValue.js";
 export interface FakeCdpCommand {
   readonly id: number;
   readonly method: string;
@@ -27,6 +28,8 @@ export interface FakeCdpBrowser {
 }
 
 export interface FakeOptions {
+  /** Send these commands' producer events before acknowledging completion, as a wire barrier. */
+  readonly eventsBeforeReply?: readonly string[];
   /** Return a native-shaped command rejection through the actual wire parser. */
   readonly commandError?: (
     command: FakeCdpCommand,
@@ -100,6 +103,7 @@ export interface FakeOptions {
   readonly webMcpSameUrlRegistrations?: "retain" | "remove-second";
   readonly webMcpFrameCount?: number;
   readonly webMcpSchemaPropertyCount?: number;
+  readonly webMcpInputSchema?: JsonValue;
   readonly webMcpChildLeavesScope?: boolean;
   readonly webMcpChildTransientBlank?: boolean;
   readonly webMcpChildRecoversAfterTransient?: boolean;

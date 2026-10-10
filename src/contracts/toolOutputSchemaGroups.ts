@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BINARY_ARCHITECTURES } from "../domain/binaryTargetTypes.js";
 import { nativeFunctionAnnotationsSchema } from "../domain/native/nativeFunctionAnnotations.js";
 import { nativeLoadImageSchema } from "../domain/native/nativeLoadImage.js";
 import { nativeUiResultSchema } from "../domain/native/nativeUiObservation.js";
@@ -165,8 +166,8 @@ export const officialOutputSchemas: Readonly<Record<string, z.ZodObject>> = {
     z.object({
       procedure: procedureIdentitySchema,
       direction: z.enum(["incoming", "outgoing"]),
-      reference_kinds_available: z.boolean().optional(),
-      unresolved_calls: z.array(unresolvedCallSchema).default([]),
+      reference_kinds_available: z.boolean(),
+      unresolved_calls: z.array(unresolvedCallSchema),
       references: z.array(referenceEdgeSchema),
     }),
   ),
@@ -415,7 +416,7 @@ export const sessionOutputSchemas = {
       format: targetFormatSchema,
       kind: targetKindSchema,
       sha256: z.string().regex(/^[a-f0-9]{64}$/u),
-      architecture: z.enum(["x86", "x86_64", "arm", "arm64"]).nullable(),
+      architecture: z.enum(BINARY_ARCHITECTURES).nullable(),
     }),
   ),
   close_binary: lifecycleResultOf(
@@ -456,7 +457,7 @@ export const sessionOutputSchemas = {
           format: targetFormatSchema,
           kind: targetKindSchema,
           sha256: z.string().regex(/^[a-f0-9]{64}$/u),
-          architecture: z.enum(["x86", "x86_64", "arm", "arm64"]).nullable(),
+          architecture: z.enum(BINARY_ARCHITECTURES).nullable(),
         }),
       ]),
     ]),

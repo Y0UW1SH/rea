@@ -43,6 +43,8 @@ import {
   type ProcessCaptureCleanupHost,
   type ProcessCaptureObservationBuffer,
   type PendingProcessCapture,
+  type ProcessCaptureResourceCleanupOptions,
+  ProcessCaptureResourceScope,
 } from "./ProcessCaptureLifecycle.js";
 import {
   assertNotCancelled,
@@ -55,6 +57,13 @@ import {
 import { makeProcessCaptureEnvironment } from "./ProcessCaptureEnvironment.js";
 import { classifyFilesystemEffects } from "./ProcessFilesystemEffects.js";
 import { processCaptureOwnershipUnavailableReason } from "./ProcessCaptureCapability.js";
+import {
+  createProcessCaptureProgressTracker,
+  type ProcessCaptureProgress,
+  type ProcessCaptureProgressCounts,
+  type ProcessCaptureProgressDisposition,
+  type ProcessCaptureProgressTracker,
+} from "./ProcessCaptureProgress.js";
 import type { ProcessOwnershipBaseline } from "../ProcessOwnership.js";
 
 interface StartedCaptureRuntime {
@@ -79,6 +88,7 @@ const cleanupFailedStartup = async (options: {
   readonly cleanupHost?: ProcessCaptureCleanupHost;
   readonly observations?: ProcessCaptureObservationBuffer;
   readonly temporaryRoot: string;
+  readonly resourceScope?: ProcessCaptureResourceScope;
 }): Promise<never> => {
   const sampledProcessGroupIds =
     options.terminal !== undefined &&
@@ -101,7 +111,7 @@ const cleanupFailedStartup = async (options: {
       };
     }
   }
-  const cleanupFailure = await releaseProcessResources({
+  const cleanupOptions: ProcessCaptureResourceCleanupOptions = {
     timers: options.timers,
     terminal: options.terminal,
     renderer: options.renderer,
@@ -110,12 +120,17 @@ const cleanupFailedStartup = async (options: {
     ...(sampledProcessGroupIds === undefined ? {} : { sampledProcessGroupIds }),
     temporaryRoot: options.temporaryRoot,
     ...(options.cleanupHost === undefined ? {} : { host: options.cleanupHost }),
-  });
-  if (cleanupReportFailure(cleanupFailure) !== undefined) {
+  };
+  const cleanup =
+    options.resourceScope === undefined
+      ? await releaseProcessResources(cleanupOptions)
+      : await options.resourceScope.release(cleanupOptions);
+  const cleanupFailure = cleanupReportFailure(cleanup);
+  if (cleanupFailure !== undefined) {
     resolveProcessResult(
       undefined,
       options.cause,
-      cleanupFailure,
+      cleanup,
       options.observations,
       {
         scenario: options.scenario,
@@ -151,6 +166,7 @@ interface StartCaptureRuntimeOptions {
   readonly runId: string;
   readonly ownershipBaseline: ProcessOwnershipBaseline;
   readonly cleanupHost?: ProcessCaptureCleanupHost;
+  readonly resourceScope?: ProcessCaptureResourceScope;
   readonly observationBuffer: ProcessCaptureObservationBuffer;
   readonly onSpawn: (pid: number) => void;
   readonly frames: TerminalFrame[];
@@ -244,6 +260,9 @@ const startCaptureRuntime = async (
         : { cleanupHost: options.cleanupHost }),
       observations: options.observationBuffer,
       temporaryRoot: options.temporaryRoot,
+      ...(options.resourceScope === undefined
+        ? {}
+        : { resourceScope: options.resourceScope }),
     });
   }
 };
@@ -262,7 +281,11 @@ const finishProcessRun = async (options: {
   readonly executionFailure: unknown;
   readonly observations?: ProcessCaptureObservationBuffer;
   readonly rootPid?: number;
+  readonly progress: ProcessCaptureProgressTracker;
+  readonly progressCounts: () => ProcessCaptureProgressCounts;
+  readonly resourceScope?: ProcessCaptureResourceScope;
 }): Promise<ProcessCapture> => {
+  options.progress.closeLive();
   await options.stopSampler();
   const sampledProcessGroupIds =
     options.runtime === undefined
@@ -271,7 +294,7 @@ const finishProcessRun = async (options: {
           options.runtime.terminal.pid,
           options.samples,
         ).filter((groupId) => groupId !== options.runtime?.terminal.pid);
-  const cleanup = await releaseProcessResources({
+  const cleanupOptions: ProcessCaptureResourceCleanupOptions = {
     timers: options.timers,
     terminal: options.runtime?.terminal,
     renderer: options.runtime?.renderer,
@@ -280,6 +303,24 @@ const finishProcessRun = async (options: {
     ...(sampledProcessGroupIds === undefined ? {} : { sampledProcessGroupIds }),
     temporaryRoot: options.temporaryRoot,
     ...(options.cleanupHost === undefined ? {} : { host: options.cleanupHost }),
+  };
+  const cleanup =
+    options.resourceScope === undefined
+      ? await releaseProcessResources(cleanupOptions)
+      : await options.resourceScope.release(cleanupOptions);
+  const observedExit =
+    options.observations?.exit.state === "available"
+      ? options.observations.exit.value.reason
+      : options.capture?.exit.reason;
+  await options.progress.report({
+    phase: "cleanup",
+    counts: options.progressCounts(),
+    terminal: true,
+    disposition: captureProgressDisposition(
+      observedExit,
+      options.executionFailure,
+    ),
+    cleanup,
   });
   const cleanupFailure = cleanupReportFailure(cleanup);
   let { capture, executionFailure } = options;
@@ -336,6 +377,7 @@ const completeCapture = async (options: {
   readonly eventJournal: readonly ProcessCaptureEventJournalEntry[];
   readonly observationBuffer: ProcessCaptureObservationBuffer;
   readonly recordEvent: RecordProcessCaptureEvent;
+  readonly onLiveProgress?: () => void;
 }): Promise<PendingProcessCapture> => {
   const unavailableReason = (stage: string, cause: unknown): string =>
     `${stage} failed: ${cause instanceof Error ? cause.message : "unknown failure"}`;
@@ -351,6 +393,7 @@ const completeCapture = async (options: {
       options.recordEvent,
       options.hostPlatform,
       options.signal,
+      options.onLiveProgress,
     );
   } catch (cause: unknown) {
     options.observationBuffer.settlement = {
@@ -460,6 +503,25 @@ const completeCapture = async (options: {
   });
 };
 
+const captureProgressDisposition = (
+  exitReason: string | undefined,
+  executionFailure: unknown,
+): ProcessCaptureProgressDisposition => {
+  if (
+    exitReason === "exited" ||
+    exitReason === "timeout" ||
+    exitReason === "idle_timeout" ||
+    exitReason === "cancelled"
+  )
+    return exitReason;
+  if (
+    executionFailure instanceof ProcessCaptureError &&
+    executionFailure.reason === "cancelled"
+  )
+    return "cancelled";
+  return "failed";
+};
+
 /** Execute one caller-selected scenario and return bounded observations. */
 const runProcessScenario = async (
   scenario: ProcessScenario,
@@ -468,12 +530,51 @@ const runProcessScenario = async (
   hostPlatform: NodeJS.Platform = process.platform,
   captureSnapshot: typeof snapshotRoots = snapshotRoots,
   cleanupHost?: ProcessCaptureCleanupHost,
+  progress?: ProcessCaptureProgress,
+  resourceScope?: ProcessCaptureResourceScope,
 ): Promise<ProcessCapture> => {
-  const { temporaryRoot, runId, ownershipBaseline, before } =
-    await prepareProcessCapture(scenario, signal, captureSnapshot);
+  const progressTracker = createProcessCaptureProgressTracker(progress);
   const frames: TerminalFrame[] = [];
   const samples: ProcessSample[] = [];
   const interactions: InteractionEvent[] = [];
+  const progressCounts = (): ProcessCaptureProgressCounts => ({
+    frames: frames.length,
+    samples: samples.length,
+    interactions: interactions.length,
+  });
+  const reportRunning = () => {
+    void progressTracker.report({ phase: "running", counts: progressCounts() });
+  };
+  const reportSettling = () => {
+    void progressTracker.report({
+      phase: "settling",
+      counts: progressCounts(),
+    });
+  };
+  let prepared: Awaited<ReturnType<typeof prepareProcessCapture>>;
+  try {
+    await progressTracker.report({
+      phase: "prepare",
+      counts: progressCounts(),
+    });
+    prepared = await prepareProcessCapture(
+      scenario,
+      signal,
+      captureSnapshot,
+      undefined,
+      resourceScope,
+    );
+  } catch (cause: unknown) {
+    progressTracker.closeLive();
+    await progressTracker.report({
+      phase: "cleanup",
+      counts: progressCounts(),
+      terminal: true,
+      disposition: signal?.aborted === true ? "cancelled" : "failed",
+    });
+    throw cause;
+  }
+  const { temporaryRoot, runId, ownershipBaseline, before } = prepared;
   const journal = createProcessCaptureJournal();
   const { entries: eventJournal, recordEvent } = journal;
   recordEvent("filesystem_checkpoints", 0);
@@ -500,6 +601,7 @@ const runProcessScenario = async (
       runId,
       ownershipBaseline,
       ...(cleanupHost === undefined ? {} : { cleanupHost }),
+      ...(resourceScope === undefined ? {} : { resourceScope }),
       observationBuffer: observations,
       onSpawn: (pid) => {
         actualRootPid = pid;
@@ -523,6 +625,7 @@ const runProcessScenario = async (
       interactions,
       dispatchedEventIndexes,
       recordEvent,
+      ...(progress === undefined ? {} : { onLiveProgress: reportRunning }),
     });
     observations.exit = {
       state: "available",
@@ -549,6 +652,7 @@ const runProcessScenario = async (
       recordEvent,
       captureSnapshot,
       ...(signal === undefined ? {} : { signal }),
+      ...(progress === undefined ? {} : { onLiveProgress: reportSettling }),
     });
   } catch (cause: unknown) {
     executionFailure = normalizeCaptureFailure(cause, signal);
@@ -590,6 +694,9 @@ const runProcessScenario = async (
     executionFailure,
     observations,
     ...(actualRootPid === undefined ? {} : { rootPid: actualRootPid }),
+    progress: progressTracker,
+    progressCounts,
+    ...(resourceScope === undefined ? {} : { resourceScope }),
   });
 };
 
@@ -599,8 +706,10 @@ export const captureProcessScenario = async (
   signal?: AbortSignal,
   platform: NodeJS.Platform = process.platform,
   environment: Readonly<Record<string, string | undefined>> = process.env,
-  captureSnapshot: typeof snapshotRoots = snapshotRoots,
+  captureSnapshot?: typeof snapshotRoots,
   cleanupHost?: ProcessCaptureCleanupHost,
+  progress?: ProcessCaptureProgress,
+  resourceScope?: ProcessCaptureResourceScope,
 ): Promise<Result<ProcessCapture, ProcessCaptureError | AnalysisError>> => {
   const ownershipReason = processCaptureOwnershipUnavailableReason(platform);
   if (ownershipReason !== undefined)
@@ -612,35 +721,62 @@ export const captureProcessScenario = async (
         { userMessage: ownershipReason },
       ),
     );
-  try {
-    assertNotCancelled(signal);
-    const resolvedScenario = await resolveProcessScenarioRuntimePaths(
-      scenario,
-      environment,
-    );
-    return ok(
-      await runProcessScenario(
+  const runResourceScope = resourceScope ?? new ProcessCaptureResourceScope();
+  const execute = async (): Promise<
+    Result<ProcessCapture, ProcessCaptureError | AnalysisError>
+  > => {
+    try {
+      assertNotCancelled(signal);
+      const resolvedScenario = await resolveProcessScenarioRuntimePaths(
+        scenario,
+        environment,
+      );
+      const capture = await runProcessScenario(
         resolvedScenario,
         signal,
         environment,
         platform,
-        captureSnapshot,
+        captureSnapshot ?? snapshotRoots,
         cleanupHost,
-      ),
-    );
-  } catch (cause: unknown) {
-    const failure = normalizeCaptureFailure(cause, signal);
-    const executionFailureReason =
-      describeProcessCaptureExecutionFailure(cause);
-    return err(
-      failure instanceof ProcessCaptureError
-        ? failure
-        : new ProcessCaptureError("process capture failed", {
-            cause,
-            ...(executionFailureReason === undefined
-              ? {}
-              : { executionFailure: executionFailureReason }),
-          }),
-    );
+        progress,
+        runResourceScope,
+      );
+      return ok(capture);
+    } catch (cause: unknown) {
+      const failure = normalizeCaptureFailure(cause, signal);
+      const executionFailureReason =
+        describeProcessCaptureExecutionFailure(cause);
+      return err(
+        failure instanceof ProcessCaptureError
+          ? failure
+          : new ProcessCaptureError("process capture failed", {
+              cause,
+              ...(executionFailureReason === undefined
+                ? {}
+                : { executionFailure: executionFailureReason }),
+            }),
+      );
+    }
+  };
+  if (resourceScope !== undefined) {
+    try {
+      return await resourceScope.run(execute);
+    } catch (cause: unknown) {
+      const failure = normalizeCaptureFailure(cause, signal);
+      const executionFailure = describeProcessCaptureExecutionFailure(cause);
+      return err(
+        failure instanceof ProcessCaptureError
+          ? failure
+          : new ProcessCaptureError("process capture lifecycle failed", {
+              cause,
+              reason: "cleanup_incomplete",
+              cleanupResources: ["process_capture_lifecycle"],
+              ...(executionFailure === undefined ? {} : { executionFailure }),
+            }),
+      );
+    }
   }
+  const capture = await runResourceScope.run(execute);
+  await runResourceScope.close().catch(() => undefined);
+  return capture;
 };

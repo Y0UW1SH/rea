@@ -98,6 +98,12 @@ import type { ArtifactInventoryPartialObservation } from "./artifactPartialObser
 import type { BrowserScenarioPartialObservation } from "./browserScenarioCapture.js";
 import type { Evidence } from "./evidence.js";
 import type { AndroidPartialObservation } from "./android/androidPartialObservation.js";
+import type { FirmwarePartialObservation } from "./firmware/firmwareAnalysis.js";
+import type {
+  AdbAcquiredFilePartialObservation,
+  AdbPackagePullPartialObservation,
+} from "./adb/adbDeviceAnalysis.js";
+import type { NativeUiObservationResult } from "./native/nativeUiObservation.js";
 
 /** Provider-neutral evidence collected before a typed analysis failure. */
 export type AnalysisPartialObservation =
@@ -109,4 +115,8 @@ export type AnalysisPartialObservation =
   | JavaScriptRuntimeObservation
   | ArtifactInventoryPartialObservation
   | Evidence
-  | AndroidPartialObservation;
+  | AndroidPartialObservation
+  | FirmwarePartialObservation
+  | NativeUiObservationResult
+  | AdbAcquiredFilePartialObservation
+  | AdbPackagePullPartialObservation;

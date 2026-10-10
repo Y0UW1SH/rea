@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { JsonValue } from "../domain/jsonValue.js";
+import { jsonValueSchema } from "../domain/jsonValue.js";
 import { functionDossierSchema } from "../domain/hopperValues.js";
+import {
+  compactReference,
+  compactInstruction,
+  compactCallTargets,
+} from "../domain/native/nativeInstruction.fixture.js";
 import {
   parseGhidraFunctionResult,
   type GhidraFunctionOperation,
@@ -37,6 +43,54 @@ describe("Ghidra function-analysis result values", () => {
     },
   );
 
+  it.each(["block_membership", "parameters", "parameter_uses"])(
+    "rejects a value-flow result missing %s",
+    (field) => {
+      const dossier = ghidraFunctionDossier();
+      if (
+        typeof dossier !== "object" ||
+        dossier === null ||
+        Array.isArray(dossier)
+      )
+        throw new TypeError("Ghidra dossier fixture is invalid");
+      const flow = dossier.native_value_flow;
+      if (typeof flow !== "object" || flow === null || Array.isArray(flow))
+        throw new TypeError("Ghidra p-code fixture is invalid");
+      if (!Array.isArray(flow.operations))
+        throw new TypeError("Ghidra operation fixture is invalid");
+      const incompleteFlow =
+        field === "block_membership"
+          ? {
+              ...flow,
+              operations: flow.operations.map((operation, index) =>
+                index !== 0 ||
+                typeof operation !== "object" ||
+                operation === null ||
+                Array.isArray(operation)
+                  ? operation
+                  : Object.fromEntries(
+                      Object.entries(operation).filter(
+                        ([key]) => key !== field,
+                      ),
+                    ),
+              ),
+            }
+          : Object.fromEntries(
+              Object.entries(flow).filter(([key]) => key !== field),
+            );
+
+      expect(
+        parseGhidraFunctionResult(
+          "analyze_function",
+          jsonValueSchema.parse({
+            ...dossier,
+            native_value_flow: incompleteFlow,
+          }),
+        ),
+      ).toMatchObject({ ok: false, error: { _tag: "AnalysisOutputError" } });
+    },
+  );
+
   it("rejects p-code relationships that refer to omitted operation IDs", () => {
     const dossier = ghidraFunctionDossier();
     if (
@@ -67,6 +121,75 @@ describe("Ghidra function-analysis result values", () => {
       error: { _tag: "AnalysisOutputError" },
     });
   });
+});
+
+describe("Ghidra compact reference provenance", () => {
+  const operations = [
+    ["inspect_native_instruction", compactInstruction],
+    ["resolve_native_call_targets", compactCallTargets],
+  ] as const;
+
+  it.each(operations)(
+    "preserves complete, legacy and unknown facts in %s",
+    (operation, output) => {
+      const complete = compactReference();
+      const legacy = Object.fromEntries(
+        Object.entries(complete).filter(
+          ([key]) =>
+            ![
+              "source_address",
+              "data",
+              "read",
+              "write",
+              "primary",
+              "provenance",
+              "source",
+            ].includes(key),
+        ),
+      );
+      const unknown = {
+        ...legacy,
+        source_address: null,
+        data: null,
+        read: null,
+        write: null,
+        primary: null,
+        provenance: null,
+        source: null,
+      };
+      for (const reference of [complete, legacy, unknown]) {
+        const expected = output([reference]);
+        const parsed = parseGhidraFunctionResult(operation, expected);
+        if (!parsed.ok) throw parsed.error;
+        expect(parsed.value).toEqual(expected);
+      }
+    },
+  );
+
+  it.each(operations)(
+    "rejects malformed present provenance in %s",
+    (operation, output) => {
+      for (const [field, value] of [
+        ["source_address", 1],
+        ["data", "true"],
+        ["read", 1],
+        ["write", 0],
+        ["primary", "false"],
+        ["provenance", ""],
+        ["source", false],
+      ] as const) {
+        expect(
+          parseGhidraFunctionResult(
+            operation,
+            output([{ ...compactReference(), [field]: value }]),
+          ),
+        ).toMatchObject({
+          ok: false,
+          error: { _tag: "AnalysisOutputError" },
+        });
+      }
+    },
+  );
 });
 
 describe("Ghidra jump-table mapping contract", () => {

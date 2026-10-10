@@ -14,9 +14,13 @@ import {
   systemLinuxHopperInstallHost,
 } from "./LinuxHopper.js";
 import { installMacHopper, systemMacHopperInstallHost } from "./MacHopper.js";
-import { supportedClients, type SetupClient } from "./SupportedClients.js";
 import {
-  claudeCodeSkillsDirectory as resolveClaudeCodeSkillsDirectory,
+  clientEvidencePaths,
+  supportedClients,
+  type SetupClient,
+} from "./SupportedClients.js";
+import {
+  skillDestinations,
   canonicalSkillNeedsInstall,
   installCanonicalSkill,
 } from "./SetupSkill.js";
@@ -90,14 +94,15 @@ export const systemSetupHost = (
   const doctorHost = selectedDoctorHost ?? systemDoctorHost({ environment });
   const platform = doctorHost.platform;
   const { homeDirectory } = doctorHost;
-  const claudeSkillsDirectory = resolveClaudeCodeSkillsDirectory(
-    homeDirectory,
-    environment,
-  );
+  const macHopperHost =
+    platform === "darwin"
+      ? systemMacHopperInstallHost(homeDirectory, environment)
+      : undefined;
   return {
     platform,
     homeDirectory,
-    claudeCodeSkillsDirectory: claudeSkillsDirectory,
+    skillDestinations: (clientIds) =>
+      skillDestinations(homeDirectory, clientIds, environment, platform),
     registrationCommand: setupRegistrationCommand(
       platform,
       environment.npm_command === "exec",
@@ -105,6 +110,7 @@ export const systemSetupHost = (
     nodeVersion: process.versions.node,
     macosVersion: () => doctorHost.macosVersion(),
     linuxDistribution: readLinuxDistribution,
+    close: () => macHopperHost?.close() ?? Promise.resolve(undefined),
     initialSetupState: async (
       scope?: DoctorScope,
     ): Promise<SetupInitialState> => {
@@ -125,15 +131,33 @@ export const systemSetupHost = (
       };
     },
     installHopper: async (replaceExisting) => {
-      const result =
-        platform === "linux"
-          ? await installLinuxHopper(systemLinuxHopperInstallHost(environment))
-          : await installMacHopper(
-              { replaceExisting },
-              systemMacHopperInstallHost(homeDirectory, environment),
-            );
-      if (result.status === "installed") return result;
-      return setupInstallFailure(result.reason);
+      if (platform === "linux") {
+        const result = await installLinuxHopper(
+          systemLinuxHopperInstallHost(environment),
+        );
+        return result.status === "installed"
+          ? result
+          : setupInstallFailure(result.reason);
+      }
+      if (macHopperHost === undefined)
+        return setupInstallFailure("unsupported_host");
+      const result = await installMacHopper({ replaceExisting }, macHopperHost);
+      if (result.status === "installed")
+        return {
+          status: "installed",
+          launcherPath: result.launcherPath,
+          ...(result.cleanupFailure === undefined
+            ? {}
+            : { cleanupFailure: result.cleanupFailure }),
+        };
+      const failure = setupInstallFailure(result.reason);
+      if (result.cleanupFailure === undefined) return failure;
+      return failure.status === "failed"
+        ? {
+            ...failure,
+            remediation: `${failure.remediation} ${result.cleanupFailure}`,
+          }
+        : failure;
     },
     detectedClients: () => detectClients(homeDirectory, platform, environment),
     supportedClients: () =>
@@ -153,10 +177,11 @@ export const systemSetupHost = (
       canonicalSkillNeedsInstall(
         homeDirectory,
         clientIds,
-        claudeSkillsDirectory,
+        environment,
+        platform,
       ),
     installSkill: (clientIds) =>
-      installCanonicalSkill(homeDirectory, clientIds, claudeSkillsDirectory),
+      installCanonicalSkill(homeDirectory, clientIds, environment, platform),
     doctor: (scope) => runDoctor(undefined, doctorHost, scope),
   };
 };
@@ -169,17 +194,20 @@ export const detectClients = async (
 ): Promise<readonly SetupClient[]> => {
   const detected: SetupClient[] = [];
   for (const candidate of supportedClients(home, platform, environment)) {
-    const [hasConfig, hasMarker] = await Promise.all([
-      exists(candidate.configPath),
-      candidate.markerPath === undefined ? false : exists(candidate.markerPath),
-    ]);
-    if (hasConfig || hasMarker) detected.push(candidate);
+    if (candidate.configPathError !== undefined) continue;
+    if (await clientEvidencePresent(candidate)) detected.push(candidate);
   }
   return detected;
 };
 
 const major = (version: string): number =>
   Number.parseInt(version.split(".")[0] ?? "0", 10);
+const clientEvidencePresent = async (client: SetupClient): Promise<boolean> => {
+  for (const path of clientEvidencePaths(client))
+    if (await exists(path)) return true;
+  return false;
+};
+
 const exists = async (path: string): Promise<boolean> => {
   try {
     await access(path);

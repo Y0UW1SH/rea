@@ -4,11 +4,18 @@ import type {
 } from "../application/AnalysisProvider.js";
 import { createAnalysisProfile } from "../domain/analysisProfile.js";
 import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
-import { AnalysisCancelledError } from "../domain/analysisErrorCore.js";
+import {
+  AnalysisCancelledError,
+  AnalysisUnsupportedTargetError,
+} from "../domain/analysisErrorCore.js";
 import { ProviderAdapterError } from "../domain/providerAdapterError.js";
 import { type AnalysisError } from "../domain/analysisErrorBase.js";
 import { err, ok, type Result } from "../domain/result.js";
 import type { GhidraInstallationInspection } from "./GhidraInstallation.js";
+import {
+  ghidraMipsProfileParameters,
+  ghidraMipsUnsupportedReason,
+} from "./GhidraMipsProfile.js";
 
 /** Resolve version-bound, deterministic semantics before Ghidra imports a target. */
 export const resolveGhidraAnalysisProfile = (
@@ -25,6 +32,17 @@ export const resolveGhidraAnalysisProfile = (
     return Promise.resolve(
       err(new ProviderAdapterError(identity.id, "resolve_analysis_profile")),
     );
+  const mipsReason = ghidraMipsUnsupportedReason(target);
+  if (mipsReason !== null)
+    return Promise.resolve(
+      err(
+        new AnalysisUnsupportedTargetError(
+          "resolve_analysis_profile",
+          target.path,
+          mipsReason,
+        ),
+      ),
+    );
   const provider = { ...identity, version: installation.providerVersion };
   const dosMz = target.format === "dos-mz";
   const dosCom = target.format === "dos-com";
@@ -34,6 +52,12 @@ export const resolveGhidraAnalysisProfile = (
       profile: createAnalysisProfile(provider, {
         target_kind: target.kind,
         target_format: target.format,
+        ...(target.format === "pe"
+          ? {
+              executable_role: target.executableRole ?? null,
+              managed: target.managed ?? null,
+            }
+          : {}),
         architecture: target.architecture ?? null,
         available_architectures: [
           ...(target.availableArchitectures ?? []),
@@ -84,6 +108,7 @@ export const resolveGhidraAnalysisProfile = (
             }
           : {}),
         analyzer_preset: "ghidra-default",
+        ...ghidraMipsProfileParameters(target),
       }),
     }),
   );
