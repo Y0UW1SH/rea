@@ -149,6 +149,7 @@ export const CLI_COMMANDS = Object.freeze({
   compareApplicationVersions: "compare-application-versions",
   compareSourceToBundle: "compare-source-to-bundle",
   compareJavaScriptExportShapes: "compare-javascript-export-shapes",
+  compareStaticAndObservedEndpoints: "compare-static-and-observed-endpoints",
   buildReconstructionObligationLedger: "build-reconstruction-obligation-ledger",
   evaluateReconstructionCoverage: "evaluate-reconstruction-coverage",
   projectAndroidApplicationGraph: "project-android-application-graph",

@@ -27,7 +27,10 @@ const add = (
 };
 
 it("bounds query parser expansion before publishing or merging observed names", () => {
-  const accumulator = new WebNetworkApiSurfaceAccumulator(64 * 1024, true);
+  const accumulator = new WebNetworkApiSurfaceAccumulator({
+    maximumBytes: 64 * 1024,
+    includeQueryParameterNames: true,
+  });
   add(accumulator, record(0, "/products?kept=1"));
   const before = accumulator.page(0, 1);
   expect(
@@ -45,7 +48,10 @@ it("bounds query parser expansion before publishing or merging observed names", 
 });
 
 it("charges each retained name once and each name's ordinal once per request", () => {
-  const accumulator = new WebNetworkApiSurfaceAccumulator(1024 * 1024, true);
+  const accumulator = new WebNetworkApiSurfaceAccumulator({
+    maximumBytes: 1024 * 1024,
+    includeQueryParameterNames: true,
+  });
   for (let ordinal = 0; ordinal < 1000; ordinal += 1)
     add(accumulator, record(ordinal, "/products?category=one&category=two"));
   expect(accumulator.page(0, 1).groups[0]?.query_parameter_names).toEqual([
@@ -58,9 +64,13 @@ it("charges each retained name once and each name's ordinal once per request", (
 
 it("admits the capture schema clone and grouping against the same budget", () => {
   const sample = record(0, `/${"a".repeat(1200)}`);
-  const isolated = new WebNetworkApiSurfaceAccumulator(64 * 1024);
+  const isolated = new WebNetworkApiSurfaceAccumulator({
+    maximumBytes: 64 * 1024,
+  });
   add(isolated, sample);
-  const accumulator = new WebNetworkApiSurfaceAccumulator(64 * 1024);
+  const accumulator = new WebNetworkApiSurfaceAccumulator({
+    maximumBytes: 64 * 1024,
+  });
   expect(
     accumulator.admitCaptureClone({
       headers: Array.from({ length: 40 }, () => ({ name: "x", value: "y" })),
@@ -95,7 +105,9 @@ it.each(["admitCaptureClone", "admitInlineEvidence"] as const)(
       });
     try {
       expect(
-        new WebNetworkApiSurfaceAccumulator(4096)[method](array),
+        new WebNetworkApiSurfaceAccumulator({ maximumBytes: 4096 })[method](
+          array,
+        ),
       ).toMatchObject({
         ok: false,
         error: { _tag: "AnalysisResourceConstraintError", resource: "memory" },
@@ -115,7 +127,9 @@ it("charges non-enumerable fields that the capture schema would clone", () => {
     value: Array.from({ length: 100 }, () => ({ reported: {} })),
   });
   expect(
-    new WebNetworkApiSurfaceAccumulator(64 * 1024).admitCaptureClone(value),
+    new WebNetworkApiSurfaceAccumulator({
+      maximumBytes: 64 * 1024,
+    }).admitCaptureClone(value),
   ).toMatchObject({
     ok: false,
     error: { _tag: "AnalysisResourceConstraintError" },
@@ -123,7 +137,9 @@ it("charges non-enumerable fields that the capture schema would clone", () => {
 });
 
 it("bounds many short literal groups, including groups with unavailable MIME types", () => {
-  const accumulator = new WebNetworkApiSurfaceAccumulator(64 * 1024);
+  const accumulator = new WebNetworkApiSurfaceAccumulator({
+    maximumBytes: 64 * 1024,
+  });
   let accepted = 0;
   for (; accepted < 1000; accepted += 1) {
     const before = accumulator.page(0, 1000);
@@ -171,10 +187,14 @@ it.each([
   "admits $name together with previously retained state before publishing a new group",
   ({ path, method, mime }) => {
     const maximum = 1024 * 1024;
-    const isolated = new WebNetworkApiSurfaceAccumulator(maximum);
+    const isolated = new WebNetworkApiSurfaceAccumulator({
+      maximumBytes: maximum,
+    });
     add(isolated, record(0, path, method, mime));
 
-    const accumulator = new WebNetworkApiSurfaceAccumulator(maximum);
+    const accumulator = new WebNetworkApiSurfaceAccumulator({
+      maximumBytes: maximum,
+    });
     for (let ordinal = 0; ordinal < 150; ordinal += 1)
       add(accumulator, record(ordinal, `/route${ordinal}`));
     const before = accumulator.page(0, 1000);
@@ -187,7 +207,9 @@ it.each([
 );
 
 it("retains repeated segment, status and MIME values once across many samples", () => {
-  const accumulator = new WebNetworkApiSurfaceAccumulator(1024 * 1024);
+  const accumulator = new WebNetworkApiSurfaceAccumulator({
+    maximumBytes: 1024 * 1024,
+  });
   for (let ordinal = 0; ordinal < 1000; ordinal += 1)
     add(accumulator, record(ordinal, "/1".repeat(250)));
   const page = accumulator.page(0, 1);
@@ -204,7 +226,9 @@ it("retains repeated segment, status and MIME values once across many samples", 
 });
 
 it("refuses an entire merge before retaining any novel observed values or its ordinal", () => {
-  const accumulator = new WebNetworkApiSurfaceAccumulator(1024 * 1024);
+  const accumulator = new WebNetworkApiSurfaceAccumulator({
+    maximumBytes: 1024 * 1024,
+  });
   for (let ordinal = 0; ordinal < 100; ordinal += 1)
     add(accumulator, record(ordinal, `/route${ordinal}`));
   add(accumulator, record(100, "/1".repeat(200)));
@@ -220,7 +244,9 @@ it("refuses an entire merge before retaining any novel observed values or its or
 });
 
 it("bounds excluded-record storage and distinct limitations as well as endpoint groups", () => {
-  const accumulator = new WebNetworkApiSurfaceAccumulator(64 * 1024);
+  const accumulator = new WebNetworkApiSurfaceAccumulator({
+    maximumBytes: 64 * 1024,
+  });
   let accepted = 0;
   for (; accepted < 1000; accepted += 1) {
     const sample = record(accepted, "/a");

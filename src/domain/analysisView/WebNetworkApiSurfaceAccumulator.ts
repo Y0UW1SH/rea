@@ -16,7 +16,9 @@ import { pageViewCoverage } from "./analysisViewCoverage.js";
 import type { UnsignedAnalysisView } from "./analysisView.js";
 
 type Surface = Extract<UnsignedAnalysisView, { kind: "api-surface" }>;
-type Group = Surface["groups"][number];
+/** One materialized api-surface group, as pages and complete groupings return it. */
+export type WebNetworkApiSurfaceGroup = Surface["groups"][number];
+type Group = WebNetworkApiSurfaceGroup;
 type Rule = Group["templated_segments"][number]["rule"];
 type Exclusion = Surface["excluded_records"][number];
 interface Segment {
@@ -88,7 +90,8 @@ const SEGMENT_SCRATCH_BYTES = 512;
 const CAPTURE_CONTAINER_BYTES = 512;
 const textBytes = (length: number): number => 32 + length * 14;
 
-const segmentRule = (value: string): Rule | null => {
+/** The one owner of api-surface format rules for a single recorded path segment. */
+export const apiSurfaceSegmentRule = (value: string): Rule | null => {
   if (/^[0-9]+$/u.test(value)) return "numeric";
   if (
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
@@ -108,6 +111,28 @@ const segmentRule = (value: string): Rule | null => {
   return null;
 };
 
+/** Operation and input coordinates that admission and capture failures report. */
+export interface WebNetworkApiSurfaceOwner {
+  readonly operation: string;
+  /** Coordinate of a borrowed inline Evidence envelope. */
+  readonly inlinePath: readonly (string | number)[];
+  /** Coordinate of the parent capture result. */
+  readonly capturePath: readonly (string | number)[];
+}
+
+const ANALYSIS_VIEW_OWNER: WebNetworkApiSurfaceOwner = {
+  operation: "inspect_analysis_view",
+  inlinePath: ["source", "evidence"],
+  capturePath: ["source"],
+};
+
+/** Caller choices for one accumulator; omitted fields keep view defaults. */
+export interface WebNetworkApiSurfaceOptions {
+  readonly maximumBytes?: number;
+  readonly includeQueryParameterNames?: boolean;
+  readonly owner?: WebNetworkApiSurfaceOwner;
+}
+
 /** Own group identity, deduplication and admission for the entire projection. */
 export class WebNetworkApiSurfaceAccumulator {
   readonly #buckets: Buckets = new Map();
@@ -118,10 +143,17 @@ export class WebNetworkApiSurfaceAccumulator {
   #retainedBytes = 0;
   #temporaryBytes = 0;
 
-  constructor(
-    readonly maximumBytes = WEB_NETWORK_CAPTURE_LIMITS.outputBytes,
-    readonly includeQueryParameterNames = false,
-  ) {}
+  readonly maximumBytes: number;
+  readonly includeQueryParameterNames: boolean;
+  readonly owner: WebNetworkApiSurfaceOwner;
+
+  constructor(options: WebNetworkApiSurfaceOptions = {}) {
+    this.maximumBytes =
+      options.maximumBytes ?? WEB_NETWORK_CAPTURE_LIMITS.outputBytes;
+    this.includeQueryParameterNames =
+      options.includeQueryParameterNames ?? false;
+    this.owner = options.owner ?? ANALYSIS_VIEW_OWNER;
+  }
 
   #retain(bytes: number): boolean {
     if (this.#retainedBytes + this.#temporaryBytes + bytes > this.maximumBytes)
@@ -140,7 +172,7 @@ export class WebNetworkApiSurfaceAccumulator {
   #overBudget(): Result<never, AnalysisError> {
     return err(
       new AnalysisResourceConstraintError(
-        "inspect_analysis_view",
+        this.owner.operation,
         "memory",
         "API-surface retained state and temporary work exceed the projection representation budget.",
         { output_bytes: this.maximumBytes },
@@ -150,15 +182,21 @@ export class WebNetworkApiSurfaceAccumulator {
 
   /** Reserve schema output and validation scratch while the borrowed parent stays live. */
   admitCaptureClone(value: unknown): Result<void, AnalysisError> {
-    return admitAnalysisViewData(value, false, (bytes) =>
-      this.#retain(bytes) ? ok(undefined) : this.#overBudget(),
+    return admitAnalysisViewData(
+      value,
+      false,
+      (bytes) => (this.#retain(bytes) ? ok(undefined) : this.#overBudget()),
+      { operation: this.owner.operation, path: this.owner.capturePath },
     );
   }
 
   /** Admit the complete portable envelope before cloning or authenticating it. */
   admitInlineEvidence(value: unknown): Result<void, AnalysisError> {
-    return admitAnalysisViewData(value, true, (bytes) =>
-      this.#retain(bytes) ? ok(undefined) : this.#overBudget(),
+    return admitAnalysisViewData(
+      value,
+      true,
+      (bytes) => (this.#retain(bytes) ? ok(undefined) : this.#overBudget()),
+      { operation: this.owner.operation, path: this.owner.inlinePath },
     );
   }
 
@@ -196,7 +234,7 @@ export class WebNetworkApiSurfaceAccumulator {
       const slash = path.indexOf("/", start);
       const end = slash < 0 ? path.length : slash;
       const value = path.slice(start, end);
-      const rule = segmentRule(value);
+      const rule = apiSurfaceSegmentRule(value);
       if (rule !== null) {
         if (!this.#temporary(SEGMENT_SCRATCH_BYTES)) return this.#overBudget();
         const placeholder = `{${rule}}`;
@@ -376,6 +414,11 @@ export class WebNetworkApiSurfaceAccumulator {
       }
     }
     return ok(undefined);
+  }
+
+  /** Every group in page order; per-group charges already cover this projection. */
+  all(): ReturnType<WebNetworkApiSurfaceAccumulator["page"]> {
+    return this.page(0, this.#groups.length);
   }
 
   page(

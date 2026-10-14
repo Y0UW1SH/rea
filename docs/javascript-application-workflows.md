@@ -4,8 +4,9 @@ REA derives a complete reachable feature trace from one authenticated JavaScript
 Application Graph and compares two authenticated graph versions. The MCP tools
 are `inspect_analysis_view`, `trace_application_feature`,
 `trace_javascript_semantics`, `compare_application_versions`,
-`compare_source_to_bundle`, and `compare_javascript_export_shapes`; their CLI
-equivalents use the same names with hyphens. `inspect_analysis_view` projects a
+`compare_source_to_bundle`, `compare_javascript_export_shapes`, and
+`compare_static_and_observed_endpoints`; their CLI equivalents use the same
+names with hyphens. `inspect_analysis_view` projects a
 summary, module page, typed module references, or one module from already completed application
 Evidence; it does not walk relationships.
 
@@ -315,9 +316,100 @@ semantics matter, run behavioral probes directly against the relevant
 application versions and capture them through the available browser, Electron,
 or process workflows.
 
+## Static endpoint and captured traffic comparison
+
+`compare_static_and_observed_endpoints` answers which network endpoints the
+shipped JavaScript names that a HAR capture never exercised, and which captured
+request groups static discovery did not find. `static` is
+`analyze_javascript_application` Evidence and `observed` is HAR
+`inspect_web_network_capture` Evidence; each is inline or an exact same-session
+retained reference. Both inputs are borrowed rather than cloned by CLI and MCP
+envelope parsing, and inline Evidence is admitted before it is parsed or
+hashed. Inline static Evidence receives the same structural admission as
+inline application Evidence in `inspect_analysis_view`: no accessors, proxies
+or cycles, and bounded depth. Like the other application-graph workflows, it
+has no byte budget. The observed side uses the
+[api-surface grouping](web-network-captures.md#derived-api-surface). Its owner
+admits the parent against its 96 MiB representation budget, refuses non-HAR
+formats and parents inspected with `sensitive_values`
+(`sensitive_values_unretained`), and groups requests by method, origin and
+format-rule path template. `origins` must be unique, exact serialized
+http, https, ws or wss origins. The advertised schema states a structural
+pattern and `uniqueItems`, and the server also checks the exact serialization.
+
+Only `endpoint_kind: "network"` nodes are compared; client route nodes are not.
+A node whose value also has a literal request observation uses only those
+observations; it is a candidate only when every observation is one. Each node
+receives exactly one status:
+
+- `matched`, with `observed` pairings for every group of the same origin and
+  route shape whose method is compatible. Each pairing names a `group` index
+  into the page's `paired_groups` table, which lists each paired group once
+  with its record ordinals, and a basis. `exact` means the group
+  recorded the static path itself: every templated position observed the
+  static segment, and at most one templated position varied. Otherwise the
+  basis is `template-compatible`, an inference that only the route shape
+  matches. The item's `match_basis` is `exact` when any pairing is exact.
+- `ambiguous` with `method-inference-disagrees`, when route-compatible groups
+  exist but none has the static method. The candidates are listed.
+- `not-observed-in-capture`, only when no route-compatible group exists, every
+  candidate origin has at least one examined record, the parent is not an
+  ordinal subset, and no parent record was excluded.
+- `unknown` with a reason: `candidate-endpoint` (values with
+  `interpretation: "candidate"`), `rpc-operation-not-path` (GraphQL operations
+  and tRPC procedures), `rpc-transport-base-url` (tRPC link URLs),
+  `relative-reference-base-unknown` (no leading single slash, including
+  scheme-relative `//host` values), `unsupported-url-scheme`,
+  `value-not-url-or-path`, `target-not-canonical` (the URL parser would rewrite
+  the path, for example dot segments, `%2e%2e`, spaces or braces),
+  `origin-undeclared`, `origin-not-exercised`, or
+  `observed-coverage-incomplete`.
+
+Absolute HTTP(S) and WS(S) URLs keep their literal origin. An origin-relative
+path such as `/api/users` joins only the exact `origins` the caller declares,
+with `origin_basis: "declared"`; without declarations it stays
+`origin-undeclared`. WebSocket calls request HTTP(S) origins through WS(S).
+Methods come from the API definition for `EventSource` (GET) and `sendBeacon`
+(POST), and are inferred from `get`, `post`, `put`, `patch` and `delete`
+callee names. `fetch`, XMLHttpRequest `open`, `WebSocket`, `request` and other
+calls keep an unknown method, which is compatible with every observed method.
+
+Paths compare as recorded, still-encoded text. There is no similarity, prefix,
+suffix, case-folding, trailing-slash, version-segment or cross-origin matching.
+The output copies only origins and paths: static query strings and fragments,
+ineligible values, and HAR query strings, fragments, headers and bodies are
+not copied. Each observed group is counted exactly once:
+`observed_matched + observed_ambiguous + observed_unresolved +
+observed_without_static_match = observed_groups`. A group that any matched item
+lists is matched, even if an ambiguous item also lists it. A group that only
+ambiguous items list is ambiguous. A group with the route shape of an
+`origin-undeclared` static path, on any origin, is in the
+`observed-unresolved` collection with `reason: "origin-undeclared"` and the
+static node IDs, because declaring origins could pair it. Other unknown reasons
+leave no same-origin group to resolve. Every remaining group is in
+`observed-without-static-match`, with its parent record ordinals. Such a group
+does not establish hidden code: static findings are exact literals, so
+string-built, wrapper-passed and server-supplied URLs are absent.
+Likewise `not-observed-in-capture` never establishes that an endpoint is
+unused, hidden or unreachable. The comparison sends no requests.
+
+`summary` counts every static endpoint, unknowns per reason, and matched,
+ambiguous, unresolved and unmatched observed groups across all collections. `collection`
+selects the list returned in `items`: `static-endpoints` (default),
+`observed-without-static-match` or `observed-unresolved`. `offset` and `limit`
+(defaults 0 and 50) page that collection alone; `page.total` and
+`page.next_offset` describe it. A static page copies each paired group's
+record ordinals once, so its ordinal output never exceeds the examined
+records, however many static items share a group. `coverage` reports the static graph status and the
+examined, total and excluded parent records. The Evidence is `inferred` when
+any group is templated or any reported decision relies on a declared origin, a
+callee-name method or a template-compatible pairing, and `derived` otherwise.
+In an MCP session, an unknown or ambiguous result records a residual unknown
+linked to the comparison Evidence.
+
 ## CLI and verification
 
-All six CLI commands accept inline JSON or a path to a JSON file. The CLI
+All seven CLI commands accept inline JSON or a path to a JSON file. The CLI
 returns an Evidence record directly. Put the full records in a later CLI input;
 a separate CLI process has no retained MCP connection state.
 

@@ -16,3 +16,16 @@ export const evidenceInputSchema = z.union([
 
 /** Evidence input after parsing the advertised boundary contract. */
 export type EvidenceInput = z.output<typeof evidenceInputSchema>;
+
+// The application admits this value against its projection budget before
+// authenticated parsing. SDK and CLI envelope parsing borrow the caller's value
+// rather than clone it, while advertising the owning Evidence contract.
+const borrowedInlineEvidenceSchema = z.unknown().nonoptional();
+borrowedInlineEvidenceSchema._zod.processJSONSchema =
+  evidenceSchema._zod.processJSONSchema;
+
+/** An exact same-session reference, or inline Evidence borrowed for application admission. */
+export const admittedEvidenceInputSchema = z.union([
+  retainedEvidenceReferenceSchema,
+  borrowedInlineEvidenceSchema,
+]);

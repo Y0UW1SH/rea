@@ -87,6 +87,10 @@ const DEFERRED_IMPORTS = [
     path: "/dist/application/javascript/JavaScriptSemanticTraceService.js",
   },
   {
+    name: "javascript-endpoint-traffic",
+    path: "/dist/application/javascript/JavaScriptEndpointTrafficComparisonService.js",
+  },
+  {
     name: "electron-observation",
     path: "/dist/application/javascript/ElectronObservationService.js",
   },

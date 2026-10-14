@@ -286,9 +286,10 @@ budget (XLD.app: 6.7 MB), so select `detail: "summary"` on the first call.
 Delivery detail never reaches the decoder or changes the source Evidence ID.
 
 `trace_application_feature`, `trace_javascript_semantics`,
-`compare_application_versions`, `compare_source_to_bundle`, and
-`compare_javascript_export_shapes` accept complete inline application Evidence
-or an exact reference to a record already retained by the current connection:
+`compare_application_versions`, `compare_source_to_bundle`,
+`compare_javascript_export_shapes`, and `compare_static_and_observed_endpoints`
+accept complete inline application Evidence or an exact reference to a record
+already retained by the current connection:
 
 ```json
 {
@@ -305,7 +306,12 @@ or an exact reference to a record already retained by the current connection:
 
 Use the `evidence_id` returned by `analyze_javascript_application` (or another
 compatible application-graph producer). Comparisons accept this form in `left`
-and `right`; each side can independently be inline or retained. Native
+and `right`; each side can independently be inline or retained.
+`compare_static_and_observed_endpoints` takes `static` application Evidence and
+`observed` HAR `inspect_web_network_capture` Evidence the same way. Inline HAR
+Evidence is admitted against the api-surface budget, and inline application
+Evidence receives the structural admission that `inspect_analysis_view` applies,
+both before parsing. Native
 observation arrays continue to take complete inline Evidence. Results and their
 Evidence remain complete inline, and both input forms pass the same semantic,
 identity, authority, and provenance checks without running the producer again.

@@ -14,6 +14,10 @@ const JSON_COMMANDS = [
   ["compare-source-to-bundle", "compare-source-to-bundle"],
   ["compare-javascript-export-shapes", "compare-javascript-export-shapes"],
   [
+    "compare-static-and-observed-endpoints",
+    "compare-static-and-observed-endpoints",
+  ],
+  [
     "build-reconstruction-obligation-ledger",
     "build-reconstruction-obligation-ledger",
   ],

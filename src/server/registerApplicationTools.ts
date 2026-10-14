@@ -5,6 +5,7 @@ import { registerTraceJavaScriptSemanticsTool } from "./registerApplicationTools
 import { registerCompareApplicationVersionsTool } from "./registerApplicationTools/compareVersions.js";
 import { registerCompareSourceToBundleTool } from "./registerApplicationTools/compareSourceToBundle.js";
 import { registerCompareJavaScriptExportShapesTool } from "./registerApplicationTools/compareExportShapes.js";
+import { registerCompareStaticAndObservedEndpointsTool } from "./registerApplicationTools/compareStaticObservedEndpoints.js";
 import { registerCoverageTools } from "./registerApplicationTools/coverage.js";
 import { registerReconstructionObligationLedgerTool } from "./registerApplicationTools/obligationLedger.js";
 import { registerProjectMobileApplicationGraphTools } from "./registerApplicationTools/projectMobileApplicationGraph.js";
@@ -20,6 +21,7 @@ export const registerApplicationTools = (
   registerCompareApplicationVersionsTool(server, options);
   registerCompareSourceToBundleTool(server, options);
   registerCompareJavaScriptExportShapesTool(server, options);
+  registerCompareStaticAndObservedEndpointsTool(server, options);
   registerReconstructionObligationLedgerTool(server, options);
   registerCoverageTools(server, options);
   registerProjectMobileApplicationGraphTools(server, options);

@@ -1,9 +1,14 @@
-import { analysisViewInputError } from "./analysisViewErrors.js";
 import { z } from "zod";
-import { AnalysisUnsupportedTargetError } from "../analysisErrorCore.js";
+import {
+  AnalysisInputError,
+  AnalysisUnsupportedTargetError,
+} from "../analysisErrorCore.js";
 import type { AnalysisError } from "../analysisErrorBase.js";
 import { err, ok, type Result } from "../result.js";
-import { webNetworkCaptureSchema } from "../webNetworkCapture.js";
+import {
+  webNetworkCaptureSchema,
+  type WebNetworkCapture,
+} from "../webNetworkCapture.js";
 import type {
   AnalysisViewParent,
   AnalysisViewRequest,
@@ -76,38 +81,35 @@ export const apiSurfaceFields = {
     }),
   ),
 };
-/** Group retained HAR request lines; format matches do not establish handler identity. */
-export const projectWebNetworkApiSurfaceView = (
-  parent: AnalysisViewParent,
-  view: AnalysisViewRequest,
-  accumulator = new WebNetworkApiSurfaceAccumulator(
-    undefined,
-    view.kind === "api-surface" && view.include_query_parameter_names === true,
-  ),
-): Result<UnsignedAnalysisView, AnalysisError> => {
+/** HAR parent facts consumed by grouping, independent of the requesting operation. */
+export type WebNetworkApiSurfaceParent = Pick<
+  AnalysisViewParent,
+  "evidenceId" | "normalizedResult" | "limitations" | "parameters"
+>;
+
+/**
+ * Admit, validate and group every retained request of one HAR parent. The
+ * api-surface view and the static/observed endpoint comparison share this
+ * owner; failures name the accumulator's operation and input coordinate.
+ */
+export const groupWebNetworkApiSurface = (
+  parent: WebNetworkApiSurfaceParent,
+  accumulator: WebNetworkApiSurfaceAccumulator,
+  selectedLimitations: readonly string[] = [],
+): Result<WebNetworkCapture, AnalysisError> => {
+  const { operation, capturePath } = accumulator.owner;
   const unsupported = (reason: string) =>
     err(
-      new AnalysisUnsupportedTargetError(
-        "inspect_analysis_view",
-        parent.evidenceId,
-        reason,
-      ),
-    );
-  if (
-    parent.operation !== "inspect_web_network_capture" ||
-    view.kind !== "api-surface"
-  )
-    return unsupported(
-      `View ${view.kind} is unsupported for parent operation ${parent.operation}; api-surface requires inspect_web_network_capture.`,
+      new AnalysisUnsupportedTargetError(operation, parent.evidenceId, reason),
     );
   const admitted = accumulator.admitCaptureClone(parent.normalizedResult);
   if (!admitted.ok) return admitted;
   const parsed = webNetworkCaptureSchema.safeParse(parent.normalizedResult);
   if (!parsed.success)
     return err(
-      analysisViewInputError([
+      new AnalysisInputError(operation, undefined, [
         {
-          path: ["source"],
+          path: [...capturePath],
           reason: "invalid_value",
           message:
             "Parent Evidence result does not match inspect_web_network_capture.",
@@ -128,11 +130,7 @@ export const projectWebNetworkApiSurfaceView = (
     ...parent.limitations,
     ...capture.limitations,
     "Grouping does not establish handler identity, URL-space schemas or causality.",
-    ...(view.include_query_parameter_names === true
-      ? [
-          "Observed query parameter names do not establish required parameters, value types or a complete API schema.",
-        ]
-      : []),
+    ...selectedLimitations,
     ...(capture.records.length < capture.total_records
       ? [
           "Parent contains an ordinal subset; the surface covers only retained records.",
@@ -144,6 +142,41 @@ export const projectWebNetworkApiSurfaceView = (
     const added = accumulator.add(record);
     if (!added.ok) return added;
   }
+  return ok(capture);
+};
+
+/** Group retained HAR request lines; format matches do not establish handler identity. */
+export const projectWebNetworkApiSurfaceView = (
+  parent: AnalysisViewParent,
+  view: AnalysisViewRequest,
+  accumulator = new WebNetworkApiSurfaceAccumulator({
+    includeQueryParameterNames:
+      view.kind === "api-surface" &&
+      view.include_query_parameter_names === true,
+  }),
+): Result<UnsignedAnalysisView, AnalysisError> => {
+  if (
+    parent.operation !== "inspect_web_network_capture" ||
+    view.kind !== "api-surface"
+  )
+    return err(
+      new AnalysisUnsupportedTargetError(
+        "inspect_analysis_view",
+        parent.evidenceId,
+        `View ${view.kind} is unsupported for parent operation ${parent.operation}; api-surface requires inspect_web_network_capture.`,
+      ),
+    );
+  const grouped = groupWebNetworkApiSurface(
+    parent,
+    accumulator,
+    view.include_query_parameter_names === true
+      ? [
+          "Observed query parameter names do not establish required parameters, value types or a complete API schema.",
+        ]
+      : [],
+  );
+  if (!grouped.ok) return grouped;
+  const capture = grouped.value;
   const page = accumulator.page(view.offset, view.limit);
   return ok({
     kind: "api-surface",

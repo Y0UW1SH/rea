@@ -69,3 +69,16 @@ When the connected schema advertises `include_query_parameter_names`, select
 it in the view for distinct observed names with original record ordinals. Query
 values are omitted; the names establish neither required parameters nor a
 complete server schema. Keep the original parent Evidence for exact URLs.
+
+To ask which endpoints the shipped JavaScript names that a HAR never
+exercised, pass `analyze_javascript_application` and HAR
+`inspect_web_network_capture` Evidence (or their retained IDs) to
+`compare_static_and_observed_endpoints`, with the app's exact `origins` for
+paths such as `/api/users`. Report each pairing's `exact` or
+`template-compatible` basis. `not-observed-in-capture` only means this capture
+lacks the request, never that an endpoint is unused or hidden; candidate,
+GraphQL/tRPC and other unknown items are not endpoints the capture missed.
+Page `collection: "observed-without-static-match"` for requests whose URLs
+static analysis did not find as literals; do not call them hidden APIs.
+`observed-unresolved` groups share a path with an undeclared-origin static
+literal; declare `origins` to pair them. No requests are sent.

@@ -3,8 +3,10 @@ import { applicationFeatureTraceResultSchema } from "../domain/javascript/javasc
 import { javaScriptSemanticTraceResultSchema } from "../domain/javascript/javascriptSemanticTraceSchemas.js";
 import { javaScriptExportShapeComparisonResultSchema } from "../domain/javascript/javascriptExportShapeComparisonSchemas.js";
 import { sourceToBundleComparisonResultSchema } from "../domain/javascript/sourceToBundleComparisonSchemas.js";
+import { endpointTrafficComparisonResultSchema } from "../domain/javascript/javascriptEndpointTrafficComparisonSchemas.js";
 import {
   compareApplicationVersionsRequestSchema,
+  compareStaticAndObservedEndpointsRequestSchema,
   compareJavaScriptExportShapesRequestSchema,
   compareSourceToBundleRequestSchema,
   traceApplicationFeatureRequestSchema,
@@ -56,6 +58,9 @@ const sourceToBundleOutputSchema = evidenceResultOf(
 );
 const exportShapeComparisonOutputSchema = evidenceResultOf(
   javaScriptExportShapeComparisonResultSchema,
+);
+const endpointTrafficComparisonOutputSchema = evidenceResultOf(
+  endpointTrafficComparisonResultSchema,
 );
 const reconstructionObligationLedgerOutputSchema = evidenceResultOf(
   reconstructionObligationLedgerSchema,
@@ -317,6 +322,26 @@ export const APPLICATION_TOOL_CONTRACTS = [
       },
     ],
   },
+  {
+    name: "compare_static_and_observed_endpoints",
+    ...toolContractMetadata("compare_static_and_observed_endpoints"),
+    description:
+      "Compare static network endpoint literals in analyze_javascript_application Evidence with the api-surface request groups of one HAR inspect_web_network_capture parent, each supplied inline or as an exact same-session retained reference. Each static network endpoint is matched (exact or template-compatible basis), ambiguous (method-inference-disagrees), not-observed-in-capture, or unknown with a reason; observed groups are paired, unresolved (same route shape as an origin-relative static path without declared origins) or without a compatible static finding. Origin-relative paths join only caller-declared origins, as inferences. Candidate values and GraphQL/tRPC operation names stay unknown. not-observed-in-capture requires complete capture coverage and an exercised origin, and never establishes an unused or hidden endpoint. No similarity, prefix, case-folding or trailing-slash matching; query strings, fragments, headers and bodies are not copied. Parents inspected with sensitive_values are refused. Inline Evidence on either side is admitted before parsing. Static-endpoint pages list each paired group once in paired_groups; pairings reference it by index. Reads no files and sends no requests. Select collection static-endpoints (default), observed-without-static-match or observed-unresolved; offset and limit page that collection, and summary counts cover all of them.",
+    kind: "application",
+    inputSchema: compareStaticAndObservedEndpointsRequestSchema,
+    outputSchema: endpointTrafficComparisonOutputSchema,
+    examples: [
+      {
+        title:
+          "Compare retained application and HAR Evidence for one declared origin",
+        input: {
+          static: retained(`ev_${"1".repeat(64)}`),
+          observed: retained(`ev_${"2".repeat(64)}`),
+          origins: ["https://app.example.test"],
+        },
+      },
+    ],
+  },
 ] as const satisfies readonly ToolContract[];
 
 /** Resolve one named application contract without relying on array position. */
@@ -350,6 +375,9 @@ export function applicationToolContract(
 export function applicationToolContract(
   name: "project_harmony_application_graph",
 ): (typeof APPLICATION_TOOL_CONTRACTS)[9];
+export function applicationToolContract(
+  name: "compare_static_and_observed_endpoints",
+): (typeof APPLICATION_TOOL_CONTRACTS)[10];
 export function applicationToolContract(
   name: (typeof APPLICATION_TOOL_CONTRACTS)[number]["name"],
 ): (typeof APPLICATION_TOOL_CONTRACTS)[number] {

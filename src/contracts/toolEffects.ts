@@ -670,6 +670,7 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffects>> = {
   compare_application_versions: evidence,
   compare_source_to_bundle: evidence,
   compare_javascript_export_shapes: evidence,
+  compare_static_and_observed_endpoints: evidence,
   build_reconstruction_obligation_ledger: evidence,
   evaluate_reconstruction_coverage: effects(),
   project_android_application_graph: evidence,

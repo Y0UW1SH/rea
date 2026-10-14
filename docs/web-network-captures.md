@@ -282,7 +282,10 @@ response fields, including HAR's `status: 0` and an empty `mimeType`, remain
 unknown, not invented statuses or MIME types.
 
 The view makes no handler-identity, schema or causality claim. It performs no
-network activity. Native mitmproxy, SAZ and qlog captures return a typed unsupported error.
+network activity. To join these groups with static JavaScript endpoint
+literals, use `compare_static_and_observed_endpoints`
+([static endpoint and captured traffic comparison](javascript-application-workflows.md#static-endpoint-and-captured-traffic-comparison)).
+It shares this grouping owner, budget and sensitive-parent refusal. Native mitmproxy, SAZ and qlog captures return a typed unsupported error.
 Parents inspected with `sensitive_values`, or whose Evidence does not record
 `sensitive_value_count`, return a typed unsupported error whose reason is the
 canonical token `sensitive_values_unretained`. The view would write path

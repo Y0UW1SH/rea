@@ -16,6 +16,7 @@ import { traceJavaScriptSemanticsInputSchema } from "../domain/javascript/javasc
 import { compareApplicationVersionsInputSchema } from "../domain/javascript/javascriptApplicationVersionComparisonSchemas.js";
 import { compareSourceToBundleInputSchema } from "../domain/javascript/sourceToBundleComparisonSchemas.js";
 import { compareJavaScriptExportShapesInputSchema } from "../domain/javascript/javascriptExportShapeComparisonSchemas.js";
+import { compareStaticAndObservedEndpointsRequestSchema } from "../contracts/javascript/applicationWorkflowInputContracts.js";
 import { analysisInputErrorFromIssues } from "../domain/inputIssueProjection.js";
 import { reconstructionObligationLedgerInputSchema } from "../domain/reconstructionObligationLedgerSchemas.js";
 
@@ -91,6 +92,7 @@ export const registerApplicationCommands = (
       return compareJavaScriptExportShapesEvidenceValidated(input);
     },
   });
+  registerEndpointTrafficCommand(cli, logger);
   registerObligationLedgerCommand(cli, logger);
   registerCoverageCommand(cli, logger);
   registerJsonCommand({
@@ -142,6 +144,25 @@ export const registerApplicationCommands = (
     },
   });
 };
+
+const registerEndpointTrafficCommand = (
+  cli: CliInstance,
+  logger: Logger,
+): void =>
+  registerJsonCommand({
+    cli,
+    logger,
+    name: CLI_COMMANDS.compareStaticAndObservedEndpoints,
+    description:
+      "Compare static JavaScript endpoint literals with HAR api-surface request groups",
+    inputSchema: compareStaticAndObservedEndpointsRequestSchema,
+    workflow: async (input) => {
+      const { compareStaticAndObservedEndpointsEvidenceValidated } =
+        await import("../application/javascript/JavaScriptEndpointTrafficComparisonService.js");
+      const result = compareStaticAndObservedEndpointsEvidenceValidated(input);
+      return result.ok ? { ok: true, value: result.value.evidence } : result;
+    },
+  });
 
 const registerObligationLedgerCommand = (
   cli: CliInstance,

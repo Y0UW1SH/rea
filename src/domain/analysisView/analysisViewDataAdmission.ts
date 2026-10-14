@@ -15,15 +15,20 @@ export const admitAnalysisViewData = (
   value: unknown,
   inline: boolean,
   reserve?: (bytes: number) => Result<void, AnalysisError>,
+  location: {
+    readonly operation: string;
+    readonly path: readonly (string | number)[];
+  } = {
+    operation: "inspect_analysis_view",
+    path: inline ? ["source", "evidence"] : ["source"],
+  },
 ): Result<void, AnalysisError> => {
   const ancestors = new Set<object>();
   // A single bounded stack preserves diagnostics without per-node path copies.
-  const path: (string | number)[] = inline
-    ? ["source", "evidence"]
-    : ["source"];
+  const path: (string | number)[] = [...location.path];
   const invalid = (): Result<never, AnalysisError> =>
     err(
-      new AnalysisInputError("inspect_analysis_view", undefined, [
+      new AnalysisInputError(location.operation, undefined, [
         {
           path: [...path],
           reason: "invalid_value",

@@ -1,8 +1,12 @@
 import { z } from "zod";
 
-import { evidenceInputSchema } from "../evidenceInputContracts.js";
+import {
+  admittedEvidenceInputSchema,
+  evidenceInputSchema,
+} from "../evidenceInputContracts.js";
 import { compareApplicationVersionsInputSchema } from "../../domain/javascript/javascriptApplicationVersionComparisonSchemas.js";
 import { compareJavaScriptExportShapesInputSchema } from "../../domain/javascript/javascriptExportShapeComparisonSchemas.js";
+import { endpointTrafficComparisonOptionsShape } from "../../domain/javascript/javascriptEndpointTrafficComparisonSchemas.js";
 import { traceApplicationFeatureInputSchema } from "../../domain/javascript/javascriptFeatureTraceSchemas.js";
 import { javaScriptSemanticQueryInputSchema } from "../../domain/javascript/javascriptSemanticQuerySchemas.js";
 import { compareSourceToBundleInputSchema } from "../../domain/javascript/sourceToBundleComparisonSchemas.js";
@@ -66,4 +70,15 @@ export const compareJavaScriptExportShapesRequestSchema = z.strictObject({
   ...compareJavaScriptExportShapesFacts,
   left: evidenceInputSchema,
   right: evidenceInputSchema,
+});
+
+/** Static application and HAR Evidence, each admitted before parsing when inline. */
+export const compareStaticAndObservedEndpointsRequestSchema = z.strictObject({
+  static: admittedEvidenceInputSchema.describe(
+    "analyze_javascript_application Evidence, inline or as an exact same-session reference.",
+  ),
+  observed: admittedEvidenceInputSchema.describe(
+    "inspect_web_network_capture Evidence for a HAR inspected without sensitive_values, inline or as an exact same-session reference.",
+  ),
+  ...endpointTrafficComparisonOptionsShape,
 });

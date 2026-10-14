@@ -4,6 +4,7 @@ import {
   type EvidenceObservation,
 } from "../../domain/evidence.js";
 import type { ApplicationVersionComparisonResult } from "../../domain/javascript/javascriptApplicationVersionComparisonSchemas.js";
+import type { EndpointTrafficComparison } from "../../domain/javascript/javascriptEndpointTrafficComparison.js";
 import type { JavaScriptExportShapeComparisonResult } from "../../domain/javascript/javascriptExportShapeComparisonSchemas.js";
 import type { ApplicationFeatureTraceResult } from "../../domain/javascript/javascriptFeatureTraceSchemas.js";
 import type { JavaScriptSemanticTraceResult } from "../../domain/javascript/javascriptSemanticTraceSchemas.js";
@@ -98,4 +99,22 @@ export const createJavaScriptExportShapeComparisonEvidence = (
     environment: null,
     limitations: result.limitations,
     evidenceLinks: result.evidence_links,
+  });
+
+/** Create derived or inferred Evidence for one static/observed endpoint comparison. */
+export const createEndpointTrafficComparisonEvidence = (
+  parameters: EvidenceObservation["parameters"],
+  comparison: EndpointTrafficComparison,
+): Evidence =>
+  createEvidence(undefined, JAVASCRIPT_APPLICATION_WORKFLOW_PROVIDER, {
+    predicateType: "rea.static-observed-endpoint-comparison",
+    operation: "compare_static_and_observed_endpoints",
+    parameters,
+    result: comparison.result,
+    rawResult: null,
+    confidence: comparison.inferred ? "inferred" : "derived",
+    authority: "analyst-inference",
+    environment: null,
+    limitations: comparison.result.limitations,
+    evidenceLinks: comparison.result.evidence_links,
   });
