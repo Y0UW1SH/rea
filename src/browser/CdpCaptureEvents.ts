@@ -1,13 +1,25 @@
 import type { InspectWebPageInput } from "../domain/browserObservation.js";
 import type { WebPageInspection } from "../domain/browserObservationSchemas.js";
+import {
+  eventStreamFormatForMediaType,
+  type EventStreamFormat,
+} from "../domain/eventStreamShape.js";
 import type { CdpEvent } from "./CdpConnection.js";
 import { CdpCaptureCompleteness } from "./CdpCaptureCompleteness.js";
 import * as bodyShapes from "./CdpCaptureEventBodyShapes.js";
+import {
+  CdpEventStreamCapture,
+  type EventStreamBodyUnavailableReason,
+} from "./CdpCaptureEventStreams.js";
 import type { CdpCaptureEventsState } from "./CdpCaptureEventState.js";
 import type { CapturedScript, NetworkState } from "./CdpCaptureEventTypes.js";
 import * as handlers from "./CdpCaptureEventHandlers.js";
-import { isJsonMediaType } from "./CdpCaptureEventHelpers.js";
-import { cdpStringValue, recordValue } from "./CdpCaptureValues.js";
+import { isJsonMediaType, responseBodyText } from "./CdpCaptureEventHelpers.js";
+import {
+  cdpStringValue,
+  recordValue,
+  type UnknownRecord,
+} from "./CdpCaptureValues.js";
 
 export interface ResponseBodyCandidate {
   readonly requestId: string;
@@ -19,6 +31,7 @@ export class CdpCaptureEvents implements CdpCaptureEventsState {
   #scriptMetadataBudgetExclusionsRecorded = false;
   readonly #networkRequestOccurrences = new Map<string, number>();
   readonly #responseBodyExaminedOccurrences = new Map<string, number>();
+  readonly #eventStreams = new CdpEventStreamCapture();
   readonly scripts = new Map<string, CapturedScript>();
   readonly scriptMetadataBudgetOmissionsById = new Map<string, true>();
   rejectedScriptMetadataBudgetCount = 0;
@@ -73,6 +86,7 @@ export class CdpCaptureEvents implements CdpCaptureEventsState {
     this.networkRequestTimestamps.clear();
     this.#networkRequestOccurrences.clear();
     this.#responseBodyExaminedOccurrences.clear();
+    this.#eventStreams.clear();
     this.malformedRedirectRequestIds.clear();
     this.webSocketConnectionsById.clear();
     this.console.length = 0;
@@ -170,7 +184,75 @@ export class CdpCaptureEvents implements CdpCaptureEventsState {
       case "Network.webSocketFrameReceived":
         handlers.handleWebSocketFrame(this, params, "received");
         break;
+      case "Network.eventSourceMessageReceived":
+        this.#ingestEventSourceMessage(params);
+        break;
     }
+  }
+
+  /** Retained requests, with selected event-stream facts projected per source. */
+  networkRequests(): NetworkState[] {
+    const requests = [...this.network.values()];
+    if (!this.input.include_event_stream_shapes) return requests;
+    return requests.map((request) => {
+      if (this.malformedRedirectRequestIds.has(request.request_id))
+        return request;
+      const eventStream = this.#eventStreams.project(
+        request,
+        this.#networkRequestOccurrences.get(request.request_id),
+      );
+      return eventStream === undefined
+        ? request
+        : { ...request, event_stream: eventStream };
+    });
+  }
+
+  /** Summarize one browser-delivered EventSource message for an admitted request. */
+  #ingestEventSourceMessage(params: UnknownRecord): void {
+    if (!this.input.include_event_stream_shapes) return;
+    const requestId = cdpStringValue(params.requestId);
+    const eventName = cdpStringValue(params.eventName);
+    const eventId = cdpStringValue(params.eventId);
+    const data = cdpStringValue(params.data);
+    if (
+      requestId === undefined ||
+      eventName === undefined ||
+      eventId === undefined ||
+      data === undefined
+    ) {
+      this.completeness.exclude(
+        "event_stream_shapes",
+        "invalid_protocol_value",
+      );
+      return;
+    }
+    if (this.malformedRedirectRequestIds.has(requestId)) return;
+    const request = this.network.get(requestId);
+    const occurrence = this.#networkRequestOccurrences.get(requestId);
+    // Requests outside the selected origins were already excluded and counted.
+    if (request === undefined || occurrence === undefined) return;
+    if (eventStreamFormatForMediaType(request.mime_type) !== "sse") {
+      this.completeness.exclude(
+        "event_stream_shapes",
+        "invalid_protocol_value",
+      );
+      return;
+    }
+    // CDP eventId is reported per message; Chrome 155 sends the persisting
+    // last event ID, but this source keeps its own field name and meaning.
+    const truncated = this.#eventStreams.recordMessage(
+      requestId,
+      occurrence,
+      eventName === "" ? "message" : eventName,
+      eventId !== "",
+      data,
+    );
+    if (truncated)
+      this.completeness.exclude(
+        "event_stream_shapes",
+        "resource_budget_exhausted",
+        null,
+      );
   }
 
   /** Resolve a transient execution context to one already authorized frame. */
@@ -183,13 +265,31 @@ export class CdpCaptureEvents implements CdpCaptureEventsState {
       : null;
   }
 
+  /** Selected response-body interpretation for one request's media type. */
+  #selectedBodyFormat(
+    request: NetworkState,
+  ): "json" | EventStreamFormat | undefined {
+    if (
+      this.input.include_json_body_shapes &&
+      isJsonMediaType(request.mime_type)
+    )
+      return "json";
+    return this.input.include_event_stream_shapes
+      ? eventStreamFormatForMediaType(request.mime_type)
+      : undefined;
+  }
+
   responseBodyRequests(): readonly ResponseBodyCandidate[] {
-    if (!this.input.include_json_body_shapes) return [];
+    if (
+      !this.input.include_json_body_shapes &&
+      !this.input.include_event_stream_shapes
+    )
+      return [];
     return [...this.network.values()]
       .filter(
         (request) => !this.malformedRedirectRequestIds.has(request.request_id),
       )
-      .filter((request) => isJsonMediaType(request.mime_type))
+      .filter((request) => this.#selectedBodyFormat(request) !== undefined)
       .flatMap((request) => {
         const occurrence = this.#networkRequestOccurrences.get(
           request.request_id,
@@ -211,15 +311,30 @@ export class CdpCaptureEvents implements CdpCaptureEventsState {
     return this.network.get(candidate.requestId);
   }
 
-  responseBodyUnavailable(candidate: ResponseBodyCandidate): void {
-    if (this.currentResponseBodyRequest(candidate) === undefined) return;
+  responseBodyUnavailable(
+    candidate: ResponseBodyCandidate,
+    reason: EventStreamBodyUnavailableReason,
+  ): void {
+    const request = this.currentResponseBodyRequest(candidate);
+    if (request === undefined) return;
     this.#responseBodyExaminedOccurrences.set(
       candidate.requestId,
       candidate.occurrence,
     );
     if (this.malformedRedirectRequestIds.has(candidate.requestId)) return;
-    bodyShapes.updateResponseBodyShape(this, candidate.requestId, null);
-    this.completeness.unavailable("json_body_shapes");
+    const format = this.#selectedBodyFormat(request);
+    if (format === "json" || format === undefined) {
+      bodyShapes.updateResponseBodyShape(this, candidate.requestId, null);
+      this.completeness.unavailable("json_body_shapes");
+      return;
+    }
+    this.#eventStreams.bodyUnavailable(
+      candidate.requestId,
+      candidate.occurrence,
+      format,
+      reason,
+    );
+    this.completeness.unavailable("event_stream_shapes");
   }
 
   /**
@@ -230,21 +345,63 @@ export class CdpCaptureEvents implements CdpCaptureEventsState {
     for (const candidate of this.responseBodyRequests()) {
       const request = this.currentResponseBodyRequest(candidate);
       if (
-        request?.body_shapes.response === null &&
+        request !== undefined &&
+        (this.#selectedBodyFormat(request) !== "json" ||
+          request.body_shapes.response === null) &&
         this.#responseBodyExaminedOccurrences.get(candidate.requestId) !==
           candidate.occurrence
       )
-        this.responseBodyUnavailable(candidate);
+        this.responseBodyUnavailable(
+          candidate,
+          request.encoded_data_length === null
+            ? "response-unfinished"
+            : "capture-ended",
+        );
     }
   }
 
   ingestResponseBody(candidate: ResponseBodyCandidate, value: unknown): void {
-    if (this.currentResponseBodyRequest(candidate) === undefined) return;
+    const request = this.currentResponseBodyRequest(candidate);
+    if (request === undefined) return;
     this.#responseBodyExaminedOccurrences.set(
       candidate.requestId,
       candidate.occurrence,
     );
     if (this.malformedRedirectRequestIds.has(candidate.requestId)) return;
-    bodyShapes.ingestResponseBodyShape(this, candidate.requestId, value);
+    const format = this.#selectedBodyFormat(request);
+    if (format === "json" || format === undefined) {
+      bodyShapes.ingestResponseBodyShape(this, candidate.requestId, value);
+      return;
+    }
+    const text = responseBodyText(value);
+    if (text === undefined) {
+      this.#eventStreams.bodyUnavailable(
+        candidate.requestId,
+        candidate.occurrence,
+        format,
+        "body-read-failed",
+      );
+      this.completeness.exclude(
+        "event_stream_shapes",
+        "invalid_protocol_value",
+      );
+      return;
+    }
+    // The reply was admitted under the CDP protocol message budget. Base64
+    // decoding makes transient copies proportional to that reply; bodies are
+    // read one at a time and only the value-free summary outlives this call.
+    if (
+      this.#eventStreams.ingestBody(
+        candidate.requestId,
+        candidate.occurrence,
+        format,
+        text,
+      )
+    )
+      this.completeness.exclude(
+        "event_stream_shapes",
+        "resource_budget_exhausted",
+        null,
+      );
   }
 }

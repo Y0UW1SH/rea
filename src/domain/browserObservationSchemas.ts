@@ -3,6 +3,11 @@ import { z } from "zod";
 import { browserCompletenessSchema } from "./browserCompleteness.js";
 import { webTextArtifactSchema } from "./webContentArtifact.js";
 import { jsonShapeSchema } from "./jsonShape.js";
+import {
+  eventSourceMessagesSummarySchema,
+  jsonRecordStreamSummarySchema,
+  sseBodySummarySchema,
+} from "./eventStreamShape.js";
 import { prefixedDigestSchema } from "./../domain/digests.js";
 
 /** Shared CDP/browser version identity carried on observation Evidence. */
@@ -123,6 +128,47 @@ const browserResourceSchema = z.object({
   mime_type: z.string(),
   content_size: z.number().min(0).nullable(),
 });
+const unavailableEventStreamBodySchema = z.object({
+  status: z.literal("unavailable"),
+  reason: z.enum(["response-unfinished", "body-read-failed", "capture-ended"]),
+});
+const jsonRecordEventStreamSchema = <Format extends "ndjson" | "json-seq">(
+  format: Format,
+) =>
+  z.object({
+    format: z.literal(format),
+    completed_body: z.discriminatedUnion("status", [
+      z.object({
+        status: z.literal("included"),
+        ...jsonRecordStreamSummarySchema.shape,
+      }),
+      unavailableEventStreamBodySchema,
+    ]),
+  });
+/**
+ * Value-free streamed-response summary. Completed bodies and EventSource
+ * messages are separate observation sources and are never summed.
+ */
+const browserEventStreamSchema = z.discriminatedUnion("format", [
+  z.object({
+    format: z.literal("sse"),
+    completed_body: z.discriminatedUnion("status", [
+      z.object({
+        status: z.literal("included"),
+        ...sseBodySummarySchema.shape,
+      }),
+      unavailableEventStreamBodySchema,
+    ]),
+    event_source_messages: eventSourceMessagesSummarySchema
+      .nullable()
+      .describe(
+        "Messages the browser delivered to EventSource during the attach window; null for other requests",
+      ),
+  }),
+  jsonRecordEventStreamSchema("ndjson"),
+  jsonRecordEventStreamSchema("json-seq"),
+]);
+export type BrowserEventStream = z.infer<typeof browserEventStreamSchema>;
 const browserNetworkRequestSchema = z.object({
   request_id: z.string(),
   url: z.string(),
@@ -158,6 +204,11 @@ const browserNetworkRequestSchema = z.object({
     request: jsonShapeSchema.nullable(),
     response: jsonShapeSchema.nullable(),
   }),
+  event_stream: browserEventStreamSchema
+    .optional()
+    .describe(
+      "Present only when event-stream shapes were selected and the response media type is SSE, NDJSON, or a JSON text sequence",
+    ),
 });
 const browserConsoleEventSchema = z.object({
   type: z.string(),

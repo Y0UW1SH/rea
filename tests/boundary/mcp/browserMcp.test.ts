@@ -22,6 +22,10 @@ import {
   startFakeCdpBrowser,
   type FakeCdpBrowser,
 } from "../../fixtures/fakeCdpBrowser.js";
+import {
+  eventSourceMessage,
+  streamRequestEvents,
+} from "../../fixtures/fakeCdpEventStreams.js";
 
 const resources: Array<{ close(): Promise<unknown> }> = [];
 const browsers: FakeCdpBrowser[] = [];
@@ -424,6 +428,156 @@ it("delivers the source-map response URL through authenticated MCP Evidence", as
     ),
   ).toBe(true);
 });
+
+it(
+  "returns value-free event-stream shapes through MCP and CLI only when selected",
+  async () => {
+    const browser = await startFakeCdpBrowser({
+      eventsBeforeReply: ["Network.enable"],
+      commandEvents: (command, origin) =>
+        command.method === "Network.enable"
+          ? [
+              ...streamRequestEvents(command, origin, {
+                requestId: "chat",
+                path: "/chat",
+                mimeType: "text/event-stream",
+              }),
+              ...streamRequestEvents(command, origin, {
+                requestId: "feed",
+                path: "/feed",
+                mimeType: "text/event-stream",
+                type: "EventSource",
+                finished: false,
+              }),
+              eventSourceMessage(command, {
+                requestId: "feed",
+                eventName: "update",
+                eventId: "feed-id-secret",
+                data: '{"price":"feed-secret"}',
+              }),
+            ]
+          : undefined,
+      commandResult: (command) =>
+        command.method === "Network.getResponseBody"
+          ? {
+              body: 'id: chat-id-secret\nretry: 9081726354\ndata: {"delta":"chat-secret"}\n\nevent: done\ndata: [DONE]\n\n',
+              base64Encoded: false,
+            }
+          : undefined,
+    });
+    browsers.push(browser);
+    const expectedRequests = [
+      expect.objectContaining({
+        request_id: "chat",
+        event_stream: {
+          format: "sse",
+          completed_body: expect.objectContaining({
+            status: "included",
+            events_dispatched: 2,
+            retry_fields: 1,
+            events: [
+              expect.objectContaining({ name: "done", count: 1 }),
+              expect.objectContaining({
+                name: "message",
+                count: 1,
+                last_event_id_present: 1,
+                data: expect.objectContaining({ json: 1 }),
+              }),
+            ],
+          }),
+          event_source_messages: null,
+        },
+      }),
+      expect.objectContaining({
+        request_id: "feed",
+        event_stream: {
+          format: "sse",
+          completed_body: {
+            status: "unavailable",
+            reason: "response-unfinished",
+          },
+          event_source_messages: {
+            messages: 1,
+            events_omitted: 0,
+            shape_nodes_omitted: 0,
+            events: [
+              expect.objectContaining({
+                name: "update",
+                cdp_event_id_present: 1,
+              }),
+            ],
+          },
+        },
+      }),
+    ];
+    const connected = await connectBrowser();
+    const baseArguments = {
+      cdp_endpoint: browser.endpoint,
+      target_id: "allowed-page",
+      observation_ms: 0,
+    };
+    const selected = await connected.client.callTool({
+      name: "inspect_web_page",
+      arguments: { ...baseArguments, include_event_stream_shapes: true },
+    });
+    expect(selected.isError).not.toBe(true);
+    const commonArgs = [
+      "inspect-web-page",
+      browser.endpoint,
+      "allowed-page",
+      "--observation-ms",
+      "0",
+      "--json",
+    ];
+    const selectedCli = parseEvidence(
+      await runCliJson([...commonArgs, "--include-event-stream-shapes"]),
+    );
+    for (const evidence of [
+      parseEvidence(selected.structuredContent),
+      selectedCli,
+    ]) {
+      expect(evidence.parameters).toMatchObject({
+        include_event_stream_shapes: true,
+      });
+      expect(evidence.normalized_result).toMatchObject({
+        network: { requests: expectedRequests },
+      });
+      const serialized = JSON.stringify(evidence);
+      for (const secret of [
+        "chat-id-secret",
+        "9081726354",
+        "chat-secret",
+        "[DONE]",
+        "feed-id-secret",
+        "feed-secret",
+      ])
+        expect(serialized).not.toContain(secret);
+    }
+
+    const defaulted = await connected.client.callTool({
+      name: "inspect_web_page",
+      arguments: baseArguments,
+    });
+    expect(defaulted.isError).not.toBe(true);
+    for (const evidence of [
+      parseEvidence(defaulted.structuredContent),
+      parseEvidence(await runCliJson(commonArgs)),
+    ]) {
+      expect(evidence.parameters).not.toHaveProperty(
+        "include_event_stream_shapes",
+      );
+      expect(JSON.stringify(evidence.normalized_result)).not.toContain(
+        "event_stream",
+      );
+    }
+    expect(
+      browser.commands.filter(
+        ({ method }) => method === "Network.getResponseBody",
+      ),
+    ).toHaveLength(2);
+  },
+  INTEGRATION_TEST_TIMEOUT_MS,
+);
 
 it("records a browser-socket endpoint redacted and reconciles its Evidence", async () => {
   const browser = await startFakeCdpBrowser();

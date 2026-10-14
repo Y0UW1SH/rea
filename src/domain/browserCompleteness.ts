@@ -18,6 +18,7 @@ const browserSectionSchema = z.enum([
   "websocket_frames",
   "websocket_shapes",
   "json_body_shapes",
+  "event_stream_shapes",
   "workers",
   "storage",
   "storage_keys",

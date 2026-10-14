@@ -152,6 +152,11 @@ const browserParameters = (
           include_console_text: input.include_console_text,
           include_json_body_shapes: input.include_json_body_shapes,
           include_websocket_shapes: input.include_websocket_shapes,
+          // Recorded only when selected, so default-call parameters keep the
+          // form they had before this option existed.
+          ...(input.include_event_stream_shapes
+            ? { include_event_stream_shapes: true }
+            : {}),
           include_storage_keys: input.include_storage_keys,
           include_storage_fingerprints: input.include_storage_fingerprints,
           ...("include_script_sources" in input

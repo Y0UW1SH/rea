@@ -49,6 +49,7 @@ import { verifyBrowserModules } from "./lib/browser-module-e2e.mjs";
 import { verifyBrowserDomDestinations } from "./lib/browser-dom-destinations-e2e.mjs";
 import { verifyBrowserSocketTransport } from "./lib/browser-socket-e2e.mjs";
 import { verifyBrowserCaptureMetadataBudget } from "./lib/browser-capture-metadata-budget-e2e.mjs";
+import { verifyBrowserEventStreamShapes } from "./lib/browser-event-stream-e2e.mjs";
 import { artifactCliEvidence, artifactMcpResult } from "./lib/artifact-e2e.mjs";
 import { verifyScenarioEnvironment } from "./lib/browser-scenario-environment-e2e.mjs";
 import { verifyScenarioStorage } from "./lib/browser-scenario-storage-e2e.mjs";
@@ -378,6 +379,8 @@ try {
   });
   const moduleTrace = await verifyBrowserModules(executable);
   const captureMetadata = await verifyBrowserCaptureMetadataBudget(endpoint);
+  process.stderr.write("Browser verifier: event-stream shapes\n");
+  const eventStreamShapes = await verifyBrowserEventStreamShapes(endpoint);
   report = {
     browser: observed.value.browser.product,
     endpoint,
@@ -405,6 +408,7 @@ try {
     scriptExport,
     moduleTrace,
     captureMetadata,
+    eventStreamShapes,
     domDestinations,
     browserScenarioCli: true,
     browserScenarioAttachCleanup: "disconnected-external",

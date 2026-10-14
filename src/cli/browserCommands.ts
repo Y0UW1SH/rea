@@ -103,6 +103,7 @@ const registerPageInspection = (
             include_console_text: options.includeConsoleText,
             include_json_body_shapes: options.includeJsonBodyShapes,
             include_websocket_shapes: options.includeWebsocketShapes,
+            include_event_stream_shapes: options.includeEventStreamShapes,
             include_script_sources: options.includeScriptSources,
             include_storage_keys: options.includeStorageKeys,
             include_storage_fingerprints: options.includeStorageFingerprints,

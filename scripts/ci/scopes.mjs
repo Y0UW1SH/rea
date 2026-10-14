@@ -230,6 +230,12 @@ export const SCOPES = {
     "scripts/fixtures/page-cdp-proxy.mjs",
     "src/browser/**",
     "src/domain/browser*.ts",
+    // Event-stream parsing and its dependencies have no real-provider check
+    // outside this lane.
+    "src/domain/eventStreamShape.ts",
+    "src/domain/jsonShape.ts",
+    "src/domain/jsonTextSyntax.ts",
+    "src/domain/mediaTypeEssence.ts",
     "src/domain/webScript*.ts",
     "src/domain/webModule*.ts",
     "src/application/WebModule*.ts",

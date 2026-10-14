@@ -607,6 +607,26 @@ it.each([
     },
   ],
   [
+    "scripts/lib/browser-event-stream-e2e.mjs",
+    { code: true, runtime: false, browser: true, package: false },
+  ],
+  [
+    "src/domain/eventStreamShape.ts",
+    { code: true, runtime: true, browser: true, package: false },
+  ],
+  [
+    "src/domain/jsonShape.ts",
+    { code: true, runtime: true, browser: true, package: false },
+  ],
+  [
+    "src/domain/jsonTextSyntax.ts",
+    { code: true, runtime: true, browser: true, package: false },
+  ],
+  [
+    "src/domain/mediaTypeEssence.ts",
+    { code: true, runtime: true, browser: true, package: false },
+  ],
+  [
     "tests/module/example.test.ts",
     { code: true, runtime: false, browser: false, package: false },
   ],

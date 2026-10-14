@@ -179,6 +179,12 @@ const inspectWebPageInputFacts = {
   include_console_text: z.boolean().default(false),
   include_json_body_shapes: z.boolean().default(false),
   include_websocket_shapes: z.boolean().default(false),
+  include_event_stream_shapes: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Summarize SSE, NDJSON, and JSON-sequence responses as event names, counts, and value-free JSON shapes. Event names and JSON property names are retained verbatim and can carry server-chosen identifiers.",
+    ),
   include_storage_keys: z.boolean().default(false),
   include_storage_fingerprints: z.boolean().default(false),
 } as const;

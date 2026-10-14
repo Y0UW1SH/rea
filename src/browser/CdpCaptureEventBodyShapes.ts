@@ -4,7 +4,10 @@ import {
   cdpStringValue,
   type UnknownRecord,
 } from "./CdpCaptureValues.js";
-import { decodeBase64, isJsonContentType } from "./CdpCaptureEventHelpers.js";
+import {
+  isJsonContentType,
+  responseBodyText,
+} from "./CdpCaptureEventHelpers.js";
 import type { CdpCaptureEventsState } from "./CdpCaptureEventState.js";
 import type { NetworkState } from "./CdpCaptureEventTypes.js";
 
@@ -13,14 +16,7 @@ export const ingestResponseBodyShape = (
   requestId: string,
   value: unknown,
 ): void => {
-  const result = recordValue(value);
-  const body = cdpStringValue(result?.body);
-  const base64Encoded = result?.base64Encoded;
-  if (body === undefined || typeof base64Encoded !== "boolean") {
-    invalidResponseBodyShape(state, requestId);
-    return;
-  }
-  const decoded = base64Encoded ? decodeBase64(body)?.toString("utf8") : body;
+  const decoded = responseBodyText(value);
   if (decoded === undefined) {
     invalidResponseBodyShape(state, requestId);
     return;

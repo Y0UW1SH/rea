@@ -404,6 +404,14 @@ standard, non-elevated caller token. They inspect the verifier caller before
 allocating fixture resources and refuse elevated or unobservable tokens; they do
 not change caller authority or claim to inspect the browser process token.
 
+`verify:browser` also inspects an owned loopback page that repeatedly opens
+completed SSE and NDJSON responses, an unfinished `fetch()` stream, and
+`EventSource` streams. Through the CLI and stdio MCP it checks exact value-free
+event-stream summaries, `response-unfinished` for the open stream, delivered
+EventSource messages, value absence, and unchanged output without the option.
+It records, without asserting, whether Chrome returns completed EventSource
+bodies.
+
 `verify:browser` also captures a source-owned noise canvas as a real PNG above
 8 MiB through the CLI and stdio MCP, with complete byte/digest parity and real PNG
 decoding. Its SDK client explicitly permits the larger inline JSON response;

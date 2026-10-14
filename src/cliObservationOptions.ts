@@ -38,6 +38,12 @@ export const browserPageInspectionOptions = z.object({
     .boolean()
     .default(false)
     .describe("Include structural shapes of WebSocket payloads"),
+  includeEventStreamShapes: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Include event names, counts, and value-free shapes of SSE and NDJSON responses; names are kept verbatim",
+    ),
   includeScriptSources: z
     .boolean()
     .default(false)

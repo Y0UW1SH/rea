@@ -118,3 +118,13 @@ export const decodeBase64 = (value: string): Buffer | undefined =>
   value.length % 4 === 0 && BASE64.test(value)
     ? Buffer.from(value, "base64")
     : undefined;
+
+/** Decode one `Network.getResponseBody` reply; malformed envelopes are undefined. */
+export const responseBodyText = (value: unknown): string | undefined => {
+  const result = recordValue(value);
+  const body = cdpStringValue(result?.body);
+  const base64Encoded = result?.base64Encoded;
+  if (body === undefined || typeof base64Encoded !== "boolean")
+    return undefined;
+  return base64Encoded ? decodeBase64(body)?.toString("utf8") : body;
+};

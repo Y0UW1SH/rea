@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { inferJsonShape, jsonShapeSchema } from "./jsonShape.js";
+import {
+  inferJsonShape,
+  JsonShapeAccumulator,
+  jsonShapeSchema,
+  mergedJsonShapeSchema,
+} from "./jsonShape.js";
 
 const property = (name: string) => ({ kind: "property" as const, name });
 const element = { kind: "array-element" as const };
@@ -208,5 +213,62 @@ describe("JSON shape completeness and ordering", () => {
       types: ["number"],
       observations: 1,
     });
+  });
+});
+
+describe("JsonShapeAccumulator", () => {
+  it("merges payload shapes with per-path observations and every root type", () => {
+    const accumulator = new JsonShapeAccumulator();
+    expect(accumulator.snapshot()).toBeNull();
+    expect(accumulator.add('{"a":1,"nested":{"x":"first-secret"}}')).toBe(true);
+    expect(accumulator.add("not-json-secret")).toBe(false);
+    expect(accumulator.add('{"a":"second-secret","b":[true]}')).toBe(true);
+    expect(accumulator.add("[null]")).toBe(true);
+    const merged = accumulator.snapshot();
+
+    expect(merged).toEqual({
+      root_types: ["array", "object"],
+      node_count: 10,
+      max_depth_observed: 2,
+      properties: [
+        { path: [element], types: ["null"], observations: 1 },
+        { path: [property("a")], types: ["number", "string"], observations: 2 },
+        { path: [property("b")], types: ["array"], observations: 1 },
+        {
+          path: [property("b"), element],
+          types: ["boolean"],
+          observations: 1,
+        },
+        { path: [property("nested")], types: ["object"], observations: 1 },
+        {
+          path: [property("nested"), property("x")],
+          types: ["string"],
+          observations: 1,
+        },
+      ],
+    });
+    expect(mergedJsonShapeSchema.parse(merged)).toEqual(merged);
+    expect(JSON.stringify(merged)).not.toMatch(/secret/u);
+  });
+
+  it("keeps single-payload inference identical to one accumulated payload", () => {
+    const text = '{"z":[1,{"y":null}],"a":true}';
+    const accumulator = new JsonShapeAccumulator();
+    accumulator.add(text);
+    const single = inferJsonShape(text);
+    const merged = accumulator.snapshot();
+
+    if (single === null || merged === null)
+      throw new Error("Valid JSON produced no shape");
+    expect(Object.keys(single)).toEqual([
+      "root_type",
+      "node_count",
+      "max_depth_observed",
+      "properties",
+    ]);
+    const { root_type: rootType, ...singleFacts } = single;
+    const { root_types: rootTypes, ...mergedFacts } = merged;
+    expect(mergedFacts).toEqual(singleFacts);
+    expect(rootTypes).toEqual([rootType]);
   });
 });

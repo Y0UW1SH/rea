@@ -107,7 +107,7 @@ const captureAuthorizedPage = async (
   const { context, allowedOrigins, limitations } = state;
   const { connection, sessionId, input, signal } = context;
   await authorizeObservationWindow(state);
-  await captureJsonResponseBodies(state);
+  await captureResponseBodies(state);
   const frameResult = await authorizedMainFrame({
     connection: context.connection,
     sessionId: context.sessionId,
@@ -194,17 +194,18 @@ const captureAuthorizedPage = async (
   };
 };
 
-const captureJsonResponseBodies = async (
-  state: CaptureState,
-): Promise<void> => {
+/** Read selected completed JSON and event-stream bodies after the window. */
+const captureResponseBodies = async (state: CaptureState): Promise<void> => {
   const requests = state.events.responseBodyRequests();
   for (let index = 0; index < requests.length; index += 1) {
     const candidate = requests[index];
     if (candidate === undefined) continue;
     const current = state.events.currentResponseBodyRequest(candidate);
     if (current === undefined) continue;
+    // Without loadingFinished there is no completed body (the response is
+    // still open or was abandoned); partial stream bodies are never read.
     if (current.encoded_data_length === null) {
-      state.events.responseBodyUnavailable(candidate);
+      state.events.responseBodyUnavailable(candidate, "response-unfinished");
       continue;
     }
     let result: unknown;
@@ -223,7 +224,7 @@ const captureJsonResponseBodies = async (
         cause.reportedMessage === null
       )
         throw cause;
-      state.events.responseBodyUnavailable(candidate);
+      state.events.responseBodyUnavailable(candidate, "body-read-failed");
       state.limitations.push(
         `Response body unavailable for request ${candidate.requestId}: ${cause.userMessage}`,
       );
@@ -234,7 +235,7 @@ const captureJsonResponseBodies = async (
       continue;
     }
     for (const remaining of requests.slice(index))
-      state.events.responseBodyUnavailable(remaining);
+      state.events.responseBodyUnavailable(remaining, "body-read-failed");
     return;
   }
 };
@@ -358,7 +359,7 @@ const normalizedInspection = (
   scripts: captured.scripts,
   resources: [...captured.resources],
   network: {
-    requests: [...state.events.network.values()],
+    requests: state.events.networkRequests(),
     websocket_connections: [...state.events.webSocketConnectionsById.values()],
     coverage_started_at: state.startedAt,
     prior_activity_available: false,

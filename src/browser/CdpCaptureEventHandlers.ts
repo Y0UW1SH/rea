@@ -1,5 +1,6 @@
 import type { WebPageInspection } from "../domain/browserObservationSchemas.js";
 import { sanitizeBrowserUrl } from "../domain/browserObservation.js";
+import { eventStreamFormatForMediaType } from "../domain/eventStreamShape.js";
 import { inferJsonShape } from "../domain/jsonShape.js";
 import { safeResponseMetadata } from "./CdpSafeMetadata.js";
 import {
@@ -355,6 +356,12 @@ const preserveMalformedRedirectEvidence = (
     updateResponseBodyShape(state, requestId, null);
     state.completeness.exclude("json_body_shapes", "invalid_protocol_value");
   }
+  // The ambiguous request identity is never read or summarized as a stream.
+  if (
+    state.input.include_event_stream_shapes &&
+    eventStreamFormatForMediaType(previous.mime_type) !== undefined
+  )
+    state.completeness.exclude("event_stream_shapes", "invalid_protocol_value");
   return true;
 };
 
