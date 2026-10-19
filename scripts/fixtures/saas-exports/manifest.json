@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "name": "synthetic-invoice-export",
+  "reference": {
+    "file": "reference.csv",
+    "format": "csv"
+  },
+  "replacement": {
+    "file": "replacement.json",
+    "format": "json"
+  },
+  "fields": [
+    {
+      "name": "invoice",
+      "reference": "invoice",
+      "replacement": "invoice",
+      "type": "string"
+    },
+    {
+      "name": "customer",
+      "reference": "customer",
+      "replacement": "customer",
+      "type": "string"
+    },
+    {
+      "name": "total",
+      "reference": "total",
+      "replacement": "total",
+      "type": "decimal"
+    },
+    {
+      "name": "paid",
+      "reference": "paid",
+      "replacement": "paid",
+      "type": "decimal"
+    },
+    {
+      "name": "balance",
+      "reference": "balance",
+      "replacement": "balance",
+      "type": "decimal"
+    }
+  ],
+  "keys": ["invoice"],
+  "limits": {
+    "maxBytes": 1048576,
+    "maxRecords": 10000,
+    "maxFields": 64
+  }
+}

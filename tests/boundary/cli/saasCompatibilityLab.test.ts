@@ -15,3 +15,17 @@ it("executes independent synthetic SaaS workflows and detects seeded defects", (
   });
   expect(output).toContain("fail 0");
 });
+
+it("runs the documented lab command and returns a synthetic report", () => {
+  const script = fileURLToPath(
+    new URL("../../../scripts/saas-compatibility-lab.mjs", import.meta.url),
+  );
+  const output = execFileSync(process.execPath, [script], {
+    encoding: "utf8",
+    timeout: 30000,
+  });
+  expect(JSON.parse(output)).toMatchObject({
+    kind: "synthetic-workflow-lab",
+    status: "pass",
+  });
+});

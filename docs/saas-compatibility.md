@@ -248,6 +248,57 @@ A browser-only product remains usable. Optional APIs or OpenAPI descriptions can
 provide additional observation routes, but are not prerequisites. State exactly
 which views were checked and where UI, API, report or export results disagree.
 
+## Compare locally exported CSV and JSON records
+
+```bash
+node scripts/saas-export-compare.mjs scripts/fixtures/saas-exports/manifest.json
+```
+
+The supplied synthetic example compares CSV against reordered JSON records. Copy
+its manifest and replace the local file paths, selected fields and compound record
+keys for your case. Each field explicitly names its reference and replacement
+column and declares `string`, `integer` or `decimal`. JSON selected values must be
+strings; the importer refuses numeric coercion that could hide already-rounded
+amounts. Decimal comparison normalizes leading/trailing zeros, with no tolerance,
+rounding or currency conversion. Relationship IDs remain literal in this slice.
+
+Rows are aligned by the selected keys. Reordering alone is ignored; changed
+selected fields, missing/extra records and duplicate keys remain visible. Reports
+retain the extraction policy, raw file digests and excluded column names. They
+establish equality only for selected exported contents, not that a vendor exported
+all records or that a result agrees with the live UI, API or database.
+
+Inputs must be local regular files beneath the manifest directory. The importer
+rejects traversal, detected outside symlinks, invalid UTF-8, malformed CSV/JSON,
+ambiguous headers/JSON members, missing selected columns and detected file changes
+during reading. Configure positive `maxBytes`, `maxRecords` and `maxFields` limits;
+optional `maxValues` bounds aggregate JSON values/member names or CSV cells
+(default 100,000; maximum 1,000,000). A JSON depth limit of 32 also bounds
+expanded structures. Do not
+use an input directory concurrently modified by untrusted actors: this is local
+file validation, not an operating-system filesystem sandbox. UTF-8 BOMs are
+explicitly rejected. An empty JSON array cannot establish selected-field coverage;
+CSV headers can establish the schema of an empty export.
+
+The command exits 0 for selected-content agreement, 1 for observed record
+differences, and 2 when input or evidence cannot be compared. It neither downloads
+files nor executes exports, scripts, formulas, URLs or external integrations.
+Use synthetic data in committed fixtures and retain originals privately for audit.
+
+## Download retention boundary
+
+Browser download cancellation remains unchanged. The installed Playwright
+`Download.createReadStream` waits until the browser has completed its file before
+exposing a stream. A cap applied while reading that stream limits retained
+content, not prior browser disk or network consumption. CDP download progress and
+cancellation are asynchronous and likewise cannot guarantee a hard transfer cap.
+We therefore have not added an opt-in retention flag that would imply stronger
+bounds than the provider can enforce. Reading an already exported local file is
+separate from enabling live browser downloads.
+
+Validation commands, full-suite results and reproduced baseline failures are
+recorded in [the validation report](saas-validation.md).
+
 ## Roadmap and explicit gaps
 
 The supplied local cases must pass for good observations and reject deliberately
@@ -263,7 +314,8 @@ Further work remains intentionally separate:
 - A production independent replacement for the chosen SaaS. The runnable synthetic
   lab already tests unseen inputs against two small local implementations.
 - Multi-actor/tab/session coordination and concurrency tests.
-- Retained downloads, upload actions, meaningful export-content comparisons.
+- Browser-retained downloads and upload actions. Selected local CSV/JSON content
+  comparisons are available now; live download retention remains deferred as explained above.
 - Role enforcement, retries, interruption and mutation tests against live targets.
 - Migration adapters preserving identities, relationships and history.
 - An uncertainty-driven experiment planner and cross-view reconciliation.
