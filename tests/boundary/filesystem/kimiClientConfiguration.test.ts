@@ -72,7 +72,7 @@ describe("Kimi Code configuration paths and skills", () => {
 
   it("uses the existing shared skill destination without a separate skill root", () => {
     expect(clientSkillDirectories("/home/a", ["kimi"])).toEqual([
-      { client: "shared", directory: "/home/a/.agents/skills" },
+      { client: "shared", directory: join("/home/a", ".agents", "skills") },
     ]);
   });
 });

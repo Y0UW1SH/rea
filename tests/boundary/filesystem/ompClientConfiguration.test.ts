@@ -22,21 +22,25 @@ afterEach(() => vi.unstubAllEnvs());
 const ompPath = (env: Parameters<typeof supportedClients>[2]) =>
   supportedClients("/home/a", "linux", env).find(({ name }) => name === "omp");
 
+// supportedClients describes the Linux layout in host paths: joined locations
+// use the host separators and an absolute override resolves on the host.
+const defaultConfigPath = join("/home/a", ".omp", "agent", "mcp.json");
+
 describe("OMP configuration paths", () => {
   it("uses the default agent directory and OMP's environment overrides", () => {
     expect(ompPath({})).toEqual({
       name: "omp",
       displayName: "OMP",
-      configPath: "/home/a/.omp/agent/mcp.json",
-      markerPath: "/home/a/.omp/agent",
+      configPath: defaultConfigPath,
+      markerPath: join("/home/a", ".omp", "agent"),
       format: "omp",
     });
     // OMP joins PI_CONFIG_DIR to the home directory.
     expect(ompPath({ PI_CONFIG_DIR: ".pi" })?.configPath).toBe(
-      "/home/a/.pi/agent/mcp.json",
+      join("/home/a", ".pi", "agent", "mcp.json"),
     );
     expect(ompPath({ PI_CODING_AGENT_DIR: "/custom/agent" })?.configPath).toBe(
-      "/custom/agent/mcp.json",
+      resolve("/custom/agent", "mcp.json"),
     );
     // Match OMP by resolving the override against the caller working directory.
     expect(ompPath({ PI_CODING_AGENT_DIR: "agent" })?.configPath).toBe(
@@ -48,17 +52,17 @@ describe("OMP configuration paths", () => {
     expect(
       ompPath({ OMP_PROFILE: "work", PI_CODING_AGENT_DIR: "/custom/agent" })
         ?.configPath,
-    ).toBe("/home/a/.omp/profiles/work/agent/mcp.json");
+    ).toBe(join("/home/a", ".omp", "profiles", "work", "agent", "mcp.json"));
     expect(ompPath({ PI_PROFILE: "legacy" })?.configPath).toBe(
-      "/home/a/.omp/profiles/legacy/agent/mcp.json",
+      join("/home/a", ".omp", "profiles", "legacy", "agent", "mcp.json"),
     );
     // An explicitly empty OMP_PROFILE selects the default over PI_PROFILE.
     expect(ompPath({ OMP_PROFILE: "", PI_PROFILE: "legacy" })?.configPath).toBe(
-      "/home/a/.omp/agent/mcp.json",
+      defaultConfigPath,
     );
     for (const profile of ["default", " "])
       expect(ompPath({ OMP_PROFILE: profile })?.configPath).toBe(
-        "/home/a/.omp/agent/mcp.json",
+        defaultConfigPath,
       );
   });
 });

@@ -28,14 +28,15 @@ const piPath = (
 ) => supportedClients(home, platform, env).find(({ name }) => name === "pi");
 
 // Catch fallback to OMP paths, loss of relative overrides, and normalization
-// that differs from Pi's public getAgentDir()/normalizePath boundary.
+// that differs from Pi's public getAgentDir()/normalizePath boundary. The
+// default and tilde forms are joined on the host; every other spelling stays.
 describe("Pi user configuration paths", () => {
   it.each([
-    [undefined, "/home/a/.pi/agent"],
-    ["", "/home/a/.pi/agent"],
+    [undefined, join("/home/a", ".pi", "agent")],
+    ["", join("/home/a", ".pi", "agent")],
     ["/custom/agent", "/custom/agent"],
     ["~", "/home/a"],
-    ["~/custom/agent", "/home/a/custom/agent"],
+    ["~/custom/agent", join("/home/a", "custom", "agent")],
     ["agent", "agent"],
     ["./agent", "./agent"],
     [" agent ", " agent "],

@@ -586,26 +586,41 @@ describe("OpenCode V2 native server table", () => {
   });
 });
 
+// supportedClients describes another platform's layout in host paths: joined
+// locations use the host separators and an absolute override resolves on the
+// host, while an override root that is used as-is keeps its spelling.
 describe("platform-aware client config paths", () => {
   it.each([
     [
       "darwin",
       "/home/a",
       {},
-      "/home/a/Library/Application Support/Code/User/mcp.json",
+      join(
+        "/home/a",
+        "Library",
+        "Application Support",
+        "Code",
+        "User",
+        "mcp.json",
+      ),
     ],
-    ["linux", "/home/a", {}, "/home/a/.config/Code/User/mcp.json"],
+    [
+      "linux",
+      "/home/a",
+      {},
+      join("/home/a", ".config", "Code", "User", "mcp.json"),
+    ],
     [
       "win32",
       "C:/Users/a",
       {},
-      "C:/Users/a/AppData/Roaming/Code/User/mcp.json",
+      join("C:/Users/a", "AppData", "Roaming", "Code", "User", "mcp.json"),
     ],
     [
       "linux",
       "/home/a",
       { XDG_CONFIG_HOME: "/config" },
-      "/config/Code/User/mcp.json",
+      join("/config", "Code", "User", "mcp.json"),
     ],
   ] as const)(
     "resolves VS Code user MCP path for %s",
@@ -628,7 +643,7 @@ describe("platform-aware client config paths", () => {
       expect.objectContaining({
         name: "grok_build",
         displayName: "Grok Build",
-        configPath: "/custom/grok/config.toml",
+        configPath: join("/custom/grok", "config.toml"),
         markerPath: "/custom/grok",
         format: "grok",
       }),
@@ -644,12 +659,12 @@ describe("platform-aware client config paths", () => {
       supportedClients("/home/a", "linux", {
         SAND_DATA_ROOT: "relative/sand",
       }).find(({ name }) => name === "grok_bot")?.configPath,
-    ).toBe("/home/a/.grokbot");
+    ).toBe(join("/home/a", ".grokbot"));
     expect(
       supportedClients("/home/a", "darwin", {}).find(
         ({ name }) => name === "grok_build",
       )?.configPath,
-    ).toBe("/home/a/.grok/config.toml");
+    ).toBe(join("/home/a", ".grok", "config.toml"));
   });
 
   it("honors Copilot CLI and Devin platform configuration roots", () => {
@@ -658,12 +673,12 @@ describe("platform-aware client config paths", () => {
         COPILOT_HOME: "/custom/copilot",
         XDG_CONFIG_HOME: "/custom/config",
       }).find(({ name }) => name === "copilot_cli")?.configPath,
-    ).toBe("/custom/copilot/mcp-config.json");
+    ).toBe(join("/custom/copilot", "mcp-config.json"));
     expect(
       supportedClients("C:/Users/a", "win32", {
         APPDATA: "D:/Profile/Roaming",
       }).find(({ name }) => name === "devin")?.configPath,
-    ).toBe("D:/Profile/Roaming/devin/mcp_config.json");
+    ).toBe(join("D:/Profile/Roaming", "devin", "mcp_config.json"));
   });
 
   it("prefers an existing OpenCode JSONC file and honors explicit harness roots", async () => {
@@ -687,15 +702,15 @@ describe("platform-aware client config paths", () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: "opencode",
-          configPath: "/custom/open-code.jsonc",
+          configPath: resolve("/custom/open-code.jsonc"),
         }),
         expect.objectContaining({
           name: "claude_code",
-          configPath: "/custom/claude/.claude.json",
+          configPath: join("/custom/claude", ".claude.json"),
         }),
         expect.objectContaining({
           name: "codex",
-          configPath: "/custom/codex/config.toml",
+          configPath: join("/custom/codex", "config.toml"),
         }),
       ]),
     );
@@ -852,10 +867,13 @@ describe("client launcher traversal semantics", () => {
         undefined,
       ),
     ).toBe("foreign");
+    // Node selects its script from the host-normalized argv path, so the owned
+    // entrypoint is compared in host form.
+    const packagedEntry = resolve("/packaged/rea.mjs");
     expect(
       classifyClientRegistrationCommand(
-        [process.execPath, "/packaged/rea.mjs", "mcp"],
-        "/packaged/rea.mjs",
+        [process.execPath, packagedEntry, "mcp"],
+        packagedEntry,
       ),
     ).toBe("owned");
     expect(
