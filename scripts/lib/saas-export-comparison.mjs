@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { admitPolicy, admitReport } from "./saas-export-budget.mjs";
 
 const own = (o, k) => Object.hasOwn(o, k);
 function object(value, keys, at) {
@@ -86,7 +87,7 @@ function validate(p) {
   }
 }
 
-/** Local input only. Bounds retained bytes; never fetches URLs or executes exports. */
+/** Read stable raw bytes before interpreting text, preserving malformed evidence. */
 export async function readBoundedExport(root, file, maxBytes) {
   boundedInteger(maxBytes, 16 * 1024 * 1024, "maxBytes");
   if (
@@ -144,15 +145,19 @@ export async function readBoundedExport(root, file, maxBytes) {
       throw new Error("file: changed during read");
     const data = buffer.subarray(0, bytes);
     return {
-      text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-        data,
-      ),
+      data,
       bytes,
       sha256: createHash("sha256").update(data).digest("hex"),
     };
   } finally {
     await handle.close();
   }
+}
+
+export function decodeExportText(source) {
+  return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+    source.data,
+  );
 }
 
 // JSON.parse alone silently accepts duplicate object members. This small strict
@@ -346,13 +351,14 @@ function scalar(value, type) {
   return `${negative && (whole !== "0" || fraction) ? "-" : ""}${whole}${fraction ? `.${fraction}` : ""}`;
 }
 function project(source, format, policy, side) {
-  if (source.text.startsWith("\ufeff"))
+  const input = decodeExportText(source);
+  if (input.startsWith("\ufeff"))
     throw new Error("UTF-8 BOM is not supported; remove it explicitly");
   let rows, headers;
-  if (format === "csv") ({ rows, headers } = csv(source.text, policy.limits));
+  if (format === "csv") ({ rows, headers } = csv(input, policy.limits));
   else {
     rows = parseExportJson(
-      source.text,
+      input,
       policy.limits.maxFields,
       policy.limits.maxRecords,
       policy.limits.maxValues,
@@ -409,15 +415,22 @@ function project(source, format, policy, side) {
 }
 export async function compareExports(policy, root) {
   const inputs = {};
+  let admittedPolicy;
   try {
     validate(policy);
     policy = {
       ...policy,
+      reference: { ...policy.reference },
+      replacement: { ...policy.replacement },
+      fields: policy.fields.map((field) => ({ ...field })),
+      keys: [...policy.keys],
       limits: {
         ...policy.limits,
         maxValues: policy.limits.maxValues ?? 100000,
       },
     };
+    admitPolicy(policy);
+    admittedPolicy = policy;
     const sides = {};
     for (const side of ["reference", "replacement"]) {
       const source = await readBoundedExport(
@@ -447,7 +460,7 @@ export async function compareExports(policy, root) {
           !isDeepStrictEqual(reference.get(k), replacement.get(k)),
       )
       .sort();
-    return {
+    return admitReport({
       version: 1,
       name: policy.name,
       status:
@@ -475,14 +488,25 @@ export async function compareExports(policy, root) {
         "Entity identifiers and relationships compare literally; independent generated IDs require separate evidence-backed correspondence in the workflow evaluator.",
         "Files are read from the local input directory; no download is initiated and no export is executed. The input directory must be trusted and stable: path checks are not a sandbox against concurrent hostile filesystem changes.",
       ],
-    };
+    });
   } catch (error) {
-    return {
+    const invalid = {
       version: 1,
       status: "invalid",
+      ...(admittedPolicy ? { policy: admittedPolicy } : {}),
       inputs,
       reason:
         error instanceof Error ? error.message : "Export comparison failed",
     };
+    try {
+      return admitReport(invalid);
+    } catch {
+      // An error can include a very large duplicate key or other source value.
+      // Keep the bounded policy and raw provenance, but explicitly omit that
+      // oversized diagnostic. This envelope is below 2 MiB plus fixed metadata.
+      invalid.reason =
+        "report: invalid diagnostic exceeds 16 MiB; diagnostic detail omitted, policy and input provenance retained";
+      return invalid;
+    }
   }
 }

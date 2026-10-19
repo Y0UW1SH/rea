@@ -2,6 +2,7 @@
 import { dirname, basename, resolve } from "node:path";
 import {
   readBoundedExport,
+  decodeExportText,
   parseExportJson,
   compareExports,
 } from "./lib/saas-export-comparison.mjs";
@@ -18,7 +19,7 @@ if (args.length !== 1) {
       1024 * 1024,
     );
     const report = await compareExports(
-      parseExportJson(input.text),
+      parseExportJson(decodeExportText(input)),
       dirname(path),
     );
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

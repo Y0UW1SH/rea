@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { isSafeNumber } from "lossless-json";
 
 // This companion evaluates caller-supplied captures. Evidence references are retained,
 // never opened, fetched, executed, or treated as independently verified attestations.
@@ -30,15 +31,34 @@ function refs(value, at) {
   list(value, at, true);
   value.forEach((item) => text(item, at));
 }
+const supportedNumber = (value) =>
+  Number.isFinite(value) &&
+  (!Number.isInteger(value) || Number.isSafeInteger(value));
+const numericError = () =>
+  new Error(
+    "value: number loses information or exceeds the safe integer range; encode exact values as JSON strings",
+  );
+
+// Inspect original numeric tokens before JSON.parse's rounded Numbers can be
+// mistaken for exact captured values. Keep native JSON object/key semantics.
+export function parseCompatibilityJson(source) {
+  return JSON.parse(source, (_key, value, context) => {
+    if (
+      typeof value === "number" &&
+      (!supportedNumber(value) || !isSafeNumber(context.source))
+    )
+      throw numericError();
+    return value;
+  });
+}
 function json(value, depth = 0) {
   if (depth > 64)
     throw new Error("value: exceeds supported JSON nesting depth (64)");
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    (typeof value === "number" && Number.isFinite(value))
-  )
+  if (typeof value === "number") {
+    if (!supportedNumber(value)) throw numericError();
+    return;
+  }
+  if (value === null || typeof value === "string" || typeof value === "boolean")
     return;
   if (Array.isArray(value)) {
     value.forEach((item) => json(item, depth + 1));

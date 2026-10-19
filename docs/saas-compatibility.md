@@ -106,9 +106,11 @@ use selected outcome checks as well.
 
 ## Run the offline workflow evaluator
 
-From a checkout of this fork, using its supported Node.js version:
+From a checkout of this fork, using its supported Node.js version and locked
+dependencies:
 
 ```bash
+npm ci
 node scripts/saas-compatibility.mjs scripts/fixtures/saas-compatibility/accounting.json
 node scripts/saas-compatibility.mjs scripts/fixtures/saas-compatibility/retail.json
 npm run test:saas
@@ -120,8 +122,9 @@ The command exits 0 for pass, 1 for an observed failed obligation, and 2 for
 unknown, invalid input, or an input/read error. Reports go to stdout; redirect
 stdout to a caller-selected report file if you want to retain it.
 
-This source-checkout companion has no third-party dependencies. It is not a
-new MCP tool and is not shipped in the upstream npm package. For core browser
+This source-checkout companion uses the existing locked `lossless-json`
+dependency to validate numeric tokens. It is not a new MCP tool and is not shipped
+in the upstream npm package. For core browser
 comparison changes, build this checkout with the repository's pinned toolchain;
 running `npx rea-agents@latest` would run upstream instead.
 
@@ -165,6 +168,15 @@ explicit value such as `unknown`; do not invent a server build version.
   strings, numbers, and IDs remain literal. Unmapped entities remain unknown;
   a relationship pointing at another mapped entity fails. Duplicate/ambiguous
   mappings are invalid and duplicated records remain detectable in values.
+
+Numeric context and observation values must be finite, and integer values must
+stay within the JavaScript safe integer range (±9,007,199,254,740,991). The CLI
+checks original JSON number tokens and rejects precision loss, underflow and
+overflow before comparison. Ordinary decimals and exponent spellings that
+round-trip without information loss remain supported. Encode larger integers or
+high-precision decimals as JSON strings on both sides; strings are compared
+literally. Library callers should use `parseCompatibilityJson` for JSON text:
+`evaluateCompatibility` cannot recover precision already lost by another parser.
 
 Passing is conditional on the supplied observations and declared context. The
 companion does not authenticate references, reopen captures, or independently
@@ -279,6 +291,16 @@ use an input directory concurrently modified by untrusted actors: this is local
 file validation, not an operating-system filesystem sandbox. UTF-8 BOMs are
 explicitly rejected. An empty JSON array cannot establish selected-field coverage;
 CSV headers can establish the schema of an empty export.
+
+The CLI caps the manifest at 1 MiB; the effective comparison policy is also
+limited to 1 MiB of compact JSON before exports are read. Complete reports are
+limited to 16 MiB of UTF-8 JSON, including escaping, two-space indentation and
+the final newline. Expansion is checked before serialization. A comparison
+whose report would exceed that limit returns `invalid`, retaining its full
+admitted policy and raw input provenance rather than a partial verdict. Invalid
+UTF-8 also retains the successfully read file's byte count and digest. If an
+invalid-input diagnostic itself exceeds the report limit, its oversized detail
+is explicitly omitted while the admitted policy and provenance remain available.
 
 The command exits 0 for selected-content agreement, 1 for observed record
 differences, and 2 when input or evidence cannot be compared. It neither downloads

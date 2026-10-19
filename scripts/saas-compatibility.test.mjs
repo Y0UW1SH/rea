@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { evaluateCompatibility } from "./lib/saas-compatibility.mjs";
@@ -276,4 +278,117 @@ test("report retains the exact predicate and observation window for audit", () =
   assert.equal(report.checks[0].observation, "saved-record");
   assert.equal(report.checks[0].replacement.window.coverage, "complete");
   assert.equal(report.checks[0].replacement.window.observedUntilMs, 100);
+});
+
+test("unsafe numeric observation and context values cannot pass", () => {
+  for (const value of [
+    Number.MAX_SAFE_INTEGER + 1,
+    Number.MIN_SAFE_INTEGER - 1,
+    1e20,
+    Infinity,
+    -Infinity,
+    NaN,
+  ]) {
+    for (const context of [false, true]) {
+      const input = fixture();
+      for (const side of ["reference", "replacement"]) {
+        if (context) input[side].context.currency.value = { nested: [value] };
+        else input[side].observations[0].value.balance = value;
+      }
+      const before = structuredClone(input);
+      assert.equal(evaluateCompatibility(input).status, "invalid");
+      assert.deepEqual(input, before);
+    }
+  }
+});
+
+test("supported numeric values and exact numeric strings remain literal", () => {
+  for (const value of [
+    Number.MAX_SAFE_INTEGER,
+    Number.MIN_SAFE_INTEGER,
+    0,
+    -0,
+    0.1,
+    -123.45,
+    1e-7,
+    Number.MIN_VALUE,
+    "9007199254740993",
+    "1.0000000000000001",
+  ]) {
+    const input = fixture();
+    for (const side of ["reference", "replacement"])
+      input[side].observations[0].value.balance = value;
+    const before = structuredClone(input);
+    assert.equal(evaluateCompatibility(input).status, "pass");
+    assert.deepEqual(input, before);
+  }
+  assert.equal(
+    evaluate((x) => {
+      x.reference.observations[0].value.balance = "9007199254740992";
+      x.replacement.observations[0].value.balance = "9007199254740993";
+    }).status,
+    "fail",
+  );
+});
+
+test("CLI rejects numeric token information loss before comparison", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rea-saas-numbers-"));
+  const file = join(directory, "case.json");
+  const cli = fileURLToPath(
+    new URL("./saas-compatibility.mjs", import.meta.url),
+  );
+  const input = fixture();
+  input.reference.observations[0].value.balance = "REFERENCE_NUMBER";
+  input.replacement.observations[0].value.balance = "REPLACEMENT_NUMBER";
+  const source = JSON.stringify(input);
+  try {
+    for (const [before, after] of [
+      ["9007199254740992", "9007199254740993"],
+      ["-9007199254740992", "-9007199254740993"],
+      ["9007199254740992.0", "9007199254740993.0"],
+      ["9.007199254740992e15", "9.007199254740993e15"],
+      ["1", "1.0000000000000001"],
+      ["0.12345678901234568", "0.123456789012345678"],
+      ["0", "1e-400"],
+      ["0", "-1e-400"],
+      ["1e400", "1e400"],
+    ]) {
+      writeFileSync(
+        file,
+        source
+          .replace('"REFERENCE_NUMBER"', before)
+          .replace('"REPLACEMENT_NUMBER"', after),
+      );
+      const result = spawnSync(process.execPath, [cli, file], {
+        encoding: "utf8",
+      });
+      assert.equal(result.status, 2, `${before} / ${after}: ${result.stdout}`);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /number.*string/i);
+    }
+    for (const [before, after] of [
+      ["1e3", "1000"],
+      ["1.2300e2", "123"],
+      ["-1e-7", "-0.0000001"],
+      ["0.1", "0.10"],
+      ["-0", "-0.0"],
+      ["5e-324", "5e-324"],
+      ["9007199254740991", "9007199254740991.0"],
+      ["-9007199254740991", "-9007199254740991.0"],
+    ]) {
+      writeFileSync(
+        file,
+        source
+          .replace('"REFERENCE_NUMBER"', before)
+          .replace('"REPLACEMENT_NUMBER"', after),
+      );
+      const result = spawnSync(process.execPath, [cli, file], {
+        encoding: "utf8",
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).status, "pass");
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

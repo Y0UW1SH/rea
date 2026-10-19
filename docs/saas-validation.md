@@ -1,6 +1,44 @@
 # SaaS fork validation — 2026-10-19
 
-## Result and limits
+## Current hardening follow-up
+
+The follow-up preserves the complete feature branch and tightens its numeric and
+export evidence boundaries:
+
+- The workflow evaluator rejects unsafe integer values and original JSON numeric
+  tokens that would lose precision, underflow or overflow. Safe ordinary numbers
+  remain supported; exact larger values can be supplied as strings.
+- Export policies are privately snapshotted before asynchronous reads and capped
+  at 1 MiB of compact JSON. Reports are capped at 16 MiB including UTF-8 escaping,
+  indentation and the final newline, before full serialization. Over-budget
+  reports are explicitly invalid and retain the admitted policy and provenance.
+- Invalid UTF-8 preserves the successfully read file's byte count and SHA-256.
+  Oversized diagnostic text is explicitly omitted without dropping that evidence.
+
+New numeric and export regressions failed before their fixes. Independent review
+found a caller-mutation bypass in the first report-budget implementation; the
+private policy snapshot fixes it, with a regression. Final independent review
+found no remaining new actionable defect. Additional review probes checked
+30,000 numeric tokens and 20,000 exact serialized-byte boundaries.
+
+Final targeted verification used Node **24.18.0** and npm **11.16.0**:
+
+- `npm run test:saas`: **84 passed** (27 evaluator, 19 lab, 11 profile, 27 export).
+- SaaS CLI boundary checks: **5 passed across four files**.
+- Browser comparison domain/CLI/MCP coverage: **45 passed across three files**.
+- `npm run build:cached`: passed (all three build tasks cached).
+- `npm run check:fast`, `npm run format:check`, `npm run knip`: passed.
+- `npm run docs:check`: passed, including **5** README consistency tests.
+- `git diff --check`: passed.
+
+The complete repository suite was not rerun for this small follow-up. The earlier
+full-suite outcome and baseline reproduction below remain historical evidence,
+not a claim that the current full suite is green. No real vendor behavior was
+validated. The evaluator's existing `-0` versus `0` mismatch is also unchanged:
+JSON report serialization renders both values as `0`, although comparison still
+distinguishes them.
+
+## Initial full-suite result and limits
 
 The shared SaaS additions passed their focused tests and independent code review.
 The repository-wide `npm run check:pr` **did not pass** in this cloud workspace.
