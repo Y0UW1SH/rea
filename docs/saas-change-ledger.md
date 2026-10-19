@@ -165,6 +165,55 @@ Also run `npm run check:fast`, `npm run docs:check`, `npm run format:check`,
 Use the repository's broader CI and relevant real-provider lanes when the
 upstream change requires them; the focused workflow is an additional gate.
 
+### Combined upstream integration check
+
+The supplemental [upstream integration workflow](../.github/workflows/saas-upstream-integration.yml)
+checks one disposable candidate: the feature branch, then fork `main`, then
+`morluto/rea` upstream `main`, using ordinary sequential merges. It never updates
+those branches. Its controller runs outside the candidate and snapshots all
+three source SHAs before fetching and merging them. For a push, the pushed
+branch uses that event's exact SHA even if its remote ref has already advanced.
+Other source refs are observed when the job starts; a result does not qualify
+later changes.
+
+The run summary records the clean controller commit/tree and source SHAs, observed remote heads,
+merge bases, each merge's parents, final candidate commit/tree, toolchain and
+executed checks. Missing refs, fetch errors, unrelated histories, merge conflicts,
+changed candidate files and failing checks fail closed. `prepared` or `checking`
+is incomplete evidence; only `passed` means every supplemental check finished.
+Synthetic commits exist only in the disposable candidate repository.
+The executing helper must be the tracked controller file. Reports stay outside
+both checkouts; preparation does not replace an existing caller-owned report,
+and a summary-rendering failure does not erase provenance. Cancellation forwards
+SIGINT/SIGTERM to the active gate command, escalates after one second, and waits
+for that command to settle before recording cancellation. GitHub's disposable
+runner remains responsible for process-tree cleanup beyond that direct child.
+
+The controller-owned command inventory preserves every existing SaaS workflow
+check, adds capture/cancellation/cleanup regressions and its own Git-fixture
+regressions, then runs `check:fast`, `docs:check`, `format:check` and `knip`.
+Focused boundary tests prepare the compiled runtime and packaged skill. Exact
+files must exist; changed-file selection and zero-test success are not used.
+This gate does not replace the unchanged full CI/provider lanes or qualify a
+real integration PR through their source-identity contracts. Review that PR and
+its own CI before accepting the integration.
+
+Triggers are fork pushes to `main` or `feat/saas-behavior-compatibility` and
+manual dispatch. A push only to upstream does not trigger a workflow in this
+fork. No polling schedule is installed. The workflow must be present on fork
+`main` for main-push/manual activation, and GitHub Actions must be enabled;
+adding this file on the feature branch alone does not establish that coverage.
+No settings are changed by this addition. Before enabling repository Actions,
+review inherited workflows too: `release.yml` can update release proposals on
+main pushes, and general CI includes scheduled runs.
+
+The new workflow has only read-only contents permission, pinned official actions,
+no persisted checkout credentials, restored/shared dependency or build caches, secrets, artifact
+downloads, publication or privileged PR triggers. It fetches only the fixed fork
+and upstream repositories and offers no arbitrary URL/ref inputs. Candidate
+installation and tests still execute repository code on the disposable runner;
+the provenance report is diagnostic evidence, not a security attestation.
+
 At the hardening checkpoint, 84 SaaS tests, five SaaS CLI tests and 45 browser
 domain/CLI/MCP tests passed, alongside build/static/documentation checks. The
 earlier full-suite run failed: 211 failures, of which two introduced skill

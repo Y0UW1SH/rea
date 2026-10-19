@@ -1,5 +1,48 @@
 # SaaS fork validation — 2026-10-19
 
+## Latest upstream integration check
+
+An isolated local integration combined feature checkpoint
+`2a1fff7bc57951ed0857349ad8d9a18ca56c133d` with upstream `morluto/rea` main
+`255d906e15a141b0f4acee60dc73976f03adc94c`. Fork main remained
+`e4c3d72396bf925a45724ce8b18b238b0d23d787`. Upstream had 27 new commits changing
+234 files. The merge was clean: all 68 feature-only paths and 233 upstream-only
+paths were preserved exactly; the shared `package.json` retained both upstream's
+new worker import and the SaaS test command.
+
+The initial local merge was `628e9e845fcf449026bb9276b1fc4bd10aeeb274`.
+Documentation verification then caught a regression in the feature checkpoint:
+the English-only README ledger link violated translated README link parity.
+Moving that link to the existing SaaS guide fixed the gate without weakening its
+checks. The repaired local integration is
+`4050ffc5b6d6e14d3737a85f4d6c9bfc067ba342`, tree
+`a978921841c5e02049a5dff5c10d3d4a90e380dc`. These are local verification commits,
+not a claim that either main branch was updated or the integration was published.
+
+Using Node **24.18.0**, npm **11.16.0**, and a fresh locked `npm ci`:
+
+- SaaS suite: **84 passed**.
+- Every surviving upstream-changed test plus the feature boundary/installer
+  selection: **1,508 passed, 5 failed, 9 skipped across 124 files**.
+- Six additional browser scenario capture, cancellation and cleanup files:
+  **85 passed**, including CLI SIGINT/SIGTERM cleanup.
+- All five failures were in `ghidraOomRetention.test.ts`. The identical five
+  test failures reproduced on pristine upstream `255d906e1`; both runs show
+  `listen EPERM` for the fixture's Unix socket. This is fresh baseline evidence,
+  separate from the older full-suite failure inventory below.
+- Fresh runtime/skill build, `npm run check` (typecheck, lint, formatting, knip,
+  metadata and architecture guards), and **81 Python tests** passed.
+- `npm run docs:check` failed before the README-link repair and passed afterward,
+  including five README consistency tests. It also passed on pristine upstream.
+- `git diff --check` passed. No current full-suite or live-provider result is
+  inferred from this changed-surface selection.
+
+The independent review found no merge-specific runtime defect and identified the
+additional browser lifecycle lane above. Real Chromium, Lightspeed, QuickBooks,
+and other installed-provider behavior remain unverified. GitHub Actions activation
+and remote CI are separate from these local results; see the
+[change ledger](saas-change-ledger.md) for trigger and upstream-sync limits.
+
 ## Current hardening follow-up
 
 The follow-up preserves the complete feature branch and tightens its numeric and

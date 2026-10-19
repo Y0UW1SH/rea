@@ -6,6 +6,9 @@ reference; its server source and an open-source original are **not required**.
 Use authorized accounts and synthetic records. Preserve REA's upstream credit,
 license, evidence model, and explicit target authority.
 
+The [SaaS change ledger](saas-change-ledger.md) records feature checkpoints,
+regression gates and the safe upstream-sync procedure.
+
 ## What this increment establishes
 
 - Compare existing browser scenario captures across explicitly paired deployment

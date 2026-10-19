@@ -1,0 +1,51 @@
+name: SaaS upstream integration
+
+on:
+  push:
+    branches: [main, feat/saas-behavior-compatibility]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saas-upstream-integration-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+  SAAS_CANDIDATE: ${{ github.workspace }}/candidate
+  SAAS_REPORT: ${{ github.workspace }}/saas-integration.json
+
+jobs:
+  combined-candidate:
+    name: Feature plus fork main plus upstream main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          path: controller
+          persist-credentials: false
+      - name: Snapshot and merge exact sources
+        id: prepare
+        working-directory: controller
+        run: node scripts/ci/saas-upstream-integration.mjs prepare
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: candidate/.nvmrc
+      - name: Use the candidate-pinned npm version
+        env:
+          NPM_SPEC: ${{ steps.prepare.outputs.npm_spec }}
+        run: npm install --global "$NPM_SPEC"
+      - name: Install candidate dependencies
+        working-directory: candidate
+        run: npm ci
+      - name: Check the combined candidate
+        working-directory: controller
+        run: node scripts/ci/saas-upstream-integration.mjs check
+      - name: Record source identity and gate outcome
+        if: always()
+        working-directory: controller
+        run: node scripts/ci/saas-upstream-integration.mjs report
