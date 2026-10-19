@@ -15,6 +15,10 @@ license, evidence model, and explicit target authority.
   entity correspondence, outcome observations, persistence and completion evidence.
 - Exercise the evaluator with synthetic accounting partial-payment and retail
   partial-return cases, including deliberately incorrect replacements.
+- Execute independently implemented local journal/table applications and reopen
+  saved state, including unseen inputs and retry/failure controls.
+- Validate reusable product planning profiles with context provenance, explicit
+  workflow coverage, unresolved questions, and external-service boundaries.
 
 This is an offline evaluation foundation. It does not log into a vendor, discover
 hidden server rules, generate a replacement application, reset a SaaS tenant, or
@@ -168,6 +172,61 @@ verify that an adapter used a fresh read. It does not execute actions or wait on
 a live business operation. Keep full original Evidence and your extraction code
 with a real case so another developer can audit or reproduce the observations.
 
+## Execute the synthetic workflow lab
+
+```bash
+node scripts/saas-compatibility-lab.mjs
+```
+
+This runs real local state changes, then closes and reopens files to collect fresh
+observations. The synthetic reference derives records from a journal; the
+independently written replacement updates tables. Accounting and retail adapters
+feed the same existing evaluator. Inputs include different customers, amounts,
+products and quantities; outputs are not fixed recorded-response replays.
+
+The report embeds observations/evidence snapshots and results for correct cases
+and seeded wrong amounts, wrong mapped relationships, success without persistence,
+and duplicated retry effects. A successful lab run means correct cases passed
+and deliberately incorrect cases failed, not that every case reports pass.
+Unique temporary directories are removed after success or failure.
+
+This demonstrates the framework against self-owned test applications. It covers
+one document per run, sequential same-process retries and file-reopen persistence.
+It does not establish crash durability, restart-safe retry behavior, concurrency,
+UI interaction, or compatibility with any vendor. Both small implementations are
+synthetic test applications, not production accounting or retail replacements.
+
+## Product profiles, coverage and external-service boundaries
+
+```bash
+node scripts/saas-product-profile.mjs scripts/fixtures/saas-profiles/lightspeed.json
+node scripts/saas-product-profile.mjs scripts/fixtures/saas-profiles/quickbooks.json
+```
+
+The generic and vendor-named files in `scripts/fixtures/saas-profiles/` are
+**planning templates**, not working vendor adapters. Install this checkout's
+locked dependencies with `npm ci` before using the profile inspector; it uses
+REA's existing JSON Schema validator. The versioned `profile.schema.json` can
+also be used by other JSON Schema 2020-12 clients.
+
+A profile records provenance-tagged product/edition/region/version, workspace,
+role, currency, locale and timezone; observation method availability; an explicit
+workflow list and compatibility goals; experiments tied to unresolved questions;
+and external dependencies marked observed, simulated or untested. All supplied
+vendor workflows are planned, with zero verified cases and unknown account/setup.
+
+`valid_plan` means the profile is structurally consistent, not that access exists
+or behavior has been verified. The inspector reports unknown setup, caller-declared
+workflow counts and planned experiments. Observed settings, recorded/verified
+workflow declarations, resolved questions and observed/simulated dependency claims
+require evidence references; a verified workflow also requires a case path. Those
+references are retained but not opened or authenticated. A profile cannot grant
+permission to execute a live payment, send email or change an external account.
+
+Copy a template, choose the exact authorized target, and fill observations only
+when collected. Keep unsupported workflow limitations. The experiment list is a
+manual uncertainty inventory; automated selection or execution remains future work.
+
 ## Product adapter responsibilities
 
 Keep product-specific interpretation outside core capture contracts. An adapter
@@ -199,8 +258,10 @@ functioning replacement.
 
 Further work remains intentionally separate:
 
-- Live target profiles and authenticated adapters for specific vendor editions.
-- A functioning independent application and experiments with new unseen inputs.
+- Live verified target profiles and authenticated adapters for specific vendor editions.
+  Planning templates and their validator are available now.
+- A production independent replacement for the chosen SaaS. The runnable synthetic
+  lab already tests unseen inputs against two small local implementations.
 - Multi-actor/tab/session coordination and concurrency tests.
 - Retained downloads, upload actions, meaningful export-content comparisons.
 - Role enforcement, retries, interruption and mutation tests against live targets.

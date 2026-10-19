@@ -13,6 +13,9 @@
 > not verified vendor adapters. Upstream authorship and the MIT license are retained.
 > Upstream npm releases do not include this fork's additions.
 
+From this fork checkout, run `node scripts/saas-compatibility-lab.mjs` to exercise
+independent synthetic workflows, or `npm run test:saas` for regression checks.
+
 ### One MCP for reverse engineering across binaries, applications, and runtime behavior.
 
 **See a feature you like. Understand how it works, down to the binary level.**
