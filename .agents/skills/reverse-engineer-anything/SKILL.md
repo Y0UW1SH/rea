@@ -81,6 +81,15 @@ skill replacement before applying authorized changes. Preserve existing approval
 and target-execution boundaries. REA setup never installs or upgrades unrelated
 software, including Node.js, npm, Homebrew, Java, Ghidra, IDA, JADX, Kuna, Binwalk or Unblob.
 
+## Cloud-software compatibility in this fork
+
+For authorized SaaS behavioral reconstruction, read
+[cloud compatibility](references/cloud-compatibility.md). Use the original
+application as the behavioral reference; an open-source original is optional.
+Keep business observations, saved-state checks and unsupported coverage explicit.
+The fork's offline companion and synthetic cases do not establish live vendor
+coverage and may be absent from upstream releases.
+
 ## Route the target first
 
 Choose the first tool from the target the user supplied. Use `open_binary` for

@@ -5,6 +5,14 @@
 
 # REA: Reverse Engineer Anything
 
+> **Y0UW1SH fork: cloud-software behavior compatibility.**
+> This fork adds declared cross-deployment browser comparison and a local
+> evidence-evaluation workflow for studying authorized SaaS behavior and testing
+> an independent implementation. Start with the [SaaS compatibility guide](docs/saas-compatibility.md).
+> Lightspeed and QuickBooks are intended targets; the supplied cases are synthetic,
+> not verified vendor adapters. Upstream authorship and the MIT license are retained.
+> Upstream npm releases do not include this fork's additions.
+
 ### One MCP for reverse engineering across binaries, applications, and runtime behavior.
 
 **See a feature you like. Understand how it works, down to the binary level.**
