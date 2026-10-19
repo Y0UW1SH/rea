@@ -1,14 +1,14 @@
 import { vi } from "vitest";
 
-import { PRODUCT_IDENTITY } from "../../src/identity.js";
+import { npxRegistrationCommand } from "../../src/application/ClientRegistrationIdentity.js";
 
-/** The default npx registration command setup writes on POSIX hosts. */
-export const NPX_REGISTRATION_COMMAND = [
-  "npx",
-  "-y",
-  PRODUCT_IDENTITY.registrationPackageSpecifier,
-  "mcp",
-] as const;
+/**
+ * The npx registration command setup writes on the host running the tests.
+ * Windows wraps it in `cmd.exe /d /c`, so expected entries follow the host too.
+ */
+export const NPX_REGISTRATION_COMMAND = npxRegistrationCommand(
+  process.platform,
+);
 
 /** Environment variables that redirect where supported clients keep config. */
 export const CLIENT_LOCATION_ENVIRONMENT = [

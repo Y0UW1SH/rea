@@ -151,7 +151,7 @@ describe("Pi registration semantics", () => {
         other: { command: "other-server" },
         rea: {
           type: "stdio",
-          command: "npx",
+          command: NPX_REGISTRATION_COMMAND[0],
           args: NPX_REGISTRATION_COMMAND.slice(1),
         },
       },
@@ -197,7 +197,7 @@ describe("Pi registration semantics", () => {
         JSON.stringify({
           mcpServers: {
             rea: {
-              command: "npx",
+              command: NPX_REGISTRATION_COMMAND[0],
               args: NPX_REGISTRATION_COMMAND.slice(1),
               type,
               enabled,
@@ -291,7 +291,7 @@ describe("Pi strict JSON parsing", () => {
       mcpServers: {
         rea: {
           type: "stdio",
-          command: "npx",
+          command: NPX_REGISTRATION_COMMAND[0],
           args: NPX_REGISTRATION_COMMAND.slice(1),
         },
       },

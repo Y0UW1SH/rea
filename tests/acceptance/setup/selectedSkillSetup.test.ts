@@ -15,8 +15,16 @@ import { expect } from "vitest";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 import { cliTest } from "../../support/cli/cliFixture.js";
 
+/**
+ * Each compiled CLI invocation costs several seconds on Windows (about 3.5 s
+ * measured on an idle Windows 11 host for Node startup and bundle load), so
+ * sequences of runs exceed the 30 s project deadline. Budget by invocation.
+ */
+const CLI_INVOCATION_BUDGET_MS = 15_000;
+
 cliTest.for(["root", "references"] as const)(
   "rejects a linked skill %s during planning before configuring a client",
+  { timeout: 3 * CLI_INVOCATION_BUDGET_MS },
   async (kind, { cli }) => {
     const directory = await createTestTempDirectory("rea-skill-preflight-");
     const selected = join(
@@ -59,27 +67,33 @@ cliTest.for(["root", "references"] as const)(
     );
     for (const result of [preview, applied]) {
       expect(result.exitCode, result.stdout).toBe(1);
+      // JSON output escapes Windows path separators, so match parsed fields.
       expect(result.json).toMatchObject({
         status: "needs_human",
         code: "skill_install_failed",
         appliedActions: [],
+        remediation: expect.stringContaining(link),
       });
-      expect(result.stdout).toContain(link);
       expect(result.stdout).toContain("--skill=false");
     }
     const doctor = await run(["doctor", "--client", "claude_code", "--skill"]);
     expect(doctor.exitCode, doctor.stdout).toBe(1);
     expect(doctor.json).toMatchObject({
       healthy: false,
-      identity: { skill: { state: "unmanaged" } },
+      identity: {
+        skill: {
+          state: "unmanaged",
+          issues: [{ path: link, kind: "symbolic_link" }],
+        },
+      },
     });
-    expect(doctor.stdout).toContain(link);
     expect((await lstat(link)).isSymbolicLink()).toBe(true);
   },
 );
 
 cliTest(
   "setup refuses a linked skill while allowing registration-only setup",
+  { timeout: 4 * CLI_INVOCATION_BUDGET_MS },
   async ({ cli }) => {
     const directory = await createTestTempDirectory("rea-linked-skill-cli-");
     const managed = join(directory, "managed");
@@ -187,6 +201,7 @@ cliTest(
 
 cliTest(
   "skill-only setup verifies its selected client copy on install, rerun and repair",
+  { timeout: 8 * CLI_INVOCATION_BUDGET_MS },
   async ({ cli }) => {
     const directory = await createTestTempDirectory("rea-selected-skill-");
     const selected = join(
