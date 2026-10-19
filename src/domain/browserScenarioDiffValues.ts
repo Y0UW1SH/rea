@@ -49,9 +49,51 @@ const normalizationRuleSchema = z.strictObject({
     .describe("Recorded replacement text used in normalized comparison."),
 });
 
+const correspondenceOriginSchema = z.string().refine((value) => {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" ||
+        url.protocol === "https:" ||
+        url.protocol === "ws:" ||
+        url.protocol === "wss:") &&
+      url.origin === value
+    );
+  } catch {
+    return false;
+  }
+}, "Expected a canonical HTTP(S) or WS(S) origin without credentials, path, query, or fragment");
+
+const originPairsSchema = z
+  .array(
+    z.strictObject({
+      before_origin: correspondenceOriginSchema,
+      after_origin: correspondenceOriginSchema,
+    }),
+  )
+  .superRefine((pairs, context) => {
+    for (const key of ["before_origin", "after_origin"] as const) {
+      const seen = new Set<string>();
+      for (const [index, pair] of pairs.entries()) {
+        if (seen.has(pair[key]))
+          context.addIssue({
+            code: "custom",
+            path: [index, key],
+            message: "Origin correspondence must be one-to-one on each side",
+          });
+        seen.add(pair[key]);
+      }
+    }
+  });
+
 const normalizationInputSchema = z
   .strictObject({
     rules: z.array(normalizationRuleSchema).default([]),
+    origin_pairs: originPairsSchema
+      .optional()
+      .describe(
+        "Explicit before/reference to after/replacement origin correspondence, applied only to structured URL fields. Unlisted origins remain literal.",
+      ),
   })
   .superRefine((normalization, context) => {
     const ruleIds = new Set<string>();
@@ -82,7 +124,9 @@ export const compareBrowserScenariosInputSchema = z.strictObject({
   ),
   normalization: normalizationInputSchema
     .default({ rules: [] })
-    .describe("Exact-literal rules committed in the comparison result."),
+    .describe(
+      "Literal rules and explicit origin pairs committed in the comparison result.",
+    ),
 });
 /** Parsed browser scenario comparison input. */
 export type CompareBrowserScenariosInput = z.infer<
@@ -147,6 +191,7 @@ export const browserScenarioDiffSchema = z.strictObject({
       .array(builtInNormalizationSchema)
       .length(BROWSER_SCENARIO_BUILT_IN_NORMALIZATION_RULES.length),
     rules: z.array(normalizationRuleSchema),
+    origin_pairs: originPairsSchema.optional(),
     sha256: z.string().regex(/^[a-f0-9]{64}$/u),
   }),
   alignment: z.strictObject({

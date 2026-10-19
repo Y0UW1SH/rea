@@ -295,6 +295,11 @@ describe("browser scenario MCP tool", () => {
     });
     expect(otherOrigin.isError, JSON.stringify(otherOrigin)).not.toBe(true);
     expect(provider.scenarios).toHaveLength(3);
+    await verifyOriginCorrespondence(
+      client,
+      captureResult,
+      Reflect.get(otherOrigin.structuredContent ?? {}, "normalized_result"),
+    );
   });
 });
 
@@ -359,3 +364,56 @@ test("records a completed late-close cancellation as server Evidence", async () 
     await Promise.all([client.close(), server.close(), session.close()]);
   }
 });
+
+const verifyOriginCorrespondence = async (
+  client: Client,
+  captureResult: unknown,
+  afterCapture: unknown,
+) => {
+  const tool = (await client.listTools()).tools.find(
+    ({ name }) => name === "compare_web_captures",
+  );
+  if (tool === undefined) throw new Error("Missing comparison tool");
+  const validateComparison = new Ajv2020({
+    strict: false,
+    validateFormats: false,
+  }).compile(tool.inputSchema);
+  const originPairs = [
+    {
+      before_origin: "https://app.example.test",
+      after_origin: "https://other.example.test",
+    },
+  ];
+  const pairedInput = {
+    before_scenario: captureResult,
+    after_scenario: afterCapture,
+    normalization: { origin_pairs: originPairs },
+  };
+  expect(
+    validateComparison(pairedInput),
+    JSON.stringify(validateComparison.errors),
+  ).toBe(true);
+  const paired = await client.callTool({
+    name: "compare_web_captures",
+    arguments: pairedInput,
+  });
+  expect(paired.isError, JSON.stringify(paired)).not.toBe(true);
+  expect(paired.structuredContent).toMatchObject({
+    parameters: {
+      before_start_origin: "https://app.example.test",
+      after_start_origin: "https://other.example.test",
+    },
+    normalized_result: {
+      overall_status: "unchanged",
+      normalization: { origin_pairs: originPairs },
+    },
+  });
+  const rejectedPair = await client.callTool({
+    name: "compare_web_captures",
+    arguments: {
+      ...pairedInput,
+      normalization: { origin_pairs: [...originPairs, ...originPairs] },
+    },
+  });
+  expect(rejectedPair.isError).toBe(true);
+};
