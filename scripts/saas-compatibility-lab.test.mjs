@@ -4,7 +4,12 @@ import { test } from "node:test";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runLabCase, runLab } from "./lib/saas-compatibility-lab.mjs";
+
+const cli = fileURLToPath(
+  new URL("./saas-compatibility-lab.mjs", import.meta.url),
+);
 
 for (const workflow of ["accounting", "retail"]) {
   test(`${workflow}: independently persisted implementations agree`, () => {
@@ -66,9 +71,7 @@ test("invalid or unsafe input fails before execution", () => {
 });
 test("CLI emits structured cases and verifies all expected mutation results", () => {
   const result = JSON.parse(
-    execFileSync(process.execPath, ["scripts/saas-compatibility-lab.mjs"], {
-      encoding: "utf8",
-    }),
+    execFileSync(process.execPath, [cli], { encoding: "utf8" }),
   );
   assert.equal(result.status, "pass");
   assert.equal(result.results.length, 12);
@@ -76,11 +79,7 @@ test("CLI emits structured cases and verifies all expected mutation results", ()
 });
 test("CLI rejects unsupported arguments", () => {
   assert.throws(() =>
-    execFileSync(
-      process.execPath,
-      ["scripts/saas-compatibility-lab.mjs", "--unknown"],
-      { stdio: "pipe" },
-    ),
+    execFileSync(process.execPath, [cli, "--unknown"], { stdio: "pipe" }),
   );
 });
 test("wrong relationship fails even when customer labels and all other values agree", () => {

@@ -233,10 +233,14 @@ it("prepares the exact three-source tree without changing source branches", asyn
   expect(report.candidateTree).toBe(
     await workflowGit(f.candidate, ["rev-parse", "HEAD^{tree}"]),
   );
+  // The candidate honours the host's checkout conversion (CRLF on Windows Git).
   for (const name of ["feature", "fork", "upstream"])
-    expect(await readFile(join(f.candidate, `${name}.txt`), "utf8")).toBe(
-      `${name}\n`,
-    );
+    expect(
+      (await readFile(join(f.candidate, `${name}.txt`), "utf8")).replaceAll(
+        "\r\n",
+        "\n",
+      ),
+    ).toBe(`${name}\n`);
   expect(await workflowGit(f.remote, ["rev-parse", featureRef])).toBe(
     f.feature,
   );

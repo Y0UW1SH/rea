@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { compareExports } from "./lib/saas-export-comparison.mjs";
 const policy = () => ({
@@ -42,7 +43,7 @@ async function run(
   await writeFile(join(dir, "ref.csv"), a);
   await writeFile(join(dir, "new.json"), b);
   const p = policy();
-  modify(p);
+  await modify(p, dir);
   return compareExports(p, dir);
 }
 function changedExportRows() {
@@ -141,10 +142,16 @@ test("budgets path traversal and missing file fail closed", async (t) => {
     );
 });
 test("symlinks outside manifest directory are rejected", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "rea-exports-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  await symlink("/etc/passwd", join(dir, "ref.csv"));
-  assert.equal((await compareExports(policy(), dir)).status, "invalid");
+  const outside = await mkdtemp(join(tmpdir(), "rea-exports-outside-"));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await writeFile(join(outside, "ref.csv"), "id,amount,customer\na,1,c");
+  // A directory link needs no Windows privilege; POSIX ignores the link type.
+  const r = await run(t, undefined, undefined, async (p, dir) => {
+    await symlink(outside, join(dir, "linked"), "junction");
+    p.reference.file = "linked/ref.csv";
+  });
+  assert.equal(r.status, "invalid");
+  assert.match(r.reason, /escapes input directory/);
 });
 test("invalid UTF-8 and BOM are not silently repaired", async (t) => {
   for (const a of [Buffer.from([0xff]), "\ufeffid,amount,customer\na,1,c"])
@@ -405,7 +412,7 @@ test("CLI distinguishes pass fail invalid usage and read failure", async (t) => 
   );
   await writeFile(join(dir, "manifest.json"), JSON.stringify(policy()));
   const invoke = (args) =>
-    spawnSync(process.execPath, [script.pathname, ...args], {
+    spawnSync(process.execPath, [fileURLToPath(script), ...args], {
       encoding: "utf8",
       timeout: 10000,
     });
@@ -452,8 +459,9 @@ test("opened descriptor rejects ancestor substitution and concurrent file change
     import { tmpdir } from 'node:os';
     import { join } from 'node:path';
     import assert from 'node:assert/strict';
-    const root=await fs.mkdtemp(join(tmpdir(),'rea-export-race-'));
-    const outside=await fs.mkdtemp(join(tmpdir(),'rea-export-control-'));
+    // The reader opens canonical paths (macOS /private/var, Windows case/short names).
+    const root=await fs.realpath(await fs.mkdtemp(join(tmpdir(),'rea-export-race-')));
+    const outside=await fs.realpath(await fs.mkdtemp(join(tmpdir(),'rea-export-control-')));
     const original=fs.open;
     try {
       await fs.mkdir(join(root,'selected'));
@@ -461,7 +469,7 @@ test("opened descriptor rejects ancestor substitution and concurrent file change
       await fs.writeFile(join(outside,'export.txt'),'outside');
       const target=join(root,'selected','export.txt');let closes=0;
       fs.open=async(path,...args)=>{
-        if(path===target){await fs.rename(join(root,'selected'),join(root,'original'));await fs.symlink(outside,join(root,'selected'));}
+        if(path===target){await fs.rename(join(root,'selected'),join(root,'original'));await fs.symlink(outside,join(root,'selected'),'junction');}
         const handle=await original(path,...args);const close=handle.close.bind(handle);handle.close=async()=>{closes++;return close();};return handle;
       };
       syncBuiltinESMExports();
