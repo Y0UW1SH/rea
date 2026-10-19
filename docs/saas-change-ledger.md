@@ -1,0 +1,237 @@
+# SaaS fork change ledger
+
+This is the durable inventory of this fork's SaaS additions and the review checklist
+for preserving them during upstream updates. Keep it with the feature branch,
+`feat/saas-behavior-compatibility`. See the [usage and scope guide](saas-compatibility.md)
+for contracts and examples, and the [validation report](saas-validation.md) for
+executed checks and known limits.
+
+## Exact checkpoints
+
+These immutable commit IDs identify the code even if a branch later moves:
+
+- Upstream-derived starting point: [`e4c3d72396bf925a45724ce8b18b238b0d23d787`](https://github.com/Y0UW1SH/rea/commit/e4c3d72396bf925a45724ce8b18b238b0d23d787).
+- Initial complete feature checkpoint: [`9f0f4f1537e093eaeae242c68c9fce28340faf11`](https://github.com/Y0UW1SH/rea/commit/9f0f4f1537e093eaeae242c68c9fce28340faf11).
+- Tested numeric/export hardening checkpoint: [`bbb9e40f8f314f240839099bcebefd2410116c7c`](https://github.com/Y0UW1SH/rea/commit/bbb9e40f8f314f240839099bcebefd2410116c7c).
+  Its parent is the initial feature checkpoint above.
+
+A Git tag is a named pointer, not an offsite backup. Preserve the commits in a
+verified remote branch or tag and, when separate backup is needed, a repository
+backup outside the working machine. Do not assume a local checkpoint was pushed;
+verify the remote reference and resolved commit. This ledger does not assert that
+any tag has been published or that the feature branch has been merged into `main`.
+
+## Feature inventory
+
+### Explicit deployment-origin correspondence
+
+Commit: `da4ad848633a1a541e3ad446a85281041860db5b`.
+
+- Adds directional, one-to-one `origin_pairs` to the existing browser scenario
+  comparison policy, exposed through the existing CLI and MCP contracts.
+- Applies only to structured URL fields; retains paths, queries, fragments,
+  undeclared origins, unrelated mismatches and unchanged original captures.
+- Main ownership: `src/domain/browserScenarioOriginCorrespondence.ts`, scenario
+  normalization/diff modules, `src/cli/browserAdvancedCommands.ts`, and
+  `src/contracts/browserToolContracts.ts`.
+- Regression owners: `src/domain/browserScenarioDiff.test.ts`,
+  `tests/boundary/cli/browserCli.test.ts`, and
+  `tests/boundary/mcp/browserScenarioMcp.test.ts`.
+- Limit: explicitly allowing deployment differences is not proof of business
+  equivalence. Strings in arbitrary DOM text, bodies and storage stay literal.
+
+### Evidence-based workflow evaluator
+
+Commit: `517c0e58922c71dc3313255d221eb884a1af67bd`.
+
+- Adds source-checkout companion `scripts/saas-compatibility.mjs` and its shared
+  evaluator, synthetic accounting/retail cases, usage guidance, and authored
+  `references/cloud-compatibility.md` skill instructions.
+- Compares selected provenance-tagged context, typed entity correspondence,
+  outcome values, fresh-read declarations and bounded completion observations.
+  Missing evidence remains unknown; explicit mismatches fail.
+- Regression owners: `scripts/saas-compatibility.test.mjs` and
+  `tests/boundary/cli/saasCompatibility.test.ts`.
+- Limit: the checker validates supplied observations. It does not authenticate
+  evidence references, perform live actions or independently verify fresh reads.
+
+### Persisted workflow lab and product-planning profiles
+
+Commit: `129712825b0a3ea6448ce97319df41ef12e4c540`.
+
+- Adds `scripts/saas-compatibility-lab.mjs`: independently written local journal
+  and table implementations, unseen synthetic inputs, file-reopen observations,
+  and seeded wrong amounts, relationships, persistence and retry effects.
+- Adds `scripts/saas-product-profile.mjs`, JSON Schema and generic, Lightspeed
+  and QuickBooks planning templates with explicit coverage, unknowns and
+  observed/simulated/untested external-service boundaries.
+- Regression owners: the corresponding `scripts/*.test.mjs` files and
+  `tests/boundary/cli/saasCompatibilityLab.test.ts` and
+  `tests/boundary/cli/saasProductProfile.test.ts`.
+- Limits: templates are not vendor adapters. The lab covers sequential
+  same-process retries and file-reopen persistence, not crash durability,
+  concurrent actors or real vendor behavior.
+
+### Installed skill completeness
+
+Commit: `1b4cb4030d3780de078b1fe21bffea4ca087d7f6`.
+
+- Adds the cloud-compatibility reference to `src/application/SetupSkill.ts`'s
+  managed inventory and the portable skill commitment.
+- Adds `tests/conformance/managedSkillInventory.test.ts` to compare the managed
+  inventory with every authored skill file recursively.
+- Keep source skill files under `.agents/skills/reverse-engineer-anything/`.
+  Regenerate ignored packaged `skills/` output rather than editing it directly.
+- Relevant integration checks cover selected-skill setup, installation/repair and
+  Qwen client configuration in addition to the inventory regression.
+
+### Bounded offline CSV/JSON export comparison
+
+Commit: `9f0f4f1537e093eaeae242c68c9fce28340faf11`.
+
+- Adds `scripts/saas-export-compare.mjs`, comparison helpers and synthetic
+  CSV/JSON fixtures, retaining policy, raw digests and excluded column names.
+- Aligns records by explicit compound keys and compares selected string/integer/
+  decimal fields exactly. Duplicate keys, missing/extra records and meaningful
+  differences remain visible; row ordering alone is ignored.
+- Rejects malformed/ambiguous inputs, invalid UTF-8, detected path escapes and
+  mutation, unsafe coercion, and configured size/record/field/value/depth limits.
+- Regression owners: `scripts/saas-export-compare.test.mjs` and
+  `tests/boundary/cli/saasExportCompare.test.ts`.
+- Limits: reads existing local regular files, not live downloads. It does not
+  establish complete vendor export coverage or provide a hostile-filesystem
+  sandbox. Browser download cancellation behavior is unchanged.
+
+### Numeric fidelity and report-boundary hardening
+
+Commit: `bbb9e40f8f314f240839099bcebefd2410116c7c`.
+
+- Rejects unsafe integers and original JSON numeric tokens that lose precision,
+  underflow or overflow before workflow comparison; exact larger values can be
+  represented as strings. Adds shared lossless JSON parsing for library callers.
+- Adds the shared `scripts/lib/saas-export-budget.mjs` admission owner.
+- Privately snapshots export policy before asynchronous reads, bounds compact
+  policy JSON to 1 MiB and complete UTF-8 reports to 16 MiB before serialization,
+  including escaping, indentation and the final newline, using shared
+  `scripts/lib/saas-export-budget.mjs` accounting.
+- Retains admitted policy and available raw input provenance on report overflow
+  or invalid UTF-8, with explicit omission of oversized diagnostic details.
+- Limits: numeric information already rounded by a caller's parser cannot be
+  recovered. Existing `-0` versus `0` comparison/report-rendering behavior is
+  unchanged; see the validation report.
+
+## Focused regression gates
+
+Use the exact Node version in `.nvmrc` and npm version in
+`package.json#packageManager` (at the hardening checkpoint: Node 24.18.0 and npm
+11.16.0), then install the locked dependencies with `npm ci`.
+
+The [SaaS compatibility workflow](../.github/workflows/saas-compatibility.yml)
+runs on pushes to `main` and `feat/saas-behavior-compatibility`, and pull requests
+targeting either branch. This covers upstream-integration PRs into the feature
+branch and future direct `main` updates once the workflow is merged there. A push
+tests the branch head; a PR tests GitHub's proposed merge result. These are
+distinct integration checks, so both are retained, while superseded runs of each
+kind are cancelled. The workflow has read-only contents permission, uses existing
+pinned official actions, and has no secrets, deployment or repository-setting
+changes. It intentionally does not invoke the complete repository test suite.
+
+Run the same behavior checks locally:
+
+```bash
+npm run test:saas
+npm run test:local -- \
+  src/domain/browserScenarioDiff.test.ts \
+  tests/conformance/managedSkillInventory.test.ts \
+  tests/conformance/readmeConsistency.test.ts
+node scripts/run-exact-tests.mjs run tests/boundary/filesystem/workflowActionPinning.test.ts
+npm run test:focused -- \
+  tests/boundary/cli/browserCli.test.ts \
+  tests/boundary/mcp/browserScenarioMcp.test.ts \
+  tests/boundary/cli/saasCompatibility.test.ts \
+  tests/boundary/cli/saasCompatibilityLab.test.ts \
+  tests/boundary/cli/saasProductProfile.test.ts \
+  tests/boundary/cli/saasExportCompare.test.ts \
+  tests/acceptance/setup/selectedSkillSetup.test.ts \
+  tests/boundary/filesystem/setupSkill.test.ts \
+  tests/boundary/filesystem/qwenClientConfiguration.test.ts
+```
+
+`test:focused` prepares the compiled runtime, packaged skill and the selected
+tests' declared artifacts. It selects exact files and fails if they are missing;
+do not replace it with a changed-file filter that could silently omit coverage.
+Also run `npm run check:fast`, `npm run docs:check`, `npm run format:check`,
+`npm run knip` and `git diff --check` before accepting an upstream integration.
+Use the repository's broader CI and relevant real-provider lanes when the
+upstream change requires them; the focused workflow is an additional gate.
+
+At the hardening checkpoint, 84 SaaS tests, five SaaS CLI tests and 45 browser
+domain/CLI/MCP tests passed, alongside build/static/documentation checks. The
+earlier full-suite run failed: 211 failures, of which two introduced skill
+packaging failures were fixed and 209 were reproduced at the starting point.
+The full suite was not rerun after those fixes or hardening. These are historical
+local results, not a promise of current remote CI success or bug-free features.
+All committed cases are synthetic; no Lightspeed or QuickBooks account was
+accessed and no real vendor behavior was verified.
+
+## Safe upstream-sync procedure
+
+1. Start with a clean working tree. Commit or otherwise preserve local work
+   before integrating. Verify the feature head and a recoverable checkpoint on
+   the intended remote; do not rely only on this file or a local tag. Do not
+   reset, delete or force-push the feature branch to match upstream.
+2. Inspect `git remote -v`. Confirm that `origin` is the intended fork and
+   `upstream` is the intended upstream repository. If needed, add `upstream` only
+   after verifying its URL (`https://github.com/morluto/rea.git` for this lineage).
+   Fetch `upstream` and record the exact `upstream/main` SHA being integrated.
+3. Create a new integration branch **from the current feature head**, not from
+   upstream or the fork's `main`. Merge `upstream/main` there:
+
+   ```bash
+   git switch feat/saas-behavior-compatibility
+   git rev-parse HEAD
+   git fetch upstream
+   git rev-parse upstream/main
+   git switch -c integration/saas-upstream-YYYY-MM-DD
+   git merge upstream/main
+   ```
+
+   Choose a new branch name for each attempt. A normal fork sync updates the
+   selected fork branch; it does not verify these additions against upstream.
+
+4. Resolve conflicts by retaining both upstream fixes and this inventory's
+   behavior. Do not accept all of either side blindly. Inspect the origin-policy
+   contract, CLI/MCP parity, evaluator semantics, export budgets, package scripts,
+   skill inventory and focused workflow even when Git reports no conflict.
+5. Run the focused commands above and applicable broader gates against the
+   merged tree. Investigate failures; do not weaken assertions or hide unknown
+   coverage to obtain a green check. Record the tested upstream SHA, integration
+   SHA, commands, results and remaining limitations in the validation report.
+6. Review the integration diff against the original base, the hardening
+   checkpoint and the pre-sync feature head. For example:
+
+   ```bash
+   git diff --stat e4c3d72396bf925a45724ce8b18b238b0d23d787..HEAD
+   git diff bbb9e40f8f314f240839099bcebefd2410116c7c..HEAD -- \
+     'scripts/saas-*.mjs' 'scripts/lib/saas-*.mjs' scripts/fixtures/ \
+     'src/domain/browserScenario*' src/cli/browserAdvancedCommands.ts \
+     src/contracts/browserToolContracts.ts src/application/SetupSkill.ts \
+     .agents/skills/reverse-engineer-anything package.json \
+     'tests/boundary/cli/saas*.test.ts' tests/boundary/cli/browserCli.test.ts \
+     tests/boundary/mcp/browserScenarioMcp.test.ts \
+     tests/conformance/managedSkillInventory.test.ts \
+     .github/workflows/saas-compatibility.yml
+   git diff feat/saas-behavior-compatibility..HEAD
+   ```
+
+   Review upstream-driven changes deliberately; checkpoint differences are not
+   automatically regressions. Confirm this feature inventory still holds.
+
+7. Bring only reviewed integration changes back through the normal PR/merge
+   process into the feature branch. Keep `main` unchanged unless its separate
+   PR is reviewed and merging is explicitly approved. Update this ledger with
+   the accepted integration SHA and preserve the previous checkpoints.
+
+Passing tests reduce regression risk; they do not guarantee that an arbitrary
+future fork sync is safe. Preserve history, review conflicts and verify behavior
+at every integration.

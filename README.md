@@ -15,6 +15,8 @@
 
 From this fork checkout, run `node scripts/saas-compatibility-lab.mjs` to exercise
 independent synthetic workflows, or `npm run test:saas` for regression checks.
+The [SaaS change ledger](docs/saas-change-ledger.md) records feature checkpoints,
+regression gates and the safe upstream-sync procedure.
 
 ### One MCP for reverse engineering across binaries, applications, and runtime behavior.
 
