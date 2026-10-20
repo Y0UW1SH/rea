@@ -334,13 +334,11 @@ test("committed fixtures equal the builder output and the real analysis declares
     encoding: "utf8",
   });
   assert.equal(check.status, 0, check.stderr);
-  const evidence = JSON.parse(
+  const analysis = JSON.parse(
     await readFile(join(fixturesDirectory, "static-analysis.json"), "utf8"),
   );
-  assert.equal(
-    evidence.normalized_result.input_path,
-    "scripts/fixtures/saas-surface/bundle",
-  );
+  assert.equal(analysis.input_path, "scripts/fixtures/saas-surface/bundle");
+  assert.equal(Object.hasOwn(analysis, "normalized_result"), false);
   const committed = (name) =>
     input(
       name,

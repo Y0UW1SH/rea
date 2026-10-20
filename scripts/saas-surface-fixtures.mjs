@@ -24,21 +24,23 @@ const USAGE =
 const plain = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-/** The committed form of one CLI analysis result; throws when the shape is not an analysis. */
-function normalizeAnalysis(evidence) {
-  if (!plain(evidence) || !plain(evidence.normalized_result))
-    throw new Error("import: expected the Evidence envelope the CLI prints");
-  const result = evidence.normalized_result;
+/**
+ * The committed form of one CLI analysis: the normalized_result of the Evidence envelope
+ * the CLI prints (or that result itself) with the recorded input path made
+ * repository-relative. The envelope is dropped because its evidence_id authenticates
+ * the record as written for the original absolute path.
+ */
+function normalizeAnalysis(printed) {
+  if (!plain(printed))
+    throw new Error("import: expected the JSON the CLI prints");
+  const result = plain(printed.normalized_result)
+    ? printed.normalized_result
+    : printed;
   if (!plain(result.graph) || typeof result.root_artifact_sha256 !== "string")
     throw new Error(
       "import: expected an analyze_javascript_application result",
     );
-  const normalized = structuredClone(evidence);
-  normalized.normalized_result.input_path = BUNDLE_PATH;
-  if (plain(normalized.subject)) normalized.subject.local_path = BUNDLE_PATH;
-  if (plain(normalized.parameters))
-    normalized.parameters.input_path = BUNDLE_PATH;
-  return normalized;
+  return { ...structuredClone(result), input_path: BUNDLE_PATH };
 }
 
 async function checkStatic() {
@@ -59,11 +61,11 @@ async function checkStatic() {
 const args = process.argv.slice(2);
 try {
   if (args[0] === "--import" && args.length === 2) {
-    const evidence = JSON.parse(await readFile(args[1], "utf8"));
+    const printed = JSON.parse(await readFile(args[1], "utf8"));
     await mkdir(directory, { recursive: true });
     await writeFile(
       new URL(STATIC_FILE, directory),
-      serializeFixture(normalizeAnalysis(evidence)),
+      serializeFixture(normalizeAnalysis(printed)),
     );
     console.log(`wrote ${STATIC_FILE} to ${fileURLToPath(directory)}`);
   } else if (
