@@ -105,7 +105,7 @@ export const BUNDLE_FINDINGS = [
   { value: "/api/invoices", mechanisms: ["call:axios.post"] },
   {
     value: "https://app.example.test/api/customers/42",
-    mechanisms: ["call:axios.get"],
+    mechanisms: ["call:fetch"],
   },
   {
     value: "https://app.example.test/api/invoices/archive",
@@ -167,3 +167,27 @@ export const statusesOf = (report) =>
   );
 export const experimentId = (family, key) =>
   `surface-${family}-${sha256(`${family}\u0000${key}`).slice(0, 12)}`;
+
+/** The statuses every bundle declaration must reach against the synthetic observations. */
+export function expectedBundleStatuses(report) {
+  const nodeKeyed = (reason) =>
+    `network ${report.surface.find((item) => item.reason === reason).key}`;
+  return {
+    "network * /api/invoices": "exact",
+    "network POST /api/invoices": "exact",
+    "network * https://app.example.test/api/customers/42": "exact",
+    "network * https://app.example.test/api/invoices/archive": "exact",
+    "network GET /api/reports/stream": "exact",
+    "network * /live": "unknown:origin-not-exercised",
+    "network POST /api/metrics": "unmatched",
+    [nodeKeyed("target-unresolved")]: "unknown:target-unresolved",
+    [nodeKeyed("candidate-endpoint")]: "unknown:candidate-endpoint",
+    "trpc query user.byId": "exact",
+    "trpc mutate user.rename": "unmatched",
+    "graphql query ListCustomers": "exact",
+    "graphql mutation RenameCustomer": "unmatched",
+    "route /invoices": "exact",
+    "route /invoices/:id": "templated",
+    "route /settings": "unmatched",
+  };
+}

@@ -1,0 +1,9 @@
+{
+  "declared_origins": ["https://app.example.test"],
+  "origin_pairs": [
+    {
+      "before_origin": "https://app.example.test",
+      "after_origin": "http://localhost:4300"
+    }
+  ]
+}

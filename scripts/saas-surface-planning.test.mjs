@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectProductProfile } from "./lib/saas-product-profile.mjs";
@@ -10,6 +11,7 @@ import {
   SURFACE_ORIGIN,
   buildSurfaceApiSurface,
   buildSurfaceCapture,
+  surfaceFixtureFiles,
   surfaceOrigins,
 } from "./lib/saas-surface-fixture.mjs";
 import {
@@ -17,7 +19,10 @@ import {
   EXERCISED_VALUES,
   analysisOf,
   cliPath,
+  expectedBundleStatuses,
   fixtureInputs,
+  fixturesDirectory,
+  generatorPath,
   genericProfile,
   input,
   statusesOf,
@@ -316,4 +321,76 @@ test("CLI maps exit codes to all exercised, gaps found and invalid input", async
     ["--static", gaps, "--static", gaps, ...observed],
   ])
     assert.equal(run(args).status, 2, args.join(" "));
+});
+
+test("committed fixtures equal the builder output and the real analysis declares the bundle surface", async () => {
+  for (const [name, expected] of surfaceFixtureFiles())
+    assert.equal(
+      await readFile(join(fixturesDirectory, name), "utf8"),
+      expected,
+      name,
+    );
+  const check = spawnSync(process.execPath, [generatorPath, "--check"], {
+    encoding: "utf8",
+  });
+  assert.equal(check.status, 0, check.stderr);
+  const evidence = JSON.parse(
+    await readFile(join(fixturesDirectory, "static-analysis.json"), "utf8"),
+  );
+  assert.equal(
+    evidence.normalized_result.input_path,
+    "scripts/fixtures/saas-surface/bundle",
+  );
+  const committed = (name) =>
+    input(
+      name,
+      JSON.parse(readFileSync(join(fixturesDirectory, name), "utf8")),
+    );
+  const report = reconcileSurface({
+    static: committed("static-analysis.json"),
+    observed: [
+      committed("api-surface.json"),
+      committed("scenario-capture.json"),
+    ],
+    origins: committed("origins.json").value,
+  });
+  assert.equal(report.status, "complete", report.reason);
+  assert.deepEqual(statusesOf(report), expectedBundleStatuses(report));
+  assert.equal(report.inputs.static.endpoint_nodes, 17);
+  assert.equal(report.gaps, 7);
+  const metrics = report.surface.find(
+    (item) => item.key === "POST /api/metrics",
+  );
+  assert.deepEqual(metrics.evidence.static.locations, [
+    { source: "main.js", line: 36, column: 9 },
+  ]);
+  assert.equal(
+    metrics.evidence.static.artifact_sha256.length,
+    64,
+    "the node identity cites the analyzed file digest",
+  );
+  const run = (args) =>
+    spawnSync(process.execPath, [cliPath, ...args], {
+      encoding: "utf8",
+      timeout: 60_000,
+    });
+  const fixture = (name) => join(fixturesDirectory, name);
+  const found = run([
+    "--static",
+    fixture("static-analysis.json"),
+    "--observed",
+    fixture("api-surface.json"),
+    "--observed",
+    fixture("scenario-capture.json"),
+    "--origins",
+    fixture("origins.json"),
+    "--profile",
+    fixture("profile.json"),
+    "--workflow-id",
+    "first-workflow",
+  ]);
+  assert.equal(found.status, 1, found.stderr);
+  const parsed = JSON.parse(found.stdout);
+  assert.equal(parsed.gaps, 7);
+  assert.equal(parsed.profileUpdate.added.length, 7);
 });

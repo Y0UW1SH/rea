@@ -17,6 +17,7 @@ import {
   BUNDLE_FINDINGS,
   SHA,
   analysisOf,
+  expectedBundleStatuses,
   experimentId,
   fixtureInputs,
   input,
@@ -50,26 +51,7 @@ test("pins the companion families, statuses and reason superset", () => {
 test("reconciles every declared family against api-surface groups and a capture", () => {
   const report = reconcileSurface(fixtureInputs());
   assert.equal(report.status, "complete", JSON.stringify(report.limitations));
-  const nodeKeyed = (reason) =>
-    `network ${report.surface.find((item) => item.reason === reason).key}`;
-  assert.deepEqual(statusesOf(report), {
-    "network * /api/invoices": "exact",
-    "network POST /api/invoices": "exact",
-    "network GET https://app.example.test/api/customers/42": "exact",
-    "network * https://app.example.test/api/invoices/archive": "exact",
-    "network GET /api/reports/stream": "exact",
-    "network * /live": "unknown:origin-not-exercised",
-    "network POST /api/metrics": "unmatched",
-    [nodeKeyed("target-unresolved")]: "unknown:target-unresolved",
-    [nodeKeyed("candidate-endpoint")]: "unknown:candidate-endpoint",
-    "trpc query user.byId": "exact",
-    "trpc mutate user.rename": "unmatched",
-    "graphql query ListCustomers": "exact",
-    "graphql mutation RenameCustomer": "unmatched",
-    "route /invoices": "exact",
-    "route /invoices/:id": "templated",
-    "route /settings": "unmatched",
-  });
+  assert.deepEqual(statusesOf(report), expectedBundleStatuses(report));
   assert.deepEqual(report.declared, {
     network: 9,
     trpc: 2,
@@ -96,15 +78,15 @@ test("reconciles every declared family against api-surface groups and a capture"
 test("cites static locations and observed ordinals, transactions or steps per item", () => {
   const report = reconcileSurface(fixtureInputs());
   const find = (key) => report.surface.find((item) => item.key === key);
-  const customers = find("GET https://app.example.test/api/customers/42");
-  assert.equal(customers.confidence, "medium");
-  assert.deepEqual(customers.inferences, ["method-callee-name"]);
-  assert.deepEqual(customers.method, { values: ["GET"], basis: "callee-name" });
+  const customers = find("* https://app.example.test/api/customers/42");
+  assert.equal(customers.confidence, "high");
+  assert.deepEqual(customers.inferences, []);
+  assert.deepEqual(customers.method, { values: [], basis: "unknown" });
   assert.equal(customers.evidence.static.artifact_sha256, SHA);
   assert.deepEqual(customers.evidence.static.locations, [
     { source: "main.js", line: 1, column: 0 },
   ]);
-  assert.deepEqual(customers.evidence.static.mechanisms, ["call:axios.get"]);
+  assert.deepEqual(customers.evidence.static.mechanisms, ["call:fetch"]);
   assert.match(customers.evidence.static.node_id, /^jag_node_/u);
   assert.deepEqual(
     customers.evidence.observed.map((entry) => [entry.input, entry.basis]),
@@ -335,7 +317,7 @@ test("folds replacement origins onto reference origins before joining", () => {
   const statuses = statusesOf(report);
   for (const key of [
     "network POST /api/invoices",
-    "network GET https://app.example.test/api/customers/42",
+    "network * https://app.example.test/api/customers/42",
     "trpc query user.byId",
     "graphql query ListCustomers",
     "route /invoices",
