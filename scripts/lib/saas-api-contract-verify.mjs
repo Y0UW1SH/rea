@@ -3,7 +3,6 @@ import addFormats from "ajv-formats";
 import { admitReport } from "./saas-export-budget.mjs";
 import {
   decodeExportText,
-  parseExportJson,
   readBoundedExport,
 } from "./saas-export-comparison.mjs";
 import {
@@ -11,23 +10,26 @@ import {
   parseOriginPairs,
   sortOriginPairs,
 } from "./saas-origin-pairs.mjs";
+import { compareCodePoints } from "./saas-ordering.mjs";
 import {
   assembleTransactions,
   readScenarioCapture,
 } from "./saas-scenario-capture.mjs";
 import {
   admitTransaction,
-  compareCodePoints,
   openapiPath,
 } from "./saas-api-contract-admission.mjs";
+import { captureCompleteness } from "./saas-api-contract.mjs";
 
 // Validate a replacement's captured bodies against an inferred contract. Findings carry
 // schema coordinates (instance path, keyword) and transaction identity, never body values.
 
 export const VERIFY_LIMITATIONS = [
   "Conformance of the captured request and response bodies to the inferred schemas is checked; business equivalence, authorization and ordering are not.",
-  "Transactions whose bodies were truncated or absent are matched by request line and status only and counted as unverified bodies.",
+  "Transactions whose bodies were truncated, empty or absent where the contract recorded a body are matched by request line and status only and counted as unverified bodies.",
   "Origin pairs are directional (contract origin to replacement origin); undeclared origins are excluded, never guessed.",
+  "A request line the contract lacks is an unmatched_operation finding only when it carries a JSON body; without body evidence it is counted under excluded.unmatched-without-body.",
+  "A pass covers the matched operations only: unexercised_operations lists contract operations the replacement capture never reached, and an incomplete or truncated capture keeps the result unknown.",
 ];
 const CONTRACT_FILE_BYTES = 16 * 1024 * 1024;
 
@@ -60,6 +62,7 @@ function object(value, at) {
     throw new Error(`${at}: expected object`);
 }
 
+/** Read a contract the companion wrote; its digest link is checked before parsing. */
 async function readContract(directory) {
   const openapiSource = await readBoundedExport(
     directory,
@@ -71,15 +74,13 @@ async function readContract(directory) {
     "contract-report.json",
     CONTRACT_FILE_BYTES,
   );
-  const parse = (source) =>
-    parseExportJson(decodeExportText(source), 100_000, 1_000_000, 10_000_000);
-  const report = parse(reportSource);
+  const report = JSON.parse(decodeExportText(reportSource));
   object(report, "contract-report.json");
   if (report.openapi_sha256 !== openapiSource.sha256)
     throw new Error(
       "contract: openapi.json does not match the digest recorded in contract-report.json",
     );
-  const openapi = parse(openapiSource);
+  const openapi = JSON.parse(decodeExportText(openapiSource));
   object(openapi, "openapi.json");
   object(openapi.paths, "openapi.json: paths");
   const settings = openapi["x-rea-contract"];
@@ -124,7 +125,9 @@ function createChecker() {
     findings: [],
     excluded: {},
     matched: 0,
+    exercised: new Set(),
     verifiedBodies: 0,
+    verifiedResponseBodies: 0,
     unverifiedBodies: 0,
   };
   const validatorFor = (schema) => {
@@ -135,17 +138,7 @@ function createChecker() {
     }
     return validator;
   };
-  const checkBody = (side, content, where) => {
-    if (side.kind === "truncated") {
-      state.unverifiedBodies += 1;
-      return;
-    }
-    if (side.kind !== "json") return;
-    const schema = content?.[side.essence]?.schema;
-    if (schema === undefined) {
-      state.unverifiedBodies += 1;
-      return;
-    }
+  const validateJson = (side, schema, where) => {
     let value;
     try {
       value = JSON.parse(
@@ -162,6 +155,7 @@ function createChecker() {
       return;
     }
     state.verifiedBodies += 1;
+    if (where.side === "response") state.verifiedResponseBodies += 1;
     const validator = validatorFor(schema);
     if (validator(value)) return;
     for (const error of validator.errors ?? [])
@@ -173,6 +167,36 @@ function createChecker() {
         message: error.message ?? error.keyword,
       });
   };
+  /** `content` is the contract's media-type map for this side and status, if any. */
+  const checkBody = (side, content, where) => {
+    const expected = content !== undefined && content !== null;
+    if (side.kind === "json") {
+      const schema = content?.[side.essence]?.schema;
+      if (schema !== undefined) validateJson(side, schema, where);
+      else if (expected)
+        state.findings.push({
+          ...where,
+          kind: "structural",
+          keyword: "mediaType",
+          instance_path: "",
+          message: `body media type ${side.essence} is not among the contract media types ${Object.keys(content).join(", ")}`,
+        });
+      else state.unverifiedBodies += 1;
+      return;
+    }
+    if (side.kind === "non-json") {
+      if (expected)
+        state.findings.push({
+          ...where,
+          kind: "structural",
+          keyword: "mediaType",
+          instance_path: "",
+          message: `body media type ${side.essence ?? "unknown"} where the contract recorded JSON (${Object.keys(content).join(", ")})`,
+        });
+      return;
+    }
+    if (expected) state.unverifiedBodies += 1;
+  };
   return { state, checkBody };
 }
 
@@ -182,13 +206,15 @@ function verifyTransaction(transaction, loaded, token, target, checker) {
     resourceTypes: loaded.settings.resource_types,
     maxBodyBytes: loaded.settings.limits.maxBodyBytes,
   });
-  const reason = admission.excluded
-    ? admission.excluded
-    : token(admission.origin, "after") !== target
-      ? "other-origin"
-      : null;
-  if (reason !== null) {
+  const exclude = (reason) => {
     state.excluded[reason] = (state.excluded[reason] ?? 0) + 1;
+  };
+  if (admission.excluded) {
+    exclude(admission.excluded);
+    return;
+  }
+  if (token(admission.origin, "after") !== target) {
+    exclude("other-origin");
     return;
   }
   const path = openapiPath(admission.route, admission.path);
@@ -202,24 +228,53 @@ function verifyTransaction(transaction, loaded, token, target, checker) {
   const operation =
     loaded.openapi.paths[path]?.[transaction.method.toLowerCase()];
   if (operation === null || typeof operation !== "object") {
-    state.findings.push({ ...where, kind: "unmatched_operation" });
+    // Extra JSON traffic is a finding. Without JSON evidence the request line alone
+    // cannot distinguish an asset from an API call, so it is counted, not judged.
+    if (admission.json)
+      state.findings.push({ ...where, kind: "unmatched_operation" });
+    else
+      exclude(admission.nonJson ? "non-json-body" : "unmatched-without-body");
     return;
   }
   state.matched += 1;
-  const statusKey =
-    transaction.status === null ? "default" : String(transaction.status);
-  const response = operation.responses?.[statusKey];
-  if (transaction.status !== null && response === undefined)
-    state.findings.push({ ...where, kind: "unobserved_status" });
+  state.exercised.add(`${transaction.method}\u0000${path}`);
   checkBody(admission.request, operation.requestBody?.content, {
     ...where,
     side: "request",
   });
-  checkBody(admission.response, response?.content, {
+  if (transaction.status === null) {
+    state.findings.push({
+      ...where,
+      kind: "failed_request",
+      message: transaction.failure ?? "request unfinished",
+    });
+    return;
+  }
+  const response = operation.responses?.[String(transaction.status)];
+  if (response === undefined) {
+    state.findings.push({ ...where, kind: "unobserved_status" });
+    return;
+  }
+  checkBody(admission.response, response.content, {
     ...where,
     side: "response",
   });
 }
+
+const unexercisedOperations = (openapi, exercised) =>
+  Object.entries(openapi.paths)
+    .flatMap(([path, item]) =>
+      Object.keys(item ?? {}).map((method) => ({
+        method: method.toUpperCase(),
+        path,
+      })),
+    )
+    .filter(({ method, path }) => !exercised.has(`${method}\u0000${path}`))
+    .sort(
+      (left, right) =>
+        compareCodePoints(left.path, right.path) ||
+        compareCodePoints(left.method, right.method),
+    );
 
 /** Verify one replacement capture against a written contract directory. */
 export async function verifyContract(
@@ -241,7 +296,13 @@ export async function verifyContract(
       captureFile,
       loaded.settings.limits.maxBytes,
     );
-    capture = { file: captureFile, bytes: read.bytes, sha256: read.sha256 };
+    const completeness = captureCompleteness(read.capture);
+    capture = {
+      file: captureFile,
+      bytes: read.bytes,
+      sha256: read.sha256,
+      completeness,
+    };
     const transactions = assembleTransactions(read.capture, {
       maxTransactions: loaded.settings.limits.maxTransactions,
     });
@@ -252,10 +313,12 @@ export async function verifyContract(
       verifyTransaction(transaction, loaded, token, target, checker);
     const { state } = checker;
     state.findings.sort(findingOrder);
+    const complete =
+      completeness.status === "complete" && completeness.dropped === 0;
     const status =
       state.findings.length > 0
         ? "fail"
-        : state.matched === 0 || state.verifiedBodies === 0
+        : state.matched === 0 || state.verifiedResponseBodies === 0 || !complete
           ? "unknown"
           : "pass";
     return admitReport({
@@ -272,7 +335,12 @@ export async function verifyContract(
           .map((reason) => [reason, state.excluded[reason]]),
       ),
       verified_bodies: state.verifiedBodies,
+      verified_response_bodies: state.verifiedResponseBodies,
       unverified_bodies: state.unverifiedBodies,
+      unexercised_operations: unexercisedOperations(
+        loaded.openapi,
+        state.exercised,
+      ),
       findings: state.findings,
       limitations: VERIFY_LIMITATIONS,
     });

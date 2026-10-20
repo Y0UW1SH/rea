@@ -19,7 +19,9 @@ import {
   routeTemplate,
   segmentRule,
 } from "../../../scripts/lib/saas-route-templates.mjs";
+import { mediaTypeEssence } from "../../../scripts/lib/saas-api-contract-admission.mjs";
 import {
+  mediaTypeEssence as ownerMediaTypeEssence,
   scanRouteTemplate,
   segmentRule as ownerSegmentRule,
 } from "../../../src/domain/analysisView/webNetworkRouteTemplates.js";
@@ -46,6 +48,7 @@ it("verifies the API contract companion suites", () => {
   for (const suite of [
     "scripts/saas-api-contract-helpers.test.mjs",
     "scripts/saas-api-contract.test.mjs",
+    "scripts/saas-api-contract-verify.test.mjs",
   ]) {
     const output = execFileSync(
       process.execPath,
@@ -67,15 +70,33 @@ describe("companion mirrors stay identical to their TypeScript owners", () => {
       UUID,
       UUID.toUpperCase(),
       HEX,
+      HEX.toUpperCase(),
       "a".repeat(31),
       "2026-10-20",
       "2026-02-30",
+      "2024-02-29",
+      "2023-02-29",
       "invoices",
       "",
       "v2",
       "0",
     ])
       expect(segmentRule(value)).toBe(ownerSegmentRule(value));
+    for (const reported of [
+      "application/json",
+      " Application/JSON ; charset=utf-8",
+      "\tapplication/problem+json\t",
+      "text/html;charset=UTF-8",
+      "application/json ",
+      " application/json",
+      "",
+      "json",
+      "application/",
+      "a/b c",
+    ])
+      expect(mediaTypeEssence(reported), JSON.stringify(reported)).toBe(
+        ownerMediaTypeEssence(reported),
+      );
     for (const path of [
       "/",
       "/api/invoices",
@@ -109,9 +130,15 @@ describe("companion mirrors stay identical to their TypeScript owners", () => {
       "/relative/path",
       "not a url",
       "https://a.test\\x",
+      "https://a.test/x\\y",
       " https://a.test/x",
       "https://a.test:8443",
       "https://a.te\tst/x",
+      "https://[2001:db8::1]:8443/v1/items",
+      "https://@a.test/x",
+      "git+ssh://a.test/repo",
+      "custom://host\\path",
+      "https://a.test/%2F/x",
     ]) {
       const owner = parseRecordedTransportUrl(value);
       const expected =

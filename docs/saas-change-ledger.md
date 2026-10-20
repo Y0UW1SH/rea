@@ -157,11 +157,28 @@ documentation commit follows them.
   `scripts/saas-api-contract-fixtures.mjs` (`--check` compares committed bytes)
   from `scripts/lib/saas-api-contract-fixture.mjs`; they are synthetic.
 - Regression owners: `scripts/saas-api-contract-helpers.test.mjs`,
-  `scripts/saas-api-contract.test.mjs` (both in `npm run test:saas`) and the
-  wrapper above.
+  `scripts/saas-api-contract.test.mjs` and
+  `scripts/saas-api-contract-verify.test.mjs` (all in `npm run test:saas`, sharing
+  `scripts/saas-api-contract-test-support.mjs`) and the wrapper above.
 - Limits: required properties, formats and enum candidates are sample-bounded
   inferences; non-JSON bodies exclude their transaction; one primary origin per
   contract; `verify` establishes body conformance, not business equivalence.
+- Review fix pass (same increment, after an independent whole-branch review):
+  `verify` now reports a `mediaType` finding when a matched operation answers
+  with a media type the contract never recorded (an HTML fallback page used to
+  pass), a `failed_request` finding for failed or unfinished replacement
+  requests, `unexercised_operations`, and the replacement's completeness; it is
+  `unknown` without a verified response body or on an incomplete capture, and an
+  unmatched request line is a finding only with JSON evidence. `infer` counts
+  failures under `x-rea-failures` instead of modeling them as `default`
+  responses, admits empty bodies, records completeness per input, rejects
+  duplicate captures and declared origins that admit nothing, and lists every
+  sample's capture under `x-rea-evidence.captures`. Inference no longer emits a
+  `format` or decimal `pattern` when any sample is empty or an impossible date,
+  so a contract always accepts its own captures; `__proto__` members render as
+  data; keys sort by code point. Contracts are read back with `JSON.parse` after
+  the digest check, so deep schemas round-trip. The capture reader accepts REA's
+  fully redacted empty URL spelling and validates `events.dropped`.
 
 ## Focused regression gates
 

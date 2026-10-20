@@ -1,8 +1,9 @@
 import { parseExportJson } from "./saas-export-comparison.mjs";
+import { compareCodePoints } from "./saas-ordering.mjs";
 
-// Value-free JSON Schema inference over observed samples. Every inference is marked:
-// required-ness and enum candidates come with sample counts, formats need every sample to
-// agree, and number lexemes (not JavaScript Numbers) decide integer versus number.
+// Structure-first JSON Schema inference over observed samples. Every inference is
+// marked: required-ness and enum candidates come with sample counts, formats need every
+// sample (including empty strings) to agree, and number lexemes decide integer or number.
 
 /** The original numeric token of one JSON value, preserved before any rounding. */
 export class NumberLexeme {
@@ -20,7 +21,18 @@ const DECIMAL = /^-?[0-9]+\.[0-9]+$/u;
 export const DECIMAL_STRING_PATTERN = "^-?[0-9]+\\.[0-9]+$";
 const MAX_DISTINCT_TRACKED = 64;
 
-const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+/** A calendar date that survives a UTC round trip, as ajv-formats and segmentRule demand. */
+const isCalendarDate = (value) => {
+  if (!DATE.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+};
+const isDateTime = (value) =>
+  DATE_TIME.test(value) &&
+  Number.isFinite(Date.parse(value)) &&
+  isCalendarDate(value.slice(0, 10));
 
 /** Strict JSON parsing that hands number tokens to the inference untouched. */
 export function parseJsonForInference(
@@ -51,6 +63,38 @@ function createNode(budget) {
   };
 }
 
+function observeString(node, value, redacted) {
+  node.strings ??= {
+    samples: 0,
+    redacted: 0,
+    empty: 0,
+    nonEmpty: 0,
+    uuid: 0,
+    dateTime: 0,
+    date: 0,
+    decimal: 0,
+    distinct: new Set(),
+    overflow: false,
+  };
+  const strings = node.strings;
+  strings.samples += 1;
+  if (redacted) {
+    strings.redacted += 1;
+    return;
+  }
+  if (value.length === 0) strings.empty += 1;
+  else {
+    strings.nonEmpty += 1;
+    if (UUID.test(value)) strings.uuid += 1;
+    if (isDateTime(value)) strings.dateTime += 1;
+    if (isCalendarDate(value)) strings.date += 1;
+    if (DECIMAL.test(value)) strings.decimal += 1;
+  }
+  if (strings.distinct.has(value)) return;
+  if (strings.distinct.size < MAX_DISTINCT_TRACKED) strings.distinct.add(value);
+  else strings.overflow = true;
+}
+
 function observe(node, value, redacted, budget) {
   node.samples += 1;
   if (value === null) {
@@ -73,34 +117,7 @@ function observe(node, value, redacted, budget) {
   }
   if (typeof value === "string") {
     node.types.add("string");
-    node.strings ??= {
-      samples: 0,
-      redacted: 0,
-      nonEmpty: 0,
-      uuid: 0,
-      dateTime: 0,
-      date: 0,
-      decimal: 0,
-      distinct: new Set(),
-      overflow: false,
-    };
-    const strings = node.strings;
-    strings.samples += 1;
-    if (redacted) {
-      strings.redacted += 1;
-      return;
-    }
-    if (value.length > 0) {
-      strings.nonEmpty += 1;
-      if (UUID.test(value)) strings.uuid += 1;
-      if (DATE_TIME.test(value)) strings.dateTime += 1;
-      if (DATE.test(value)) strings.date += 1;
-      if (DECIMAL.test(value)) strings.decimal += 1;
-    }
-    if (strings.distinct.has(value)) return;
-    if (strings.distinct.size < MAX_DISTINCT_TRACKED)
-      strings.distinct.add(value);
-    else strings.overflow = true;
+    observeString(node, value, redacted);
     return;
   }
   if (Array.isArray(value)) {
@@ -123,60 +140,71 @@ function observe(node, value, redacted, budget) {
   }
 }
 
+function renderStrings(strings, schema, options) {
+  const unredacted = strings.samples - strings.redacted;
+  if (
+    unredacted >= options.format_min_samples &&
+    strings.nonEmpty > 0 &&
+    strings.empty === 0
+  ) {
+    if (strings.uuid === strings.nonEmpty) schema.format = "uuid";
+    else if (strings.dateTime === strings.nonEmpty) schema.format = "date-time";
+    else if (strings.date === strings.nonEmpty) schema.format = "date";
+    else if (strings.decimal === strings.nonEmpty) {
+      schema.pattern = DECIMAL_STRING_PATTERN;
+      schema["x-rea-format"] = "decimal-string";
+    }
+  }
+  if (
+    !strings.overflow &&
+    unredacted >= options.enum_min_samples &&
+    strings.distinct.size <= options.enum_max_cardinality
+  )
+    schema["x-rea-enum-candidates"] = [...strings.distinct].sort(
+      compareCodePoints,
+    );
+}
+
+function renderProperties(node, schema, options) {
+  const keys = [...node.properties.keys()].sort(compareCodePoints);
+  const required = [];
+  // Object.fromEntries defines own properties, so a "__proto__" member stays data.
+  schema.properties = Object.fromEntries(
+    keys.map((key) => [key, render(node.properties.get(key).node, options)]),
+  );
+  const presence = Object.fromEntries(
+    keys.map((key) => [
+      key,
+      { seen: node.properties.get(key).seen, samples: node.objects },
+    ]),
+  );
+  for (const key of keys)
+    if (
+      node.properties.get(key).seen === node.objects &&
+      node.objects >= options.required_min_samples
+    )
+      required.push(key);
+  if (required.length > 0) {
+    schema.required = required;
+    schema["x-rea-basis"] = "inferred";
+  }
+  schema["x-rea-presence"] = presence;
+}
+
 function render(node, options) {
   const types = [...node.types]
     .map((type) =>
       type === "number" && node.numbers.decimals === 0 ? "integer" : type,
     )
-    .sort(compare);
+    .sort(compareCodePoints);
   const schema = {};
   if (types.length === 1) schema.type = types[0];
   else if (types.length > 1) schema.type = types;
   if (node.numbers?.unsafe)
     schema["x-rea-exactness"] = "unsafe-integer-observed";
-  if (node.properties !== null) {
-    const keys = [...node.properties.keys()].sort(compare);
-    const properties = {};
-    const presence = {};
-    const required = [];
-    for (const key of keys) {
-      const entry = node.properties.get(key);
-      properties[key] = render(entry.node, options);
-      presence[key] = { seen: entry.seen, samples: node.objects };
-      if (
-        entry.seen === node.objects &&
-        node.objects >= options.required_min_samples
-      )
-        required.push(key);
-    }
-    schema.properties = properties;
-    if (required.length > 0) {
-      schema.required = required;
-      schema["x-rea-basis"] = "inferred";
-    }
-    schema["x-rea-presence"] = presence;
-  }
+  if (node.properties !== null) renderProperties(node, schema, options);
   if (node.items !== null) schema.items = render(node.items, options);
-  if (node.strings !== null) {
-    const strings = node.strings;
-    const unredacted = strings.samples - strings.redacted;
-    if (unredacted >= options.format_min_samples && strings.nonEmpty > 0) {
-      if (strings.uuid === strings.nonEmpty) schema.format = "uuid";
-      else if (strings.dateTime === strings.nonEmpty)
-        schema.format = "date-time";
-      else if (strings.date === strings.nonEmpty) schema.format = "date";
-      else if (strings.decimal === strings.nonEmpty) {
-        schema.pattern = DECIMAL_STRING_PATTERN;
-        schema["x-rea-format"] = "decimal-string";
-      }
-    }
-    if (
-      !strings.overflow &&
-      unredacted >= options.enum_min_samples &&
-      strings.distinct.size <= options.enum_max_cardinality
-    )
-      schema["x-rea-enum-candidates"] = [...strings.distinct].sort(compare);
-  }
+  if (node.strings !== null) renderStrings(node.strings, schema, options);
   schema["x-rea-samples"] = node.samples;
   return schema;
 }

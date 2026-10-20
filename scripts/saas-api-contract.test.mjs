@@ -1,10 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   CONTRACT_FIXTURE_VARIANTS,
   buildContractFixture,
@@ -15,52 +13,31 @@ import {
   inferContract,
   validateContractManifest,
   verifyContract,
+  writeContract,
 } from "./lib/saas-api-contract.mjs";
-
-const fixtures = fileURLToPath(
-  new URL("./fixtures/saas-api-contract/", import.meta.url),
-);
-const cli = fileURLToPath(new URL("./saas-api-contract.mjs", import.meta.url));
-const generator = fileURLToPath(
-  new URL("./saas-api-contract-fixtures.mjs", import.meta.url),
-);
-const manifest = () => contractFixtureManifest();
-const pairs = [
-  {
-    before_origin: "https://app.example.test",
-    after_origin: "http://localhost:4300",
-  },
-];
-const scratch = async (t, prefix = "rea-contract-") => {
-  const dir = await mkdtemp(join(tmpdir(), prefix));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-};
-const stage = async (
-  t,
-  manifestValue = manifest(),
-  variants = CONTRACT_FIXTURE_VARIANTS,
-) => {
-  const dir = await scratch(t);
-  await writeFile(join(dir, "manifest.json"), serializeFixture(manifestValue));
-  for (const variant of variants)
-    await writeFile(
-      join(dir, `${variant}.json`),
-      serializeFixture(buildContractFixture(variant)),
-    );
-  return dir;
-};
+import {
+  cliPath,
+  fixturesDirectory,
+  generatorPath,
+  manifest,
+  pairs,
+  stage,
+} from "./saas-api-contract-test-support.mjs";
 
 test("committed fixtures equal the deterministic builder output", async () => {
   for (const [name, expected] of [
     ["manifest.json", serializeFixture(contractFixtureManifest())],
-    ...CONTRACT_FIXTURE_VARIANTS.map((v) => [
-      `${v}.json`,
-      serializeFixture(buildContractFixture(v)),
+    ...CONTRACT_FIXTURE_VARIANTS.map((variant) => [
+      `${variant}.json`,
+      serializeFixture(buildContractFixture(variant)),
     ]),
   ])
-    assert.equal(await readFile(join(fixtures, name), "utf8"), expected, name);
-  const check = spawnSync(process.execPath, [generator, "--check"], {
+    assert.equal(
+      await readFile(join(fixturesDirectory, name), "utf8"),
+      expected,
+      name,
+    );
+  const check = spawnSync(process.execPath, [generatorPath, "--check"], {
     encoding: "utf8",
   });
   assert.equal(check.status, 0, check.stderr);
@@ -81,6 +58,9 @@ test("manifest validation fails closed on unknown fields, bad limits and non-ori
     },
     (m) => {
       m.captures[0].file = "../escape.json";
+    },
+    (m) => {
+      m.captures.push({ file: m.captures[0].file });
     },
     (m) => {
       m.limits.maxBytes = 32 * 1024 * 1024;
@@ -216,6 +196,10 @@ test("inference yields an evidence-cited OpenAPI contract and a coverage report"
   assert.equal(report.coverage.admitted, 16);
   assert.equal(report.inputs.length, 2);
   assert.match(report.inputs[0].sha256, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(report.inputs[0].completeness, {
+    status: "complete",
+    dropped: 0,
+  });
   assert.match(report.openapi_sha256, /^[a-f0-9]{64}$/u);
   assert.ok(
     report.limitations.some((line) => /Response\.body\(\)/u.test(line)),
@@ -240,7 +224,7 @@ test("inference fails closed on missing content, tampered bodies and over-budget
     header_values: false,
   };
   noContent.events.items = noContent.events.items.filter(
-    (e) => e.kind !== "network-content",
+    (event) => event.kind !== "network-content",
   );
   noContent.events.retained = noContent.events.items.length;
   await writeFile(join(dir, "none.json"), serializeFixture(noContent));
@@ -252,7 +236,7 @@ test("inference fails closed on missing content, tampered bodies and over-budget
   assert.match(missing.report.reason, /network content/u);
   const tampered = buildContractFixture("reference-a");
   const content = tampered.events.items.find(
-    (e) => e.kind === "network-content",
+    (event) => event.kind === "network-content",
   );
   content.body.sha256 = "0".repeat(64);
   await writeFile(join(dir, "tampered.json"), serializeFixture(tampered));
@@ -284,7 +268,6 @@ test("verify accepts a conforming replacement and classifies drift", async (t) =
   const out = join(dir, "contract");
   const inferred = await inferContract(manifest(), dir);
   assert.equal(inferred.status, "produced");
-  const { writeContract } = await import("./lib/saas-api-contract.mjs");
   await writeContract(out, inferred);
   const ok = await verifyContract(out, dir, "replacement.json", {
     originPairs: pairs,
@@ -292,16 +275,22 @@ test("verify accepts a conforming replacement and classifies drift", async (t) =
   assert.equal(ok.status, "pass", JSON.stringify(ok.findings));
   assert.equal(ok.matched, 8);
   assert.deepEqual(ok.findings, []);
+  assert.deepEqual(ok.unexercised_operations, []);
   const drifted = await verifyContract(out, dir, "replacement-drifted.json", {
     originPairs: pairs,
   });
   assert.equal(drifted.status, "fail");
-  const kinds = drifted.findings.map((f) => f.kind).sort();
-  assert.ok(kinds.includes("structural"), kinds.join(","));
-  assert.ok(kinds.includes("presence"), kinds.join(","));
-  assert.ok(kinds.includes("unobserved_status"), kinds.join(","));
-  assert.ok(kinds.includes("unmatched_operation"), kinds.join(","));
-  const structural = drifted.findings.find((f) => f.kind === "structural");
+  const kinds = drifted.findings.map((finding) => finding.kind).sort();
+  for (const kind of [
+    "structural",
+    "presence",
+    "unobserved_status",
+    "unmatched_operation",
+  ])
+    assert.ok(kinds.includes(kind), kinds.join(","));
+  const structural = drifted.findings.find(
+    (finding) => finding.kind === "structural",
+  );
   assert.equal(structural.keyword, "type");
   assert.match(structural.instance_path, /total/u);
   assert.equal(Object.hasOwn(structural, "value"), false);
@@ -324,7 +313,7 @@ test("CLI writes contract files and maps exit codes for infer and verify", async
   const dir = await stage(t);
   const out = join(dir, "out");
   const run = (args) =>
-    spawnSync(process.execPath, [cli, ...args], {
+    spawnSync(process.execPath, [cliPath, ...args], {
       encoding: "utf8",
       timeout: 60_000,
     });
@@ -343,12 +332,13 @@ test("CLI writes contract files and maps exit codes for infer and verify", async
     2,
     "existing output directory is never reused",
   );
+  const map = "https://app.example.test=http://localhost:4300";
   const pass = run([
     "verify",
     out,
     join(dir, "replacement.json"),
     "--origin-map",
-    "https://app.example.test=http://localhost:4300",
+    map,
   ]);
   assert.equal(pass.status, 0, pass.stderr);
   assert.equal(JSON.parse(pass.stdout).status, "pass");
@@ -357,7 +347,7 @@ test("CLI writes contract files and maps exit codes for infer and verify", async
     out,
     join(dir, "replacement-drifted.json"),
     "--origin-map",
-    "https://app.example.test=http://localhost:4300",
+    map,
   ]);
   assert.equal(fail.status, 1, fail.stderr);
   assert.equal(JSON.parse(fail.stdout).status, "fail");
@@ -372,6 +362,10 @@ test("CLI writes contract files and maps exit codes for infer and verify", async
       "--origin-map",
       "not-an-origin=x",
     ]).status,
+    2,
+  );
+  assert.equal(
+    run(["verify", out, join(dir, "replacement.json"), "--origin-map"]).status,
     2,
   );
 });

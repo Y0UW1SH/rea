@@ -1,8 +1,14 @@
 import { isCanonicalOrigin } from "./saas-origin-pairs.mjs";
+import { compareCodePoints, sortCodePoints } from "./saas-ordering.mjs";
 import { recordedPath, routeTemplate } from "./saas-route-templates.mjs";
 
 // Manifest validation and transaction admission shared by contract inference and
-// verification, so both sides admit exactly the same request lines and bodies.
+// verification, so both sides admit exactly the same request lines and classify bodies
+// the same way. Whether a non-JSON body excludes a transaction is the caller's decision.
+
+export { compareCodePoints, sortCodePoints };
+// mediaTypeEssence below is exported for the parity test in
+// tests/boundary/cli/saasApiContract.test.ts as well as for classifyBody.
 
 export const DEFAULT_OPTIONS = {
   required_min_samples: 3,
@@ -18,19 +24,6 @@ export const LIMIT_CEILINGS = {
   maxSchemaNodes: 1_000_000,
   maxEvidencePerOperation: 10_000,
 };
-
-/** Unicode code point order, as the TypeScript views sort templates and methods. */
-export function compareCodePoints(left, right) {
-  const a = [...left];
-  const b = [...right];
-  const length = Math.min(a.length, b.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = a[index].codePointAt(0) - b[index].codePointAt(0);
-    if (difference !== 0) return difference < 0 ? -1 : 1;
-  }
-  return a.length === b.length ? 0 : a.length < b.length ? -1 : 1;
-}
-export const sortCodePoints = (values) => [...values].sort(compareCodePoints);
 export const serializeContract = (value) =>
   `${JSON.stringify(value, null, 2)}\n`;
 
@@ -115,6 +108,8 @@ export function validateContractManifest(manifest) {
     relativeFile(capture.file, `captures[${index}].file`);
     return { file: capture.file };
   });
+  if (new Set(captures.map(({ file }) => file)).size !== captures.length)
+    throw new Error("captures: duplicate capture file");
   const origins = manifestOrigins(manifest.origins);
   object(manifest.limits, Object.keys(LIMIT_CEILINGS), "limits");
   for (const [key, ceiling] of Object.entries(LIMIT_CEILINGS))
@@ -130,25 +125,39 @@ export function validateContractManifest(manifest) {
   };
 }
 
-/** Lowercase type/subtype without parameters; malformed essences are unknown. */
+const MEDIA_TYPE_ESSENCE =
+  /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+$/u;
+
+/**
+ * Lowercase type/subtype without parameters; malformed essences are unknown.
+ * Mirror of mediaTypeEssence in src/domain/analysisView/webNetworkRouteTemplates.ts
+ * (HTTP OWS is SP and HTAB only); the vitest wrapper asserts parity.
+ */
 export function mediaTypeEssence(reported) {
   if (typeof reported !== "string") return null;
-  const essence = reported.split(";")[0].trim();
-  return /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+$/u.test(
-    essence,
+  const separator = reported.indexOf(";");
+  let start = 0;
+  let end = separator < 0 ? reported.length : separator;
+  while (start < end && (reported[start] === " " || reported[start] === "\t"))
+    start += 1;
+  while (
+    end > start &&
+    (reported[end - 1] === " " || reported[end - 1] === "\t")
   )
-    ? essence.toLowerCase()
-    : null;
+    end -= 1;
+  const essence = reported.slice(start, end);
+  return MEDIA_TYPE_ESSENCE.test(essence) ? essence.toLowerCase() : null;
 }
 const isJsonEssence = (essence) =>
   essence === "application/json" ||
   (essence !== null && essence.endsWith("+json"));
 
-/** A retained body is JSON evidence, non-JSON evidence, truncated, or absent. */
+/** A retained body is JSON evidence, non-JSON evidence, empty, truncated, or absent. */
 export function classifyBody(body, maxBodyBytes) {
   if (body.state === "captured") {
     if (body.bytes > maxBodyBytes) return { kind: "truncated" };
     const essence = mediaTypeEssence(body.media_type);
+    if (body.bytes === 0) return { kind: "empty", essence };
     if (!isJsonEssence(essence)) return { kind: "non-json", essence };
     return { kind: "json", essence, body };
   }
@@ -172,16 +181,14 @@ export function admitTransaction(transaction, { resourceTypes, maxBodyBytes }) {
     return { excluded: "resource-type" };
   const request = classifyBody(transaction.request.body, maxBodyBytes);
   const response = classifyBody(transaction.response.body, maxBodyBytes);
-  if (request.kind === "non-json" || response.kind === "non-json")
-    return { excluded: "non-json-body" };
-  const route = routeTemplate(line.path);
   return {
     origin: line.origin,
     path: line.path,
-    route,
+    route: routeTemplate(line.path),
     request,
     response,
     json: request.kind === "json" || response.kind === "json",
+    nonJson: request.kind === "non-json" || response.kind === "non-json",
   };
 }
 

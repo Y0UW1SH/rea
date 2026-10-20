@@ -343,33 +343,53 @@ What the contract states, and how each statement is marked:
   when every sample is an integer token); `required` appears only at complete
   presence with at least `required_min_samples` samples, always with
   `x-rea-basis: inferred` and `x-rea-presence` counts; `format` (`uuid`,
-  `date-time`, `date`) and the decimal-string `pattern` need every sample to
-  agree; enum candidates appear only as `x-rea-enum-candidates`, never as `enum`.
+  `date-time`, `date`, checked against real calendar dates) and the
+  decimal-string `pattern` need every sample, including empty strings, to agree,
+  so a contract always accepts the captures it was inferred from; enum
+  candidates are observed literal values offered only as
+  `x-rea-enum-candidates`, never as `enum`.
 - GraphQL POSTs whose request body has a string `query` are grouped under
   `x-rea-graphql-operations` by `operationName`, with `variables` and `data`
   schemas per operation.
-- Every operation carries `x-rea-evidence` (capture file digests, transaction ids,
-  step ids, statuses, sample count) and `x-rea-unknowns`: the fixed
-  `authorization-model`, `response-semantics` and `state-transition` unknowns the
-  environment manifest also states, plus `error-responses-unobserved` when only
-  2xx responses were seen.
+- Every operation carries `x-rea-evidence` (the capture files and digests its
+  samples came from, transaction entries whose `capture` index refers to
+  `x-rea-contract.captures`, step ids, statuses, sample count) and
+  `x-rea-unknowns`: the fixed `authorization-model`, `response-semantics` and
+  `state-transition` unknowns the environment manifest also states, plus
+  `error-responses-unobserved` when no 4xx or 5xx response was seen.
 - The report records the primary origin, per-input digests, coverage (admitted
   transactions; exclusions by reason such as `other-origin`, `non-json-body`,
   `resource-type` or `url-redacted`; truncated and unparseable bodies), the
   operation list and the `openapi_sha256` that `verify` checks.
+
+Failed and unfinished requests are never modeled as responses: they are counted
+per operation under `x-rea-failures` with their reasons. Empty bodies (for
+example a `204`) are admitted without a schema and counted as
+`x-rea-empty-bodies`. Each input's `completeness` status and dropped-event count
+are recorded in the report and in `x-rea-contract.captures`, and an incomplete
+capture adds a limitation line. A declared origin that admits no transaction, a
+duplicate capture (same file or same digest) or a run with no admitted transaction
+at all is `invalid`, never an empty contract.
 
 `verify` reads a replacement capture, folds its origins onto the contract origin
 through directional `--origin-map CONTRACT=REPLACEMENT` pairs (the same rule as
 `origin_pairs`; undeclared origins are excluded, never guessed), matches each
 admitted transaction to an operation by method and template, and validates the
 captured JSON bodies with Ajv against the inferred schemas with the `x-rea-*`
-markers removed. Findings are `structural` (type, format, pattern, items),
-`presence` (required), `unobserved_status` and `unmatched_operation`; each carries
-the instance path, keyword, transaction id and step id, never body values. Exit 0
-means every matched body conformed, 1 means findings, and 2 means invalid input or
-an unknown result (no matched transaction, or no body could be verified).
-Conformance of captured bodies is not business equivalence; use the workflow
-evaluator for outcomes.
+markers removed. Findings are `structural` (type, format, pattern, items, and a
+`mediaType` keyword when a matched operation answers with a media type the
+contract never recorded, such as an HTML fallback page), `presence` (required),
+`unobserved_status`, `failed_request` (the replacement request failed or never
+finished) and `unmatched_operation` (a request line the contract lacks, reported
+only when it carries a JSON body; without body evidence it is counted under
+`excluded.unmatched-without-body`). Each finding carries the instance path,
+keyword, transaction id and step id, never body values. The report also lists
+`unexercised_operations`, the contract operations the replacement never reached,
+and the replacement's completeness. Exit 0 means every matched body conformed on
+a complete capture, 1 means findings, and 2 means invalid input or an unknown
+result: no matched transaction, no response body verified, or an incomplete or
+truncated replacement capture. Conformance of captured bodies is not business
+equivalence; use the workflow evaluator for outcomes.
 
 Limits: bodies above the capture's retained size limit (64 KiB by default) or the
 manifest `maxBodyBytes` contribute no schema and are counted as truncated;

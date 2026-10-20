@@ -7,25 +7,35 @@ The contract companion (`scripts/saas-api-contract.mjs`, see the
 was built on the integrated feature head with Node **24.21.0** and npm
 **11.19.0** on Windows 11 Pro 10.0.26100:
 
-- `npm run test:saas`: **102 passed** (84 existing plus 12 helper and 6 contract
-  cases). The contract cases cover deterministic fixtures equal to their builder,
-  fail-closed manifest validation, the inferred OpenAPI document and coverage
-  report (including that a sentinel header value never appears in any output
-  byte and that `enum` is never emitted), missing-content, tampered-digest,
-  over-budget and traversal inputs, `verify` pass/fail/unknown/invalid outcomes
-  with every finding kind, and the CLI exit codes.
+- `npm run test:saas`: **110 passed** (84 existing plus 15 helper, 6 contract and
+  5 review-pass cases). The contract cases cover deterministic fixtures equal to
+  their builder, fail-closed manifest validation, the inferred OpenAPI document
+  and coverage report (including that a sentinel header value never appears in
+  any output byte and that `enum` is never emitted), missing-content,
+  tampered-digest, over-budget and traversal inputs, `verify`
+  pass/fail/unknown/invalid outcomes with every finding kind, and the CLI exit
+  codes. The review-pass cases, written after an independent whole-branch review
+  and watched failing first, cover HTML or other media types answering a matched
+  operation, replacements without response bodies or with an incomplete capture,
+  failed and unfinished requests on both sides, every reference capture verifying
+  against its own contract (including fourteen-level nesting, empty strings and
+  impossible dates), empty `204` bodies, declared origins that admit nothing,
+  duplicate captures and evidence truncation.
 - `node scripts/run-exact-tests.mjs run tests/boundary/cli/saasApiContract.test.ts`:
   **6 passed**, including parity of the companion mirrors with
-  `segmentRule`/`scanRouteTemplate`, `parseRecordedTransportUrl`,
-  `commitBrowserScenarioNormalization` and `projectScenarioOrigins`, and
-  `browserScenarioCaptureSchema` acceptance of all four committed fixtures.
+  `segmentRule`/`scanRouteTemplate` (uppercase hex, leap days), `mediaTypeEssence`
+  (tab and non-breaking-space padding), `parseRecordedTransportUrl` (IPv6,
+  bare `@`, backslashes, non-special schemes), `commitBrowserScenarioNormalization`
+  and `projectScenarioOrigins`, and `browserScenarioCaptureSchema` acceptance of
+  all four committed fixtures.
 - The workflow/CI command mirror case of
   `tests/boundary/filesystem/saasUpstreamIntegration.test.ts`: **1 passed**.
-- `npx tsc --noEmit`, `node scripts/check-doc-facts.mjs`, `oxfmt --check` on the
-  new and edited files and `git diff --check`: passed. `oxlint` reports only
-  max-params and max-lines-per-function warnings on the fixture builder, the
-  GraphQL recorder, the verify loop and the inference test, within the
-  repository's warning-only policy.
+- `npx tsc --noEmit`, `npm run knip`, `npm run lint` (0 errors),
+  `node scripts/check-doc-facts.mjs`, `npm run format:check` and
+  `git diff --check`: passed. `oxlint` reports only max-params,
+  max-lines-per-function and one complexity warning on the fixture builder, the
+  GraphQL recorder, the verify loop, the transaction assembler and the inference
+  test, within the repository's warning-only policy.
 - Not run here: the fork's hosted workflows (Actions remain disabled) and any
   real capture. The committed captures are synthetic and prove the companion,
   not a vendor API; the Playwright response-body provenance caveat is quoted in

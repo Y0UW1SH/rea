@@ -29,7 +29,10 @@ if (args.length > 1 || (args.length === 1 && !check)) {
   let stale = 0;
   if (!check) await mkdir(directory, { recursive: true });
   for (const [name, expected] of files) {
-    const path = new URL(name, `file://${directory.replaceAll("\\", "/")}/`);
+    const path = new URL(
+      name,
+      new URL("./fixtures/saas-api-contract/", import.meta.url),
+    );
     if (check) {
       const actual = await readFile(path, "utf8").catch(() => null);
       if (actual !== expected) {

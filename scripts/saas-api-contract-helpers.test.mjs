@@ -16,6 +16,7 @@ import {
 import {
   assembleTransactions,
   readScenarioCapture,
+  validateScenarioCapture,
 } from "./lib/saas-scenario-capture.mjs";
 import {
   NumberLexeme,
@@ -182,7 +183,7 @@ const capture = (events) => ({
     { step_index: 0, step_id: "scenario_start" },
     { step_index: 1, step_id: "open-invoices" },
   ],
-  events: { items: events },
+  events: { items: events, dropped: 0 },
   completeness: { status: "complete" },
 });
 const request = (sequence, step_index, id, method, value) => ({
@@ -392,4 +393,69 @@ test("required needs enough samples, redacted bodies add structure only, node bu
     () => tiny.add(parseJsonForInference('{"a":{"b":{"c":1}}}')),
     /maxSchemaNodes/,
   );
+});
+
+test("fully redacted URLs with an empty spelling are accepted by the capture reader", () => {
+  const redacted = request(1, 1, "t1", "GET", "https://app.example.test/x");
+  redacted.url = {
+    url: "",
+    origin: null,
+    query_parameter_names: [],
+    redacted: true,
+  };
+  assert.doesNotThrow(() => validateScenarioCapture(capture([redacted])));
+  const unredacted = request(1, 1, "t1", "GET", "https://app.example.test/x");
+  unredacted.url = {
+    url: "",
+    origin: null,
+    query_parameter_names: [],
+    redacted: false,
+  };
+  assert.throws(() => validateScenarioCapture(capture([unredacted])), /url/u);
+});
+
+test("prototype-named members, empty strings and impossible dates keep schemas consistent", () => {
+  const proto = createSchemaAccumulator({ maxSchemaNodes: 100 });
+  for (let index = 0; index < 3; index += 1)
+    proto.add(parseJsonForInference('{"__proto__":1,"b":2}'));
+  const schema = proto.finish(options);
+  assert.ok(Object.hasOwn(schema.properties, "__proto__"));
+  assert.deepEqual(schema.required, ["__proto__", "b"]);
+  assert.deepEqual(
+    Object.getOwnPropertyDescriptor(schema["x-rea-presence"], "__proto__")
+      .value,
+    { seen: 3, samples: 3 },
+  );
+  const empties = createSchemaAccumulator({ maxSchemaNodes: 100 });
+  for (const uid of [UUID, "", UUID])
+    empties.add(
+      parseJsonForInference(
+        JSON.stringify({
+          uid,
+          amount: uid === "" ? "" : "1.50",
+          day: uid === "" ? "" : "2026-10-20",
+        }),
+      ),
+    );
+  const sparse = empties.finish(options);
+  assert.equal(Object.hasOwn(sparse.properties.uid, "format"), false);
+  assert.equal(Object.hasOwn(sparse.properties.amount, "pattern"), false);
+  assert.equal(Object.hasOwn(sparse.properties.day, "format"), false);
+  const dates = createSchemaAccumulator({ maxSchemaNodes: 100 });
+  for (const day of ["2026-02-30", "2026-10-20"])
+    dates.add(
+      parseJsonForInference(JSON.stringify({ day, at: `${day}T10:00:00Z` })),
+    );
+  const calendar = dates.finish(options);
+  assert.equal(Object.hasOwn(calendar.properties.day, "format"), false);
+  assert.equal(Object.hasOwn(calendar.properties.at, "format"), false);
+});
+
+test("schema keys follow Unicode code point order", () => {
+  const accumulator = createSchemaAccumulator({ maxSchemaNodes: 100 });
+  accumulator.add(parseJsonForInference('{"😀":1,"ｚ":2}'));
+  assert.deepEqual(Object.keys(accumulator.finish(options).properties), [
+    "ｚ",
+    "😀",
+  ]);
 });

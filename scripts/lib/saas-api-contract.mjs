@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { admitReport } from "./saas-export-budget.mjs";
 import {
@@ -38,6 +38,12 @@ const plainObject = (value) =>
   !Array.isArray(value) &&
   Object.getPrototypeOf(value) === Object.prototype;
 
+/** Completeness facts a capture carries about itself; recorded, never inferred away. */
+export const captureCompleteness = (capture) => ({
+  status: capture.completeness.status,
+  dropped: capture.events.dropped,
+});
+
 function parseBody(body, coverage) {
   try {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(body.buffer);
@@ -57,7 +63,7 @@ function selectPrimaryOrigin(records, declared) {
   if (declared) return declared[0];
   const counts = new Map();
   for (const { admission } of records) {
-    if (admission.excluded) continue;
+    if (admission.excluded || admission.nonJson) continue;
     const entry = counts.get(admission.origin) ?? { json: 0, total: 0 };
     entry.total += 1;
     if (admission.json) entry.json += 1;
@@ -87,8 +93,11 @@ const newOperation = (transaction, admission, path) => ({
   requestSchemas: new Map(),
   requestTruncated: 0,
   responses: new Map(),
+  failures: 0,
+  failureReasons: new Set(),
   graphql: new Map(),
   samples: 0,
+  captureIndices: new Set(),
   evidence: [],
   evidenceTruncated: false,
 });
@@ -96,6 +105,7 @@ const newOperation = (transaction, admission, path) => ({
 function recordRequestLine(operation, record, limits) {
   const { capture, transaction, admission } = record;
   operation.samples += 1;
+  operation.captureIndices.add(capture);
   if (operation.evidence.length < limits.maxEvidencePerOperation)
     operation.evidence.push({
       capture,
@@ -122,20 +132,18 @@ function recordRequestLine(operation, record, limits) {
     operation.responseHeaderNames.add(name);
 }
 
+/** Add one body to its schema map; reports whether it was truncated or empty. */
 function recordBody(side, schemas, coverage, accumulator) {
   if (side.kind === "json") {
     const value = parseBody(side.body, coverage);
-    if (value === undefined) return { value: undefined, truncated: false };
+    if (value === undefined) return { value: undefined, kind: "unparseable" };
     const schema = schemas.get(side.essence) ?? accumulator();
     schema.add(value, { redacted: side.body.redacted });
     schemas.set(side.essence, schema);
-    return { value, truncated: false };
+    return { value, kind: "json" };
   }
-  if (side.kind === "truncated") {
-    coverage.truncated += 1;
-    return { value: undefined, truncated: true };
-  }
-  return { value: undefined, truncated: false };
+  if (side.kind === "truncated") coverage.truncated += 1;
+  return { value: undefined, kind: side.kind };
 }
 
 function recordGraphql(operation, admission, request, response, accumulator) {
@@ -166,29 +174,36 @@ function recordTransaction(operation, record, manifest, coverage) {
   const accumulator = () =>
     createSchemaAccumulator({ maxSchemaNodes: manifest.limits.maxSchemaNodes });
   recordRequestLine(operation, record, manifest.limits);
-  const statusKey =
-    transaction.status === null ? "default" : String(transaction.status);
-  const response = operation.responses.get(statusKey) ?? {
-    count: 0,
-    truncated: 0,
-    schemas: new Map(),
-  };
-  response.count += 1;
-  operation.responses.set(statusKey, response);
   const request = recordBody(
     admission.request,
     operation.requestSchemas,
     coverage,
     accumulator,
   );
-  if (request.truncated) operation.requestTruncated += 1;
+  if (request.kind === "truncated") operation.requestTruncated += 1;
+  if (transaction.status === null) {
+    // A failed or unfinished request observed no response; never model it as one.
+    operation.failures += 1;
+    operation.failureReasons.add(transaction.failure ?? "unfinished");
+    return;
+  }
+  const statusKey = String(transaction.status);
+  const response = operation.responses.get(statusKey) ?? {
+    count: 0,
+    truncated: 0,
+    empty: 0,
+    schemas: new Map(),
+  };
+  response.count += 1;
+  operation.responses.set(statusKey, response);
   const reply = recordBody(
     admission.response,
     response.schemas,
     coverage,
     accumulator,
   );
-  if (reply.truncated) response.truncated += 1;
+  if (reply.kind === "truncated") response.truncated += 1;
+  if (reply.kind === "empty") response.empty += 1;
   if (transaction.method === "POST")
     recordGraphql(
       operation,
@@ -221,6 +236,10 @@ function buildModel(records, primary, manifest) {
       exclude("other-origin");
       continue;
     }
+    if (admission.nonJson) {
+      exclude("non-json-body");
+      continue;
+    }
     coverage.admitted += 1;
     const path = openapiPath(admission.route, admission.path);
     const key = `${transaction.method}\u0000${path}`;
@@ -231,6 +250,10 @@ function buildModel(records, primary, manifest) {
     }
     recordTransaction(operation, record, manifest, coverage);
   }
+  if (coverage.admitted === 0)
+    throw new Error(
+      `captures: no admitted transaction for the primary origin ${primary}`,
+    );
   coverage.excluded = Object.fromEntries(
     sortCodePoints(Object.keys(coverage.excluded)).map((reason) => [
       reason,
@@ -249,12 +272,16 @@ function buildModel(records, primary, manifest) {
 
 async function readCaptures(manifest, root, inputs) {
   const records = [];
+  const digests = new Set();
   for (const [index, { file }] of manifest.captures.entries()) {
     const read = await readScenarioCapture(
       root,
       file,
       manifest.limits.maxBytes,
     );
+    if (digests.has(read.sha256))
+      throw new Error(`captures: duplicate capture digest (${file})`);
+    digests.add(read.sha256);
     const selection = read.capture.scenario.network_content;
     if (!selection.request_body && !selection.response_body)
       throw new Error(
@@ -268,6 +295,7 @@ async function readCaptures(manifest, root, inputs) {
       bytes: read.bytes,
       sha256: read.sha256,
       transactions: transactions.length,
+      completeness: captureCompleteness(read.capture),
     });
     for (const transaction of transactions)
       records.push({
@@ -282,6 +310,17 @@ async function readCaptures(manifest, root, inputs) {
   return records;
 }
 
+const completenessLimitations = (inputs) =>
+  inputs
+    .filter(
+      ({ completeness }) =>
+        completeness.status !== "complete" || completeness.dropped > 0,
+    )
+    .map(
+      ({ file, completeness }) =>
+        `Capture ${file} is ${completeness.status} with ${completeness.dropped} dropped event(s); operations or samples may be missing from this contract.`,
+    );
+
 /** Infer the contract for one manifest; `invalid` keeps the inputs read so far. */
 export async function inferContract(manifest, root) {
   const inputs = [];
@@ -291,7 +330,17 @@ export async function inferContract(manifest, root) {
     const records = await readCaptures(normalized, root, inputs);
     const primary = selectPrimaryOrigin(records, normalized.origins);
     const model = buildModel(records, primary, normalized);
-    const openapi = renderOpenApi(model, normalized, inputs, primary);
+    const limitations = [
+      ...CONTRACT_LIMITATIONS,
+      ...completenessLimitations(inputs),
+    ];
+    const openapi = renderOpenApi(
+      model,
+      normalized,
+      inputs,
+      primary,
+      limitations,
+    );
     const report = {
       version: 1,
       status: "produced",
@@ -305,12 +354,13 @@ export async function inferContract(manifest, root) {
         api_surface_template: operation.template,
         samples: operation.samples,
         statuses: [...operation.responses.keys()].sort(statusOrder),
+        failures: operation.failures,
       })),
       unknowns: FIXED_UNKNOWNS,
       resource_types: normalized.resource_types,
       options: normalized.options,
       limits: normalized.limits,
-      limitations: CONTRACT_LIMITATIONS,
+      limitations,
       openapi_sha256: sha256(serializeContract(openapi)),
     };
     return admitReport({ status: "produced", openapi, report });
@@ -336,7 +386,13 @@ export async function writeContract(directory, result) {
   await mkdir(directory);
   const openapi = join(directory, "openapi.json");
   const report = join(directory, "contract-report.json");
-  await writeFile(openapi, serializeContract(result.openapi));
-  await writeFile(report, serializeContract(result.report));
+  try {
+    await writeFile(openapi, serializeContract(result.openapi));
+    await writeFile(report, serializeContract(result.report));
+  } catch (error) {
+    // Never leave a half-written contract that infer would refuse to reuse.
+    await rm(directory, { recursive: true, force: true });
+    throw error;
+  }
   return { openapi, report };
 }

@@ -36,7 +36,12 @@ function count(value, at) {
 }
 function url(value, at) {
   object(value, at);
-  text(value.url, `${at}.url`);
+  // REA records a fully redacted URL as an empty spelling with redacted: true.
+  if (
+    typeof value.url !== "string" ||
+    (value.url.length === 0 && value.redacted !== true)
+  )
+    throw new Error(`${at}.url: expected nonempty string unless redacted`);
   if (value.origin !== null && typeof value.origin !== "string")
     throw new Error(`${at}.origin: expected string or null`);
   if (typeof value.redacted !== "boolean")
@@ -99,6 +104,7 @@ export function validateScenarioCapture(capture) {
   object(capture.events, "events");
   if (!Array.isArray(capture.events.items))
     throw new Error("events.items: expected array");
+  count(capture.events.dropped, "events.dropped");
   object(capture.completeness, "completeness");
   text(capture.completeness.status, "completeness.status");
   const sequences = new Set();
