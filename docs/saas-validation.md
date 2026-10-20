@@ -1,5 +1,47 @@
 # SaaS fork validation — 2026-10-20
 
+## Surface coverage increment
+
+The surface-coverage companion (`scripts/saas-surface-coverage.mjs`, see the
+[guide](saas-compatibility.md#reconcile-the-declared-bundle-surface-with-observed-traffic))
+was built on the contract increment head with Node **24.21.0** and npm
+**11.19.0** on Windows 11 Pro 10.0.26100:
+
+- `npm run test:saas`: **132 passed** (110 existing plus 10 matching, 7 coverage
+  and 5 planning cases). The matching cases pin the 3591 status, basis and
+  reason vocabulary and port the owner's target, method, WebSocket,
+  route-shape, pairing and classification cases. The coverage cases reconcile
+  the synthetic bundle declarations against the api-surface view and the
+  capture (every family; evidence ordinals, transactions and steps; undeclared
+  traffic; experiment ids, priorities and texts; two-run determinism; query
+  strings never echoed), fail closed on malformed inputs while tolerating
+  envelope extras, turn absence into unknown under incomplete coverage, and
+  fold replacement origins through origin pairs. The planning cases adopt a
+  complete 3591 comparison result and reject partial or foreign pages, merge
+  experiments into the generic profile without overwriting existing ones, map
+  the CLI exit codes, byte-check the committed fixtures and prove that the real
+  analysis of the committed bundle reaches the same statuses as the synthetic
+  declarations (17 endpoint nodes, seven gaps).
+- `node scripts/run-exact-tests.mjs run tests/boundary/cli/saasSurfaceCoverage.test.ts tests/boundary/filesystem/saasSurfaceFixtures.test.ts`:
+  **8 passed**. Route-shape keys equal `compositeKey` over `segmentRule` tuples;
+  the CLI plans seven experiments that Ajv validates against
+  `profile.schema.json`; the committed static analysis parses with
+  `javascriptApplicationAnalysisResultSchema` and reports exactly the committed
+  bundle's bytes, the api-surface groups parse with the view schema, the
+  capture with `browserScenarioCaptureSchema`, the origins through
+  `commitBrowserScenarioNormalization`, and the profile against the schema.
+- `tests/boundary/filesystem/saasUpstreamIntegration.test.ts`: **25 passed, 4
+  skipped** (Windows signal cases), including the workflow/CI command mirror
+  case with both new wrappers.
+- `npx tsc --noEmit`, `npm run knip`, `npm run lint` (0 errors; the new files
+  add no warnings), `npm run format:check`, `node scripts/check-doc-facts.mjs`
+  and `git diff --check`: passed.
+- Not run here: the fork's hosted workflows (Actions remain disabled), the real
+  CLI on the bundle (this host lacks the packaged Windows native controls, so
+  the committed analysis came from the same application-layer analysis run
+  in-process, as the ledger records) and any real capture. All fixtures are
+  synthetic and prove the companion, not any vendor product.
+
 ## API contract inference increment
 
 The contract companion (`scripts/saas-api-contract.mjs`, see the

@@ -31,6 +31,13 @@ synthetic fixtures and current limitations.
    `verify` through directional origin pairs. Required properties, formats and
    enum candidates are sample-bounded inferences, never vendor facts; a passing
    verify shows body conformance, not business equivalence.
+9. Reconcile the frontend bundle's declared endpoints, GraphQL operations, tRPC
+   procedures and client routes with the traffic that captures and api-surface
+   views actually exercised (`scripts/saas-surface-coverage.mjs`), and take its
+   planned experiments as the next recordings. An unexercised declaration is a
+   gap to observe, not dead code; observed traffic no declaration explains is
+   undeclared, never missing code; any incomplete observation leaves absence
+   unknown.
 
 The product-specific adapter owns observation extraction and setup. The operator
 retains authority over account access, target mutation and external effects.

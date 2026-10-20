@@ -180,6 +180,64 @@ documentation commit follows them.
   the digest check, so deep schemas round-trip. The capture reader accepts REA's
   fully redacted empty URL spelling and validates `events.dropped`.
 
+### Surface coverage, code versus observed
+
+Commits: `dcce47743` (3591 pairing port), `bdb1ada14` (coverage library and
+CLI), `128b1a1c9` (fixtures) and `f41990b26` (wrappers and fixture schema
+checks); the wiring and documentation commit follows them.
+
+- Adds `scripts/saas-surface-coverage.mjs` (`--static`, repeatable `--observed`,
+  `--origins`, optional `--profile` with `--workflow-id`; exit 0 all declared
+  exercised, 1 gaps, 2 invalid) with `scripts/lib/saas-surface-coverage.mjs`
+  (reconciliation and report), `saas-surface-matching.mjs` (verbatim port of the
+  target parsing, method inference, ws(s) origins, route-shape keys, pairing basis
+  and classify rules of the unmerged branch `feat/3591-endpoint-traffic-comparison`,
+  on the increment-1 `saas-route-templates` and `saas-ordering` mirrors),
+  `saas-surface-families.mjs` (GraphQL, tRPC and route families plus undeclared
+  aggregation), `saas-surface-inputs.mjs` and `saas-surface-observed.mjs` (strict
+  readers for analysis results, api-surface views, scenario captures through
+  `saas-scenario-capture`, and 3591 comparison results) and
+  `saas-surface-report.mjs` (profile-schema experiments with deterministic
+  priorities, limitation lines, profile merging through `saas-product-profile`,
+  bounded file reading). The library is split into more files than the plan
+  names so every module stays under the 500-line ceiling.
+- Vocabulary: `scripts/saas-surface-matching.test.mjs` pins the owner's statuses
+  (`matched`, `ambiguous`, `not-observed-in-capture`, `unknown`), bases and ten
+  unknown reasons, so the port can be deleted once 3591 merges; the companion
+  adds `target-unresolved`, `rpc-bodies-not-retained`,
+  `rpc-link-base-undeclared` and `route-pattern-unsupported` for the families
+  the owner never compares, and `operation-type-disagrees` as a GraphQL
+  ambiguity. Target-less items are keyed by the full node id so no two share an
+  experiment.
+- Fixtures under `scripts/fixtures/saas-surface/`: the hand-authored
+  `bundle/main.js`; `api-surface.json`, `scenario-capture.json`, `origins.json`
+  and `profile.json` from `scripts/lib/saas-surface-fixture.mjs` through
+  `scripts/saas-surface-fixtures.mjs` (`--check` compares committed bytes); and
+  `static-analysis.json`, the bare `normalized_result` of
+  `analyze_javascript_application` for the bundle with a repository-relative
+  `input_path`, imported with `--import`. The committed analysis was produced on
+  this Windows checkout, where the owned analysis worker needs the absent
+  packaged native controls, by running the same application-layer analysis
+  (`analyzeJavaScriptApplication` with the worker factory replaced by an
+  in-process port over the worker's own domain steps); the guide documents the
+  CLI command for regeneration. The analyzer reads `axios.get` as a candidate
+  endpoint, so the bundle's customers call uses `fetch`.
+- Regression owners: `scripts/saas-surface-matching.test.mjs`,
+  `scripts/saas-surface-coverage.test.mjs` and
+  `scripts/saas-surface-planning.test.mjs` (all in `npm run test:saas`, sharing
+  `scripts/saas-surface-test-support.mjs`), `tests/boundary/cli/saasSurfaceCoverage.test.ts`
+  (runs the suites, pins the route-shape keys to `compositeKey` and `segmentRule`,
+  validates the planned experiments with Ajv against `profile.schema.json`) and
+  `tests/boundary/filesystem/saasSurfaceFixtures.test.ts` (parses the committed
+  fixtures with `javascriptApplicationAnalysisResultSchema`, the api-surface group
+  schema, `browserScenarioCaptureSchema` and `commitBrowserScenarioNormalization`).
+  The `.d.mts` beside `saas-surface-matching.mjs` exists for that TypeScript test.
+- Limits: exact literal declarations only; GraphQL and tRPC need retained bodies
+  or declared link bases; routes compare patterns with navigation pathnames; any
+  incomplete observation turns absence into `unknown`; undeclared observed
+  traffic is never a missing-code claim; on the committed fixtures the CLI exits
+  1 by design (seven gaps).
+
 ## Focused regression gates
 
 Use the exact Node version in `.nvmrc` and npm version in
@@ -213,6 +271,8 @@ npm run test:focused -- \
   tests/boundary/cli/saasProductProfile.test.ts \
   tests/boundary/cli/saasExportCompare.test.ts \
   tests/boundary/cli/saasApiContract.test.ts \
+  tests/boundary/cli/saasSurfaceCoverage.test.ts \
+  tests/boundary/filesystem/saasSurfaceFixtures.test.ts \
   tests/acceptance/setup/selectedSkillSetup.test.ts \
   tests/boundary/filesystem/setupSkill.test.ts \
   tests/boundary/filesystem/qwenClientConfiguration.test.ts

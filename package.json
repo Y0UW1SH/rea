@@ -140,7 +140,7 @@
     "test:with-build": "npm run test:prepare && vitest run",
     "test:run": "vitest run",
     "test:python": "python3 -m unittest bridge/native/test_rea_lldb_tracer.py bridge/pwndbg/test_core_context.py bridge/mitmproxy/test_capture.py -v && python3 -m unittest discover -s experiments/analysis-efficiency -p 'test_*.py' -v",
-    "test:saas": "node --test scripts/saas-compatibility.test.mjs scripts/saas-compatibility-lab.test.mjs scripts/saas-product-profile.test.mjs scripts/saas-export-compare.test.mjs scripts/saas-api-contract-helpers.test.mjs scripts/saas-api-contract.test.mjs scripts/saas-api-contract-verify.test.mjs",
+    "test:saas": "node --test scripts/saas-compatibility.test.mjs scripts/saas-compatibility-lab.test.mjs scripts/saas-product-profile.test.mjs scripts/saas-export-compare.test.mjs scripts/saas-api-contract-helpers.test.mjs scripts/saas-api-contract.test.mjs scripts/saas-api-contract-verify.test.mjs scripts/saas-surface-matching.test.mjs scripts/saas-surface-coverage.test.mjs scripts/saas-surface-planning.test.mjs",
     "test:local": "node scripts/run-development-tests.mjs local",
     "test:fast": "node scripts/ci/test-group.mjs source",
     "test:built": "node scripts/ci/test-group.mjs built",

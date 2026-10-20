@@ -401,6 +401,127 @@ contracts inferred from real captures private. Regenerate the synthetic fixtures
 with `node scripts/saas-api-contract-fixtures.mjs` and check them with `--check`;
 they prove the companion, not any vendor API.
 
+## Reconcile the declared bundle surface with observed traffic
+
+```bash
+node scripts/saas-surface-coverage.mjs --static scripts/fixtures/saas-surface/static-analysis.json --observed scripts/fixtures/saas-surface/api-surface.json --observed scripts/fixtures/saas-surface/scenario-capture.json --origins scripts/fixtures/saas-surface/origins.json --profile scripts/fixtures/saas-surface/profile.json --workflow-id first-workflow
+```
+
+`--static` is an `analyze_javascript_application` result: the `normalized_result`
+of the Evidence that `rea analyze-javascript-application <bundle> --artifact-format
+directory --format json` prints, or that Evidence itself. Its `endpoint` nodes are
+the declared surface, split into families by mechanism: `network` (`call:fetch`,
+`call:axios.post`, `call:EventSource`, `call:WebSocket`,
+`call:navigator.sendBeacon` and other request callees), `graphql`
+(`graphql:query`, `graphql:mutation`, `graphql:subscription` operation names),
+`trpc` (`trpc:procedure:<method>` paths served under `trpc:link:<factory>`
+bases) and `route` (`property:path` and `property:route` client routes). Each
+`--observed` file is dispatched by shape: an `api-surface` view result, a
+`capture_browser_scenario` `normalized_result` (its request events become
+api-surface-style groups, its retained JSON request bodies name GraphQL
+operations, and its `before_url`, `after_url` and captured history entries are
+the navigations), or a `compare_static_and_observed_endpoints` result from the
+unmerged 3591 branch, accepted only when `page.total` equals `items.length` and
+its `static.root_artifact_sha256` equals the static input. `--origins` declares
+the reference origins that origin-relative static paths are joined against and
+the directional `origin_pairs` that fold replacement origins onto them before
+joining, the same rule `compare-web-captures` applies. `--profile` with
+`--workflow-id` appends the planned experiments to a product profile.
+
+What the report states, and how each statement is marked:
+
+- `surface[]` holds one item per declared node: `family`, `key`, `status`
+  (`exact`, `templated`, `ambiguous`, `unmatched`, or `unknown` with a `reason`),
+  `confidence` (`high` only for an exact pairing that needed no inference,
+  `medium` when an inference listed under `inferences` was needed:
+  `origin-declared`, `method-callee-name`, `template-compatible`,
+  `route-pattern`; `low` otherwise) and `evidence`: the static node id, its
+  artifact digest, mechanisms and source locations, and every observed group
+  with record ordinals (api-surface), transaction and step ids (captures) or
+  navigation steps (routes).
+- Network endpoints are paired by the rules of the unmerged branch
+  `feat/3591-endpoint-traffic-comparison` (`javascriptEndpointTrafficTargets.ts`
+  and `javascriptEndpointTrafficComparison.ts`), ported verbatim in
+  `scripts/lib/saas-surface-matching.mjs` on top of the increment-1 route-template
+  and ordering mirrors, with the owner's status, basis and reason vocabulary
+  pinned by `scripts/saas-surface-matching.test.mjs`: exact literal targets only,
+  route shapes from the api-surface segment rules, methods only from HTTP-verb
+  callees (`callee-name`) or API definitions (`EventSource`, `sendBeacon`),
+  WebSocket origins mapped to `ws(s)`, and nothing paired by similarity, prefix,
+  case folding or cross-origin guesses. Candidate readings
+  (`interpretation: candidate`) and string-built targets (`resolution: partial`)
+  stay `unknown` (`candidate-endpoint`, `target-unresolved`).
+- GraphQL operations match only a retained JSON request body whose
+  `operationName` (else the first named operation in `query`) equals the declared
+  name; a name match with a different operation type is `ambiguous`
+  (`operation-type-disagrees`). tRPC procedures match only the comma-split
+  segments after a declared link base on the base's origin. Client routes match
+  only navigation pathnames on the declared origins: literal equality is `exact`;
+  `:id`, `[id]`, `{id}` and `*` segments and `**` or `[...rest]` tails give
+  `templated`; regex or optional segments are `route-pattern-unsupported`.
+- `unmatched` is reported only when every supplied observation was complete and
+  the relevant origin was exercised. Any incompleteness (`records.excluded`,
+  `examined < total`, an unexhausted groups page, dropped events, omissions, an
+  incomplete capture or step) turns absence into `unknown`
+  (`observed-coverage-incomplete`); a declared origin nothing reached is
+  `origin-not-exercised`; GraphQL without retained request bodies is
+  `rpc-bodies-not-retained`; tRPC without a link base is
+  `rpc-link-base-undeclared`; origin-relative paths without declared origins are
+  `origin-undeclared`.
+- `undeclared_observed[]` lists observed groups, tRPC procedures, GraphQL
+  operations and navigations no static item explains, aggregated across inputs
+  with their evidence. This never states missing code: string-built,
+  wrapper-passed and server-supplied URLs are absent from static analysis by
+  construction, so the entries are places to look, not findings about the bundle.
+- `experiments[]` are profile-schema entries (`id` is
+  `surface-<family>-<first 12 hex of sha256(family, NUL, key)>`, `status:
+  planned`, `evidence: []`) for every `unmatched`, `ambiguous` and `unknown`
+  item, one per family and key, in the deterministic order recorded in
+  `experimentPriorities[]` (family `network` before `trpc`, `graphql`, `route`;
+  status `unmatched` before `ambiguous` before `unknown`; mutating methods first;
+  then key order). With `--profile`, `profileUpdate` carries the merged profile
+  re-validated against `scripts/fixtures/saas-profiles/profile.schema.json` and
+  the ids it added; existing experiment ids are never overwritten.
+- `summary` counts statuses per family (the sums equal `declared`) and unknown
+  reasons; `status` is `complete` only when the static graph coverage and every
+  observed input are complete, otherwise `partial`; `limitations` quotes the
+  3591 limitations and names every incomplete input and every family bound.
+
+Exit 0 means every declared item is `exact` or `templated`; 1 means gaps were
+found (`gaps` counts them); 2 means an input is invalid, unreadable or of an
+unrecognized shape. On the committed fixtures the exit code is 1 by design: the
+synthetic observations leave seven gaps (`navigator.sendBeacon("/api/metrics")`,
+`new WebSocket("/live")` on an origin never observed over `wss`, the string-built
+`fetch(API_PREFIX + "/orders")`, the candidate `translate.get(...)`, the
+`RenameCustomer` mutation, the `user.rename` procedure and the `/settings`
+route), and `undeclared_observed` names `/assets/logo.png`, the CDN request, the
+`user.list` procedure and the `/` and `/help` navigations.
+
+Limits: static declarations are exact literals, so string-built and
+wrapper-passed URLs, server-driven and file-system routes (#4772) and
+feature-flag-gated code are declared or absent without any reachability claim;
+minified bundles without source maps cite generated-code locations only;
+GraphQL and tRPC need retained request bodies or declared link bases; HAR files
+are not decoded (use the `api-surface` view), no request is issued and no secret
+is read: only origins, paths, templates, operation and procedure names are
+copied, never query strings, fragments or bodies. Static coverage other than
+`complete` and every incomplete observation are stated in `limitations`.
+
+Fixtures under `scripts/fixtures/saas-surface/` are synthetic. `bundle/main.js`
+is a hand-authored client; `api-surface.json`, `scenario-capture.json`,
+`origins.json` and `profile.json` (a copy of `saas-profiles/generic.json`) are
+regenerated with `node scripts/saas-surface-fixtures.mjs` and checked with
+`--check`. `static-analysis.json` is produced by the real analyzer: run
+`node scripts/rea.mjs analyze-javascript-application scripts/fixtures/saas-surface/bundle --artifact-format directory --format json > analysis.json`
+on a host with the JavaScript analysis available (Linux or macOS, or Windows with
+the packaged native controls), then `node scripts/saas-surface-fixtures.mjs
+--import analysis.json`, which keeps the `normalized_result`, replaces the
+recorded absolute input path with the repository-relative bundle path and writes
+the committed serialization; `--check` verifies both. The committed file was
+produced on a Windows checkout without the native controls by running the same
+application-layer analysis in-process (see the change ledger), which is why the
+documented command is the way to regenerate it.
+
 ## Download retention boundary
 
 Browser download cancellation remains unchanged. The installed Playwright
@@ -434,7 +555,10 @@ Further work remains intentionally separate:
   comparisons are available now; live download retention remains deferred as explained above.
 - Role enforcement, retries, interruption and mutation tests against live targets.
 - Migration adapters preserving identities, relationships and history.
-- An uncertainty-driven experiment planner and cross-view reconciliation.
+- An uncertainty-driven experiment planner beyond declared-versus-observed
+  surface coverage, and cross-view reconciliation beyond endpoints, operations,
+  procedures and routes. The surface-coverage companion above plans experiments
+  for the gaps it can see; UI state coverage remains separate.
 - Vendor drift collection and comparison over time.
 
 Track precise verified cases, collection dates, tested settings, replacement
