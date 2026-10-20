@@ -38,7 +38,10 @@ function requested(item) {
     return `the tRPC procedure ${item.procedure.path} (${item.procedure.method})`;
   if (item.family === "graphql")
     return `the GraphQL ${item.operation.type} ${item.operation.name}`;
-  if (item.family === "route") return `a navigation to ${item.route.pattern}`;
+  if (item.family === "route")
+    return item.route === undefined
+      ? `a navigation to the route declared at ${where(item)}`
+      : `a navigation to ${item.route.pattern}`;
   if (item.key.startsWith("node:"))
     return `the request declared at ${where(item)} (${item.evidence.static.mechanisms.join(", ")})`;
   return item.key;
@@ -118,6 +121,10 @@ export function surfaceLimitations(analysis, context, items, trpc) {
       lines.push(
         `Observed input ${observed.file} is incomplete (${observed.incompleteness.join("; ")}); absence in it is reported as unknown, never as unexercised.`,
       );
+    if (observed.body_incompleteness.length > 0)
+      lines.push(
+        `Observed input ${observed.file} retained ${observed.body_incompleteness.join("; ")}; the GraphQL operations those bodies carried are unknown.`,
+      );
     if (observed.comparison !== null)
       lines.push(
         `Observed input ${observed.file} is an endpoint traffic comparison; its verdicts are adopted as recorded and its paired groups carry record ordinals only.`,
@@ -127,7 +134,7 @@ export function surfaceLimitations(analysis, context, items, trpc) {
   }
   if (families.has("graphql"))
     lines.push(
-      "GraphQL operations match only retained JSON request bodies (operationName, else the first named operation in the query text); api-surface views and captures without request bodies cannot exercise them.",
+      "GraphQL operations match only retained JSON request bodies (an operationName in the GraphQL name grammar, which persisted queries carry alone, else the first named operation in the query text); absence is claimed only when every input retained request bodies without truncation and a declared origin was exercised.",
     );
   if (families.has("trpc") || trpc.bases.length > 0)
     lines.push(

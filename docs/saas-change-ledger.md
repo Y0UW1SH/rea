@@ -223,7 +223,8 @@ checks); the wiring and documentation commit follows them.
   CLI command for regeneration. The analyzer reads `axios.get` as a candidate
   endpoint, so the bundle's customers call uses `fetch`.
 - Regression owners: `scripts/saas-surface-matching.test.mjs`,
-  `scripts/saas-surface-coverage.test.mjs` and
+  `scripts/saas-surface-coverage.test.mjs`,
+  `scripts/saas-surface-comparison.test.mjs` and
   `scripts/saas-surface-planning.test.mjs` (all in `npm run test:saas`, sharing
   `scripts/saas-surface-test-support.mjs`), `tests/boundary/cli/saasSurfaceCoverage.test.ts`
   (runs the suites, pins the route-shape keys to `compositeKey` and `segmentRule`,
@@ -237,6 +238,21 @@ checks); the wiring and documentation commit follows them.
   incomplete observation turns absence into `unknown`; undeclared observed
   traffic is never a missing-code claim; on the committed fixtures the CLI exits
   1 by design (seven gaps).
+- Review fix pass (same increment, after an independent whole-branch review):
+  comparison verdicts are merged by rank whatever the `--observed` order, a
+  better verdict replaces the displaced verdict's evidence instead of appending
+  to it, and a complete comparison's not-observed verdict becomes `unknown` when
+  any other input is incomplete; the `root_artifact_sha256` check covers every
+  comparison collection, and verdict `method` and `target` fields are validated
+  strictly (a target path with a query or fragment is rejected, nothing is
+  copied unvalidated). GraphQL absence is claimed only when every input
+  retained request bodies without truncation (truncated request bodies are
+  counted under `body_incompleteness`) and a declared origin was exercised;
+  persisted-query bodies match by `operationName` alone; names outside the
+  GraphQL grammar are ignored instead of reaching a pattern or an error
+  message. An api-surface page beyond the first or short of its group total is
+  incomplete. Route literals with a query or fragment are
+  `route-pattern-unsupported` and keyed by node, never echoed.
 
 ## Focused regression gates
 

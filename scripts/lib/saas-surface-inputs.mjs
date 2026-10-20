@@ -248,8 +248,23 @@ export function records(value, at) {
 export function apiSurfaceObserved(value, at) {
   list(value.groups, `${at}.groups`, SURFACE_LIMITS.maxGroups);
   const { records: counts, reasons } = records(value.records, `${at}.records`);
-  if (plain(value.coverage) && value.coverage.exhausted === false)
-    reasons.push("groups page not exhausted (next_offset set)");
+  if (plain(value.coverage)) {
+    const { examined, total, exhausted } = value.coverage;
+    if (
+      Number.isSafeInteger(examined) &&
+      Number.isSafeInteger(total) &&
+      examined < total
+    )
+      reasons.push(`groups examined ${examined} of ${total}`);
+    if (exhausted === false)
+      reasons.push("groups page not exhausted (next_offset set)");
+  }
+  if (
+    plain(value.view) &&
+    Number.isSafeInteger(value.view.offset) &&
+    value.view.offset > 0
+  )
+    reasons.push(`groups page starts at offset ${value.view.offset}`);
   return {
     kind: "api-surface",
     groups: value.groups.map((group, index) =>
@@ -257,6 +272,7 @@ export function apiSurfaceObserved(value, at) {
     ),
     records: counts,
     incompleteness: reasons,
+    body_incompleteness: [],
     bodiesRetained: false,
     operations: [],
     navigations: [],

@@ -452,22 +452,33 @@ What the report states, and how each statement is marked:
   (`interpretation: candidate`) and string-built targets (`resolution: partial`)
   stay `unknown` (`candidate-endpoint`, `target-unresolved`).
 - GraphQL operations match only a retained JSON request body whose
-  `operationName` (else the first named operation in `query`) equals the declared
-  name; a name match with a different operation type is `ambiguous`
+  `operationName` (a name in the GraphQL grammar, which persisted queries carry
+  without query text; else the first named operation in `query`) equals the
+  declared name; names outside the grammar are ignored and never echoed. A name
+  match with a different operation type is `ambiguous`
   (`operation-type-disagrees`). tRPC procedures match only the comma-split
   segments after a declared link base on the base's origin. Client routes match
   only navigation pathnames on the declared origins: literal equality is `exact`;
   `:id`, `[id]`, `{id}` and `*` segments and `**` or `[...rest]` tails give
-  `templated`; regex or optional segments are `route-pattern-unsupported`.
+  `templated`; regex or optional segments, and literals carrying a query or
+  fragment, are `route-pattern-unsupported` and keyed by their node so the
+  literal is never echoed.
 - `unmatched` is reported only when every supplied observation was complete and
   the relevant origin was exercised. Any incompleteness (`records.excluded`,
-  `examined < total`, an unexhausted groups page, dropped events, omissions, an
-  incomplete capture or step) turns absence into `unknown`
-  (`observed-coverage-incomplete`); a declared origin nothing reached is
-  `origin-not-exercised`; GraphQL without retained request bodies is
-  `rpc-bodies-not-retained`; tRPC without a link base is
+  `examined < total`, a groups page beyond the first or short of its total,
+  dropped events, omissions, an incomplete capture or step) turns absence into
+  `unknown` (`observed-coverage-incomplete`), including a comparison result's
+  own not-observed verdict when any other input is incomplete; a declared origin
+  nothing reached is `origin-not-exercised`; tRPC without a link base is
   `rpc-link-base-undeclared`; origin-relative paths without declared origins are
-  `origin-undeclared`.
+  `origin-undeclared`. GraphQL absence additionally needs every input to have
+  retained request bodies without truncation (api-surface views and comparison
+  results carry none, a truncated body may have carried the operation), else
+  `rpc-bodies-not-retained`. With several comparison results the better-ranked
+  verdict wins whatever the flag order, its paired groups replace the evidence
+  of the verdict it displaces, and verdict `method` and `target` fields are
+  validated like every other consumed field (a target path with a query or
+  fragment is rejected).
 - `undeclared_observed[]` lists observed groups, tRPC procedures, GraphQL
   operations and navigations no static item explains, aggregated across inputs
   with their evidence. This never states missing code: string-built,

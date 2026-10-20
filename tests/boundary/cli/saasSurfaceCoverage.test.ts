@@ -46,6 +46,7 @@ it("verifies the surface coverage companion suites", () => {
   for (const suite of [
     "scripts/saas-surface-matching.test.mjs",
     "scripts/saas-surface-coverage.test.mjs",
+    "scripts/saas-surface-comparison.test.mjs",
     "scripts/saas-surface-planning.test.mjs",
   ]) {
     const output = execFileSync(

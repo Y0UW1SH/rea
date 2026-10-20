@@ -14,6 +14,8 @@ export const SURFACE_FAMILIES = Object.freeze([
 ]);
 const groupIdentity = (group) =>
   `${group.method}\u0000${group.origin}\u0000${group.path_template}`;
+/** Target-less items are keyed by the whole node id so two of them never share an experiment. */
+export const nodeKey = (nodeId) => `node:${nodeId}`;
 
 /** One surface item; `extra` carries family fields plus the static mechanisms and observed evidence. */
 export function item(endpoint, status, extra) {
@@ -174,11 +176,19 @@ export function graphqlItem(endpoint, detected, context) {
       reason: "operation-type-disagrees",
       ...extra,
     });
-  const reason = !context.bodiesRetained
-    ? "rpc-bodies-not-retained"
-    : context.coverageIncomplete
-      ? "observed-coverage-incomplete"
-      : null;
+  const declared = context.origins.declared_origins;
+  const reason =
+    !context.bodiesRetained || context.bodiesTruncated
+      ? "rpc-bodies-not-retained"
+      : context.coverageIncomplete
+        ? "observed-coverage-incomplete"
+        : declared.length === 0
+          ? "origin-undeclared"
+          : declared.some((origin) =>
+                context.index.exercisedOrigins.has(origin),
+              )
+            ? null
+            : "origin-not-exercised";
   return reason === null
     ? item(endpoint, "unmatched", extra)
     : item(endpoint, "unknown", { reason, ...extra });
@@ -186,6 +196,8 @@ export function graphqlItem(endpoint, detected, context) {
 
 /** Static route patterns: `:id`, `[id]`, `{id}` and `*` take one segment; `**` and `[...rest]` the rest. */
 function routePattern(value) {
+  if (/[?#]/u.test(value))
+    return { kind: "ineligible", reason: "route-pattern-unsupported" };
   if (!value.startsWith("/"))
     return {
       kind: "ineligible",
@@ -232,6 +244,16 @@ function matchesRoute(pattern, path) {
 
 export function routeItem(endpoint, detected, context) {
   const pattern = routePattern(detected.value);
+  // An ineligible literal is never echoed: it is keyed by its node like a
+  // target-less network item.
+  if (pattern.kind === "ineligible")
+    return item(endpoint, "unknown", {
+      family: "route",
+      key: nodeKey(endpoint.node.node_id),
+      reason: pattern.reason,
+      inferences: [],
+      mechanisms: detected.mechanisms,
+    });
   const base = {
     family: "route",
     key: detected.value,
@@ -239,8 +261,6 @@ export function routeItem(endpoint, detected, context) {
     inferences: [],
     mechanisms: detected.mechanisms,
   };
-  if (pattern.kind === "ineligible")
-    return item(endpoint, "unknown", { reason: pattern.reason, ...base });
   const declared = context.origins.declared_origins;
   if (declared.length === 0)
     return item(endpoint, "unknown", { reason: "origin-undeclared", ...base });

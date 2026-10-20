@@ -149,6 +149,27 @@ export const EXERCISED_VALUES = new Set([
 ]);
 
 export const input = (file, value) => ({ file, sha256: sha256(file), value });
+
+/** Replace one transaction's retained request body with new JSON text, digests kept consistent. */
+export function setRequestBody(capture, id, text) {
+  const bytes = Buffer.from(text, "utf8");
+  const content = capture.events.items.find(
+    (event) =>
+      event.kind === "network-content" &&
+      event.transaction_id === id &&
+      event.phase === "request",
+  );
+  content.body = {
+    state: "captured",
+    representation: "browser-exposed-request-bytes",
+    encoding: "base64",
+    content: bytes.toString("base64"),
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    media_type: "application/json",
+    redacted: false,
+  };
+}
 export const fixtureInputs = (options = {}) => ({
   static: input("static-analysis.json", analysisOf(BUNDLE_FINDINGS)),
   observed: [
@@ -185,7 +206,8 @@ export function expectedBundleStatuses(report) {
     "trpc query user.byId": "exact",
     "trpc mutate user.rename": "unmatched",
     "graphql query ListCustomers": "exact",
-    "graphql mutation RenameCustomer": "unmatched",
+    // The api-surface view carries POST groups without bodies, so absence is unknown.
+    "graphql mutation RenameCustomer": "unknown:rpc-bodies-not-retained",
     "route /invoices": "exact",
     "route /invoices/:id": "templated",
     "route /settings": "unmatched",

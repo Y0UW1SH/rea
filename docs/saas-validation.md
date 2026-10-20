@@ -7,21 +7,30 @@ The surface-coverage companion (`scripts/saas-surface-coverage.mjs`, see the
 was built on the contract increment head with Node **24.21.0** and npm
 **11.19.0** on Windows 11 Pro 10.0.26100:
 
-- `npm run test:saas`: **132 passed** (110 existing plus 10 matching, 7 coverage
-  and 5 planning cases). The matching cases pin the 3591 status, basis and
-  reason vocabulary and port the owner's target, method, WebSocket,
-  route-shape, pairing and classification cases. The coverage cases reconcile
-  the synthetic bundle declarations against the api-surface view and the
-  capture (every family; evidence ordinals, transactions and steps; undeclared
-  traffic; experiment ids, priorities and texts; two-run determinism; query
-  strings never echoed), fail closed on malformed inputs while tolerating
-  envelope extras, turn absence into unknown under incomplete coverage, and
-  fold replacement origins through origin pairs. The planning cases adopt a
-  complete 3591 comparison result and reject partial or foreign pages, merge
-  experiments into the generic profile without overwriting existing ones, map
-  the CLI exit codes, byte-check the committed fixtures and prove that the real
-  analysis of the committed bundle reaches the same statuses as the synthetic
-  declarations (17 endpoint nodes, seven gaps).
+- `npm run test:saas`: **139 passed** (110 existing plus 10 matching, 11
+  coverage, 5 comparison and 3 planning cases). The matching cases pin the 3591
+  status, basis and reason vocabulary and port the owner's target, method,
+  WebSocket, route-shape, pairing and classification cases. The coverage cases
+  reconcile the synthetic bundle declarations against the api-surface view and
+  the capture (every family; evidence ordinals, transactions and steps;
+  undeclared traffic; experiment ids, priorities and texts; two-run
+  determinism; query strings never echoed), fail closed on malformed inputs
+  while tolerating envelope extras, turn absence into unknown under incomplete
+  coverage, fold replacement origins through origin pairs, and, written after
+  the independent review and watched failing first, claim GraphQL absence only
+  when every input retained untruncated bodies on an exercised declared origin,
+  read persisted-query bodies by `operationName` while ignoring names outside
+  the GraphQL grammar, treat an api-surface page beyond the first or short of
+  its total as incomplete, and never echo a route literal with a query. The
+  comparison cases adopt a complete 3591 comparison result, list its unmatched
+  groups as undeclared, reject partial pages, merge several results by rank in
+  any flag order, turn a comparison absence into unknown beside an incomplete
+  input, validate verdict methods and targets strictly and reject foreign
+  digests for every collection. The planning cases merge experiments into the
+  generic profile without overwriting existing ones, map the CLI exit codes,
+  byte-check the committed fixtures and prove that the real analysis of the
+  committed bundle reaches the same statuses as the synthetic declarations (17
+  endpoint nodes, seven gaps).
 - `node scripts/run-exact-tests.mjs run tests/boundary/cli/saasSurfaceCoverage.test.ts tests/boundary/filesystem/saasSurfaceFixtures.test.ts`:
   **8 passed**. Route-shape keys equal `compositeKey` over `segmentRule` tuples;
   the CLI plans seven experiments that Ajv validates against

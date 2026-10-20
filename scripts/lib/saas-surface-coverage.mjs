@@ -5,6 +5,7 @@ import {
   graphqlItem,
   groupEvidence,
   item,
+  nodeKey,
   routeItem,
   trpcBases,
   trpcItem,
@@ -52,8 +53,6 @@ const STATUS_RANK = {
   unknown: 4,
 };
 const EXERCISED = new Set(["exact", "templated"]);
-// Target-less items are keyed by the whole node id so two of them never share an experiment.
-const nodeKey = (nodeId) => `node:${nodeId}`;
 
 /** Which family a declared endpoint node belongs to, with the facts the port reads. */
 function familyOf(endpoint) {
@@ -155,27 +154,33 @@ function networkItem(endpoint, detected, context) {
 /** Fold a 3591 comparison verdict into a network item; a better verdict replaces, an equal one adds evidence. */
 function applyComparison(items, observed, context) {
   const { comparison } = observed;
-  if (
-    comparison.static.root_artifact_sha256 !==
-    context.static.root_artifact_sha256
-  )
-    throw new Error(
-      `observed[${observed.input}]: comparison static.root_artifact_sha256 differs from the static input`,
-    );
   const byNode = new Map(
     items.map((entry) => [entry.evidence.static.node_id, entry]),
   );
   for (const verdict of comparison.items) {
     const target = byNode.get(verdict.static_node_id);
     if (target === undefined || target.family !== "network") continue;
-    const status = ownerStatus(verdict);
-    const better =
-      !context.hasGroupInputs ||
-      STATUS_RANK[status] < STATUS_RANK[target.status];
-    if (better) {
+    let status = ownerStatus(verdict);
+    let reason = verdict.reason;
+    // A complete comparison cannot prove absence when another input is incomplete.
+    if (status === "unmatched" && context.coverageIncomplete) {
+      status = "unknown";
+      reason = "observed-coverage-incomplete";
+    }
+    const evidence = verdict.observed.map(({ group, basis }) => ({
+      input: observed.input,
+      kind: "endpoint-traffic-comparison",
+      ...comparison.paired_groups[group],
+      basis,
+    }));
+    // Items classified against no group input hold a placeholder until the first
+    // verdict; after that only a better-ranked verdict replaces, an equal one adds
+    // evidence, a worse one changes nothing, whatever the input order.
+    const provisional = !context.hasGroupInputs && !context.adopted.has(target);
+    if (provisional || STATUS_RANK[status] < STATUS_RANK[target.status]) {
       target.status = status;
-      if (verdict.reason === undefined) delete target.reason;
-      else target.reason = verdict.reason;
+      if (reason === undefined) delete target.reason;
+      else target.reason = reason;
       if (verdict.method !== null) target.method = verdict.method;
       if (verdict.target !== null) target.target = verdict.target;
       if (
@@ -183,16 +188,10 @@ function applyComparison(items, observed, context) {
         !target.inferences.includes("template-compatible")
       )
         target.inferences.push("template-compatible");
-    }
-    if (better || STATUS_RANK[status] === STATUS_RANK[target.status])
-      target.evidence.observed.push(
-        ...verdict.observed.map(({ group, basis }) => ({
-          input: observed.input,
-          kind: "endpoint-traffic-comparison",
-          ...comparison.paired_groups[group],
-          basis,
-        })),
-      );
+      target.evidence.observed = evidence;
+      context.adopted.add(target);
+    } else if (STATUS_RANK[status] === STATUS_RANK[target.status])
+      target.evidence.observed.push(...evidence);
   }
 }
 
@@ -233,6 +232,15 @@ function buildContext(analysis, inputs) {
   const incomplete = (entry) => entry.incompleteness.length > 0;
   const coverageIncomplete =
     index.coverageIncomplete || observed.some(incomplete);
+  for (const entry of observed)
+    if (
+      entry.comparison !== null &&
+      entry.comparison.static.root_artifact_sha256 !==
+        analysis.root_artifact_sha256
+    )
+      throw new Error(
+        `observed[${entry.input}]: comparison static.root_artifact_sha256 differs from the static input`,
+      );
   return {
     static: analysis,
     origins,
@@ -244,7 +252,12 @@ function buildContext(analysis, inputs) {
       (entry) => entry.kind === "scenario-capture" && incomplete(entry),
     ),
     hasGroupInputs: observed.some((entry) => entry.comparison === null),
-    bodiesRetained: observed.some((entry) => entry.bodiesRetained),
+    // GraphQL absence needs every input to have carried request bodies, untruncated.
+    bodiesRetained: observed.every((entry) => entry.bodiesRetained),
+    bodiesTruncated: observed.some(
+      (entry) => entry.body_incompleteness.length > 0,
+    ),
+    adopted: new Set(),
     operations: observed.flatMap((entry) =>
       folded(entry.operations, { input: entry.input }),
     ),
@@ -348,6 +361,7 @@ const reportInputs = (inputs, analysis, context, workflowId) => ({
     navigations: entry.navigations.length,
     complete: entry.incompleteness.length === 0,
     incompleteness: entry.incompleteness,
+    body_incompleteness: entry.body_incompleteness,
   })),
   origins: {
     declared_origins: context.origins.declared_origins,

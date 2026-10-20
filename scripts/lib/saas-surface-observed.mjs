@@ -19,6 +19,8 @@ import {
 } from "./saas-surface-inputs.mjs";
 import {
   ENDPOINT_TRAFFIC_UNKNOWN_REASONS,
+  METHOD_BASES,
+  ORIGIN_BASES,
   PAIRING_BASES,
   STATIC_ITEM_STATUSES,
 } from "./saas-surface-matching.mjs";
@@ -34,6 +36,7 @@ const COLLECTIONS = [
   "observed-unresolved",
 ];
 const OPERATION = /(query|mutation|subscription)\s+([_A-Za-z][_0-9A-Za-z]*)/u;
+const NAME = /^[_A-Za-z][_0-9A-Za-z]*$/u;
 
 /** Named GraphQL operations in one retained JSON request body (single or batched). */
 function graphqlOperations(buffer) {
@@ -47,18 +50,25 @@ function graphqlOperations(buffer) {
   }
   const operations = [];
   for (const item of Array.isArray(parsed) ? parsed : [parsed]) {
-    if (!plain(item) || typeof item.query !== "string") continue;
+    if (!plain(item)) continue;
+    const query = typeof item.query === "string" ? item.query : null;
+    // Only names in the GraphQL grammar are read, so captured text never reaches
+    // a pattern or a report; anything else counts as unnamed. A persisted query
+    // carries operationName without query text.
     const declared =
-      typeof item.operationName === "string" && item.operationName !== ""
+      typeof item.operationName === "string" && NAME.test(item.operationName)
         ? item.operationName
         : null;
+    if (declared === null && query === null) continue;
     const named =
-      declared === null
-        ? OPERATION.exec(item.query)
-        : new RegExp(
-            `(query|mutation|subscription)\\s+${declared}(?![_0-9A-Za-z])`,
-            "u",
-          ).exec(item.query);
+      query === null
+        ? null
+        : declared === null
+          ? OPERATION.exec(query)
+          : new RegExp(
+              `(query|mutation|subscription)\\s+${declared}(?![_0-9A-Za-z])`,
+              "u",
+            ).exec(query);
     const name = declared ?? named?.[2] ?? null;
     if (name !== null) operations.push({ type: named?.[1] ?? null, name });
   }
@@ -204,6 +214,7 @@ function captureObserved(capture, at) {
   const groups = new Map();
   const operations = [];
   let excluded = 0;
+  let truncatedBodies = 0;
   for (const [ordinal, transaction] of transactions.entries()) {
     const line =
       transaction.method === null ||
@@ -220,6 +231,7 @@ function captureObserved(capture, at) {
       transaction.request.body,
       SURFACE_LIMITS.maxBodyBytes,
     );
+    if (body.kind === "truncated") truncatedBodies += 1;
     if (body.kind !== "json") continue;
     for (const operation of graphqlOperations(body.body.buffer))
       operations.push({
@@ -241,6 +253,12 @@ function captureObserved(capture, at) {
       excluded,
     },
     incompleteness: captureIncompleteness(capture, excluded),
+    body_incompleteness:
+      truncatedBodies === 0
+        ? []
+        : [
+            `${truncatedBodies} request bod${truncatedBodies === 1 ? "y" : "ies"} truncated or unavailable (body-size-limit)`,
+          ],
     bodiesRetained: capture.scenario.network_content.request_body === true,
     operations,
     navigations: captureNavigations(capture, at),
@@ -280,6 +298,39 @@ function pairings(item, where, pairedCount) {
   });
 }
 
+function verdictMethod(method, where) {
+  object(method, where, ["values", "basis"]);
+  list(method.values, `${where}.values`);
+  method.values.forEach((value, index) =>
+    text(value, `${where}.values[${index}]`),
+  );
+  if (!METHOD_BASES.includes(method.basis))
+    throw new Error(`${where}.basis: expected ${METHOD_BASES.join(", ")}`);
+  if ((method.values.length === 0) !== (method.basis === "unknown"))
+    throw new Error(`${where}.values: only an unknown basis has no values`);
+  return { values: [...method.values], basis: method.basis };
+}
+
+/** A verdict target is copied only as a recorded path without query or fragment. */
+function verdictTarget(target, where) {
+  object(target, where, ["origin", "path", "origin_basis"]);
+  if (target.origin !== null) text(target.origin, `${where}.origin`);
+  text(target.path, `${where}.path`);
+  if (!target.path.startsWith("/") || /[?#]/u.test(target.path))
+    throw new Error(
+      `${where}.path: expected a recorded path without query or fragment`,
+    );
+  if (!ORIGIN_BASES.includes(target.origin_basis))
+    throw new Error(
+      `${where}.origin_basis: expected ${ORIGIN_BASES.join(", ")}`,
+    );
+  return {
+    origin: target.origin,
+    path: target.path,
+    origin_basis: target.origin_basis,
+  };
+}
+
 function staticItem(item, where, pairedCount) {
   object(item, where);
   text(item.static_node_id, `${where}.static_node_id`);
@@ -291,8 +342,14 @@ function staticItem(item, where, pairedCount) {
   const result = {
     static_node_id: item.static_node_id,
     status: item.status,
-    method: plain(item.method) ? { ...item.method } : null,
-    target: plain(item.target) ? { ...item.target } : null,
+    method:
+      item.method === null
+        ? null
+        : verdictMethod(item.method, `${where}.method`),
+    target:
+      item.target === null
+        ? null
+        : verdictTarget(item.target, `${where}.target`),
     observed: [],
   };
   if (item.status === "matched") {
@@ -361,6 +418,7 @@ function comparisonObserved(value, at) {
     groups: [],
     records: counts,
     incompleteness: reasons,
+    body_incompleteness: [],
     bodiesRetained: false,
     operations: [],
     navigations: [],

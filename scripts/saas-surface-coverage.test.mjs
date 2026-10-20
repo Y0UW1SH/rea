@@ -21,6 +21,7 @@ import {
   experimentId,
   fixtureInputs,
   input,
+  setRequestBody,
   statusesOf,
 } from "./saas-surface-test-support.mjs";
 
@@ -69,6 +70,7 @@ test("reconciles every declared family against api-surface groups and a capture"
   assert.deepEqual(report.summary.unknown_reasons, [
     { reason: "candidate-endpoint", count: 1 },
     { reason: "origin-not-exercised", count: 1 },
+    { reason: "rpc-bodies-not-retained", count: 1 },
     { reason: "target-unresolved", count: 1 },
   ]);
   assert.equal(report.gaps, 7);
@@ -350,4 +352,154 @@ test("folds replacement origins onto reference origins before joining", () => {
     statusesOf(unpaired)["route /invoices"],
     "unknown:origin-not-exercised",
   );
+});
+
+test("claims GraphQL absence only when every input retained bodies on an exercised declared origin", () => {
+  const quiet = buildSurfaceCapture();
+  quiet.events.items = quiet.events.items.filter(
+    (event) => event.transaction_id !== "t8",
+  );
+  quiet.events.retained = quiet.events.items.length;
+  const alone = reconcileSurface(
+    fixtureInputs({ observed: [input("quiet.json", quiet)] }),
+  );
+  assert.equal(statusesOf(alone)["graphql query ListCustomers"], "unmatched");
+  const mixed = reconcileSurface(
+    fixtureInputs({
+      observed: [
+        input("quiet.json", quiet),
+        input("a.json", buildSurfaceApiSurface()),
+      ],
+    }),
+  );
+  assert.equal(
+    statusesOf(mixed)["graphql query ListCustomers"],
+    "unknown:rpc-bodies-not-retained",
+  );
+  const truncated = buildSurfaceCapture();
+  const content = truncated.events.items.find(
+    (event) =>
+      event.kind === "network-content" &&
+      event.transaction_id === "t8" &&
+      event.phase === "request",
+  );
+  content.body = {
+    state: "unavailable",
+    reason: "body-size-limit",
+    message: "Request body exceeded the retained size limit",
+    limit_bytes: 65_536,
+    observed_bytes: 70_000,
+  };
+  const cut = reconcileSurface(
+    fixtureInputs({ observed: [input("cut.json", truncated)] }),
+  );
+  assert.equal(
+    statusesOf(cut)["graphql query ListCustomers"],
+    "unknown:rpc-bodies-not-retained",
+  );
+  assert.ok(
+    cut.inputs.observed[0].body_incompleteness.some((line) =>
+      /request bod/u.test(line),
+    ),
+  );
+  assert.ok(
+    cut.limitations.some((line) => /cut\.json.*request bod/u.test(line)),
+  );
+  const away = reconcileSurface(
+    fixtureInputs({
+      observed: [
+        input("away.json", buildSurfaceCapture("https://other.example.test")),
+      ],
+    }),
+  );
+  assert.equal(
+    statusesOf(away)["graphql mutation RenameCustomer"],
+    "unknown:origin-not-exercised",
+  );
+});
+
+test("reads persisted-query bodies by operationName and ignores names outside the GraphQL grammar", () => {
+  const apq = buildSurfaceCapture();
+  setRequestBody(
+    apq,
+    "t8",
+    JSON.stringify({
+      operationName: "ListCustomers",
+      variables: { first: 10 },
+      extensions: {
+        persistedQuery: { version: 1, sha256Hash: "0".repeat(64) },
+      },
+    }),
+  );
+  assert.equal(
+    statusesOf(
+      reconcileSurface(fixtureInputs({ observed: [input("apq.json", apq)] })),
+    )["graphql query ListCustomers"],
+    "exact",
+  );
+  const hostile = buildSurfaceCapture();
+  setRequestBody(
+    hostile,
+    "t8",
+    JSON.stringify({
+      operationName: "(a+)+b SECRETNAME(",
+      query: "query ListCustomers { customers { id } }",
+    }),
+  );
+  const report = reconcileSurface(
+    fixtureInputs({ observed: [input("hostile.json", hostile)] }),
+  );
+  assert.notEqual(report.status, "invalid", report.reason);
+  assert.equal(JSON.stringify(report).includes("SECRETNAME"), false);
+  assert.equal(statusesOf(report)["graphql query ListCustomers"], "exact");
+});
+
+test("treats an api-surface page beyond the first or short of its total as incomplete", () => {
+  const paged = buildSurfaceApiSurface();
+  paged.view.offset = 50;
+  paged.coverage = {
+    status: "page",
+    examined: 9,
+    total: 59,
+    next_offset: null,
+    exhausted: true,
+  };
+  const report = reconcileSurface(
+    fixtureInputs({ observed: [input("page.json", paged)] }),
+  );
+  assert.equal(report.status, "partial");
+  assert.equal(
+    statusesOf(report)["network POST /api/metrics"],
+    "unknown:observed-coverage-incomplete",
+  );
+  assert.ok(
+    report.inputs.observed[0].incompleteness.some((line) =>
+      /groups examined 9 of 59|offset 50/u.test(line),
+    ),
+  );
+});
+
+test("never echoes a route literal with a query or fragment", () => {
+  const report = reconcileSurface(
+    fixtureInputs({
+      static: input(
+        "s.json",
+        analysisOf([
+          ...BUNDLE_FINDINGS,
+          {
+            value: "/reset?token=SECRETVALUE",
+            mechanisms: ["property:path"],
+            kind: "route",
+          },
+        ]),
+      ),
+    }),
+  );
+  const item = report.surface.find(
+    (entry) =>
+      entry.family === "route" && entry.reason === "route-pattern-unsupported",
+  );
+  assert.ok(item.key.startsWith("node:"), item.key);
+  assert.equal(Object.hasOwn(item, "route"), false);
+  assert.equal(JSON.stringify(report).includes("SECRETVALUE"), false);
 });
