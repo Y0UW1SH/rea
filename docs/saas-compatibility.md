@@ -22,6 +22,9 @@ regression gates and the safe upstream-sync procedure.
   saved state, including unseen inputs and retry/failure controls.
 - Validate reusable product planning profiles with context provenance, explicit
   workflow coverage, unresolved questions, and external-service boundaries.
+- Infer an OpenAPI 3.1 contract with evidence-cited, sample-counted JSON Schemas
+  from scenario captures that retained network bodies, and verify a replacement's
+  captured bodies against it.
 
 This is an offline evaluation foundation. It does not log into a vendor, discover
 hidden server rules, generate a replacement application, reset a SaaS tenant, or
@@ -309,6 +312,74 @@ The command exits 0 for selected-content agreement, 1 for observed record
 differences, and 2 when input or evidence cannot be compared. It neither downloads
 files nor executes exports, scripts, formulas, URLs or external integrations.
 Use synthetic data in committed fixtures and retain originals privately for audit.
+
+## Infer and verify API contracts from captures
+
+```bash
+node scripts/saas-api-contract.mjs infer scripts/fixtures/saas-api-contract/manifest.json --out ./contract
+node scripts/saas-api-contract.mjs verify ./contract scripts/fixtures/saas-api-contract/replacement.json --origin-map https://app.example.test=http://localhost:4300
+```
+
+`infer` reads one or more `capture_browser_scenario` `normalized_result` files that
+were recorded with `capture.network.request_body` or `response_body` enabled and
+writes `openapi.json` (OpenAPI 3.1, JSON Schema 2020-12) and `contract-report.json`
+into a new directory that must not exist yet. Copy the fixture manifest: it names
+the captures, optional `origins` (exactly one declared primary origin; otherwise
+the origin with the most JSON transactions is selected), `resource_types`
+(default `fetch` and `xhr`), the inference `options` and the `limits` (`maxBytes`,
+`maxTransactions`, `maxBodyBytes`, `maxSchemaNodes`, `maxEvidencePerOperation`).
+Unknown fields, traversal paths and over-ceiling limits are rejected. Retained
+body digests are re-verified; a mismatch makes the whole run `invalid`.
+
+What the contract states, and how each statement is marked:
+
+- Operations are keyed by method and path template using the api-surface segment
+  rules (`numeric`, `uuid`, `hex`, `iso-date`). Path parameters get positional
+  names such as `{numeric_2}`; the plain api-surface template is kept in
+  `x-rea-api-surface-template`. Query parameter names and request/response header
+  names are listed; header values are never read.
+- Request schemas per media type and response schemas per observed status merge
+  every JSON sample. `type` follows the original number lexeme (`integer` only
+  when every sample is an integer token); `required` appears only at complete
+  presence with at least `required_min_samples` samples, always with
+  `x-rea-basis: inferred` and `x-rea-presence` counts; `format` (`uuid`,
+  `date-time`, `date`) and the decimal-string `pattern` need every sample to
+  agree; enum candidates appear only as `x-rea-enum-candidates`, never as `enum`.
+- GraphQL POSTs whose request body has a string `query` are grouped under
+  `x-rea-graphql-operations` by `operationName`, with `variables` and `data`
+  schemas per operation.
+- Every operation carries `x-rea-evidence` (capture file digests, transaction ids,
+  step ids, statuses, sample count) and `x-rea-unknowns`: the fixed
+  `authorization-model`, `response-semantics` and `state-transition` unknowns the
+  environment manifest also states, plus `error-responses-unobserved` when only
+  2xx responses were seen.
+- The report records the primary origin, per-input digests, coverage (admitted
+  transactions; exclusions by reason such as `other-origin`, `non-json-body`,
+  `resource-type` or `url-redacted`; truncated and unparseable bodies), the
+  operation list and the `openapi_sha256` that `verify` checks.
+
+`verify` reads a replacement capture, folds its origins onto the contract origin
+through directional `--origin-map CONTRACT=REPLACEMENT` pairs (the same rule as
+`origin_pairs`; undeclared origins are excluded, never guessed), matches each
+admitted transaction to an operation by method and template, and validates the
+captured JSON bodies with Ajv against the inferred schemas with the `x-rea-*`
+markers removed. Findings are `structural` (type, format, pattern, items),
+`presence` (required), `unobserved_status` and `unmatched_operation`; each carries
+the instance path, keyword, transaction id and step id, never body values. Exit 0
+means every matched body conformed, 1 means findings, and 2 means invalid input or
+an unknown result (no matched transaction, or no body could be verified).
+Conformance of captured bodies is not business equivalence; use the workflow
+evaluator for outcomes.
+
+Limits: bodies above the capture's retained size limit (64 KiB by default) or the
+manifest `maxBodyBytes` contribute no schema and are counted as truncated;
+non-JSON bodies (protobuf, gRPC-web, binary tRPC) exclude their transaction;
+pagination envelopes are not modeled; one primary origin per contract; the
+Playwright response-body provenance caveat applies to every response schema; and
+redaction covers declared secrets and credential header families only, so keep
+contracts inferred from real captures private. Regenerate the synthetic fixtures
+with `node scripts/saas-api-contract-fixtures.mjs` and check them with `--check`;
+they prove the companion, not any vendor API.
 
 ## Download retention boundary
 

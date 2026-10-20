@@ -4,9 +4,6 @@
 // tests/boundary/cli/saasApiContract.test.ts asserts parity against those owners, so a
 // drift in either copy fails a test instead of silently diverging.
 
-/** Exact segment formats shared with the api-surface view, in its precedence order. */
-export const ROUTE_RULES = ["numeric", "uuid", "hex", "iso-date"];
-
 const SPECIAL_SCHEMES = ["ftp:", "file:", "http:", "https:", "ws:", "wss:"];
 
 /** The first exact format rule a recorded path segment satisfies, if any. */

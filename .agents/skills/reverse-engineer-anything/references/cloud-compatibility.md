@@ -26,6 +26,11 @@ synthetic fixtures and current limitations.
 7. Report the exact passed/failed/unknown checks, settings and revision. Keep
    simulated external effects and untested workflows explicit. Synthetic retail
    and accounting cases validate the checker, not Lightspeed or QuickBooks.
+8. Infer the reference API contract from captures that retained network bodies
+   (`scripts/saas-api-contract.mjs infer`) and check replacement captures with
+   `verify` through directional origin pairs. Required properties, formats and
+   enum candidates are sample-bounded inferences, never vendor facts; a passing
+   verify shows body conformance, not business equivalence.
 
 The product-specific adapter owns observation extraction and setup. The operator
 retains authority over account access, target mutation and external effects.

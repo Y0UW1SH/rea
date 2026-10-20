@@ -1,5 +1,36 @@
 # SaaS fork validation — 2026-10-20
 
+## API contract inference increment
+
+The contract companion (`scripts/saas-api-contract.mjs`, see the
+[guide](saas-compatibility.md#infer-and-verify-api-contracts-from-captures))
+was built on the integrated feature head with Node **24.21.0** and npm
+**11.19.0** on Windows 11 Pro 10.0.26100:
+
+- `npm run test:saas`: **102 passed** (84 existing plus 12 helper and 6 contract
+  cases). The contract cases cover deterministic fixtures equal to their builder,
+  fail-closed manifest validation, the inferred OpenAPI document and coverage
+  report (including that a sentinel header value never appears in any output
+  byte and that `enum` is never emitted), missing-content, tampered-digest,
+  over-budget and traversal inputs, `verify` pass/fail/unknown/invalid outcomes
+  with every finding kind, and the CLI exit codes.
+- `node scripts/run-exact-tests.mjs run tests/boundary/cli/saasApiContract.test.ts`:
+  **6 passed**, including parity of the companion mirrors with
+  `segmentRule`/`scanRouteTemplate`, `parseRecordedTransportUrl`,
+  `commitBrowserScenarioNormalization` and `projectScenarioOrigins`, and
+  `browserScenarioCaptureSchema` acceptance of all four committed fixtures.
+- The workflow/CI command mirror case of
+  `tests/boundary/filesystem/saasUpstreamIntegration.test.ts`: **1 passed**.
+- `npx tsc --noEmit`, `node scripts/check-doc-facts.mjs`, `oxfmt --check` on the
+  new and edited files and `git diff --check`: passed. `oxlint` reports only
+  max-params and max-lines-per-function warnings on the fixture builder, the
+  GraphQL recorder, the verify loop and the inference test, within the
+  repository's warning-only policy.
+- Not run here: the fork's hosted workflows (Actions remain disabled) and any
+  real capture. The committed captures are synthetic and prove the companion,
+  not a vendor API; the Playwright response-body provenance caveat is quoted in
+  every produced report.
+
 ## Latest upstream integration check
 
 A local integration on branch `integration/saas-upstream-2026-10-20` merged the

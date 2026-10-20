@@ -60,6 +60,7 @@ const commands = [
     "tests/boundary/cli/saasCompatibilityLab.test.ts",
     "tests/boundary/cli/saasProductProfile.test.ts",
     "tests/boundary/cli/saasExportCompare.test.ts",
+    "tests/boundary/cli/saasApiContract.test.ts",
     "tests/acceptance/setup/selectedSkillSetup.test.ts",
     "tests/boundary/filesystem/setupSkill.test.ts",
     "tests/boundary/filesystem/qwenClientConfiguration.test.ts",
