@@ -168,6 +168,7 @@ export function parseExportJson(
   maxFields = 1024,
   maxArrayLength = 100000,
   maxValues = 100000,
+  decodeNumber = (lexeme) => JSON.parse(lexeme),
 ) {
   let at = 0,
     values = 0;
@@ -242,7 +243,10 @@ export function parseExportJson(
       );
     if (!match) throw new Error("JSON: invalid value");
     at += match[0].length;
-    return JSON.parse(match[0]);
+    // Number lexemes reach the caller untouched so inference can see exact tokens.
+    return /^[-0-9]/u.test(match[0])
+      ? decodeNumber(match[0])
+      : JSON.parse(match[0]);
   }
   const result = value(0);
   space();
