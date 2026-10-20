@@ -1,6 +1,64 @@
-# SaaS fork validation — 2026-10-19
+# SaaS fork validation — 2026-10-20
 
 ## Latest upstream integration check
+
+A local integration on branch `integration/saas-upstream-2026-10-20` merged the
+portable companion-suite feature head
+`5cf82999e904ed8039be9ea2057bf14b702780f6` with upstream `morluto/rea` main
+`8716b5241125d81f1a16808eb5178fdfdea1ecdb`, 144 commits and 1,104 changed
+paths after the starting point. The merge commit is
+`00830ddf6c105ecb5bd4a73963cd8ac433044a4d`, tree
+`b25cadbc34339795c61310934a9e74faccc6af59`; the commit adding this record
+follows it. Only `package.json` conflicted: upstream's extended `test:python`
+next to the fork's `test:saas`, both kept. The README banner, all 20 translated
+fork notices, the fork's SKILL.md section, all 39 fork-only files and both SaaS
+workflows were verified after the merge. These are local verification commits;
+publication and the feature-branch fast-forward are separate steps verified
+against the remote, not by this file.
+
+Using Node **24.21.0** and npm **11.19.0** (newer patch releases than the pinned
+24.18.0 and 11.16.0) on Windows 11 Pro 10.0.26100, with a fresh locked
+`npm ci`, `turbo run compile --force`, `artifacts:skills`,
+`artifacts:managed-evidence --force` and a generated product catalog:
+
+- SaaS suite: **84 passed**.
+- Origin policy, authored skill inventory and README consistency: **35 passed**
+  across three files.
+- Workflow action pinning: **5 passed**.
+- Focused CLI/MCP/installer lane (nine files): **45 passed, 7 failed, 4
+  skipped**. Six failures are the documented Windows-only test-side failures
+  (three Qwen `stale` registrations; two `selectedSkillSetup` JSON
+  path-containment assertions and one 30 s timeout), already fixed on the
+  fork's `fix/windows-setup-test-portability` and
+  `fix/windows-client-configuration-paths` branches. The seventh is upstream's
+  browser CLI parity case: since upstream `9aca543f4`, `analyze_web_bundle`
+  runs in an owned worker process, which on a Windows source checkout without
+  `native/windows/build/` reports `capability_unavailable` ("REA Windows
+  native controls are unavailable"). It failed identically when its file ran
+  alone (**13 passed, 1 failed**) and is environmental. The four SaaS CLI
+  files (**5 passed**), the fork's browser comparison cases and
+  `browserScenarioMcp` (**2 passed**, 20.5 s) passed.
+- Browser scenario capture, cancellation and cleanup lane (six files): **98
+  passed, 1 failed, 2 skipped**. The failing upstream cleanup-retry case passed
+  **8 of 8** when its file ran alone (6 s), so it is a load-timing flake; the
+  skips are the `win32` skips of the CLI cancellation test.
+- Fork integration helper regressions: **25 passed, 4 skipped** (`win32`
+  signal cases).
+- `npm run check:fast`: passed.
+- `npm run docs:check`: the `run-exclusive` wrapper exits 1 on this host
+  because it requires the packaged Windows native controls; run directly,
+  `turbo run docs:check:built` (**6 tasks**) and README consistency
+  (**5 passed**) passed.
+- `npm run format:check`, `npm run knip` (on the built tree) and
+  `git diff --check`: passed.
+
+No full-suite, real-provider or vendor behavior was verified. Linux and macOS
+results for this integration come from the fork's SaaS workflows once the
+feature branch is fast-forwarded; a push to the integration branch alone does
+not trigger them. The [change ledger](saas-change-ledger.md) records the
+conflict resolution and command list.
+
+## Previous upstream integration check (2026-10-19)
 
 An isolated local integration combined feature checkpoint
 `2a1fff7bc57951ed0857349ad8d9a18ca56c133d` with upstream `morluto/rea` main

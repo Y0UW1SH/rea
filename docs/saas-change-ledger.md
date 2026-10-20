@@ -14,6 +14,14 @@ These immutable commit IDs identify the code even if a branch later moves:
 - Initial complete feature checkpoint: [`9f0f4f1537e093eaeae242c68c9fce28340faf11`](https://github.com/Y0UW1SH/rea/commit/9f0f4f1537e093eaeae242c68c9fce28340faf11).
 - Tested numeric/export hardening checkpoint: [`bbb9e40f8f314f240839099bcebefd2410116c7c`](https://github.com/Y0UW1SH/rea/commit/bbb9e40f8f314f240839099bcebefd2410116c7c).
   Its parent is the initial feature checkpoint above.
+- Portable companion-suite feature head before the 2026-10-20 integration:
+  [`5cf82999e904ed8039be9ea2057bf14b702780f6`](https://github.com/Y0UW1SH/rea/commit/5cf82999e904ed8039be9ea2057bf14b702780f6).
+- Upstream integration merge of 2026-10-20:
+  [`00830ddf6c105ecb5bd4a73963cd8ac433044a4d`](https://github.com/Y0UW1SH/rea/commit/00830ddf6c105ecb5bd4a73963cd8ac433044a4d)
+  (tree `b25cadbc34339795c61310934a9e74faccc6af59`), whose parents are the
+  feature head above and upstream `morluto/rea` main
+  `8716b5241125d81f1a16808eb5178fdfdea1ecdb`. See the
+  [integration record](#upstream-integration-record-2026-10-20).
 
 A Git tag is a named pointer, not an offsite backup. Preserve the commits in a
 verified remote branch or tag and, when separate backup is needed, a repository
@@ -222,6 +230,77 @@ The full suite was not rerun after those fixes or hardening. These are historica
 local results, not a promise of current remote CI success or bug-free features.
 All committed cases are synthetic; no Lightspeed or QuickBooks account was
 accessed and no real vendor behavior was verified.
+
+## Upstream integration record (2026-10-20)
+
+Tested upstream: `morluto/rea` main `8716b5241125d81f1a16808eb5178fdfdea1ecdb`,
+144 commits and 1,104 changed paths after the starting point `e4c3d7239`.
+Integration: branch `integration/saas-upstream-2026-10-20`, created from the
+feature head `5cf82999e` with `git merge --no-ff upstream/main`; merge commit
+`00830ddf6c105ecb5bd4a73963cd8ac433044a4d`, tree
+`b25cadbc34339795c61310934a9e74faccc6af59`. The commit adding this record
+follows the merge on the same branch. Fork `main` was not merged separately: it
+mirrors upstream main and was already contained in the tested upstream commit.
+
+Conflicts: only `package.json` (`scripts`). Upstream extended `test:python` with
+`bridge/pwndbg/test_core_context.py`, and the fork's adjacent `test:saas` entry
+conflicted textually; the resolution keeps upstream's `test:python` and the
+unchanged `test:saas`. `README.md`, the 20 translated READMEs and
+`.agents/skills/reverse-engineer-anything/SKILL.md` merged automatically. After
+the merge, the fork banner, every English fork notice, the fork's SKILL.md
+section (next to upstream's version 44 bump), all 39 fork-only files and both
+SaaS workflows were verified present; upstream's new files were taken unchanged.
+
+Local gates on the merged tree (Windows 11 Pro 10.0.26100, Node 24.21.0,
+npm 11.19.0; fresh `npm ci`, `turbo run compile --force`, `artifacts:skills`,
+`artifacts:managed-evidence --force` and a generated product catalog):
+
+- `oxfmt --check README.md docs/saas-change-ledger.md .github/workflows/saas-compatibility.yml`: passed.
+- `npm run test:saas`: 84 passed.
+- `npm run test:local -- src/domain/browserScenarioDiff.test.ts tests/conformance/managedSkillInventory.test.ts tests/conformance/readmeConsistency.test.ts`: 35 passed (29, 1 and 5).
+- `node scripts/run-exact-tests.mjs run tests/boundary/filesystem/workflowActionPinning.test.ts`: 5 passed.
+- Focused boundary lane, the nine `test:focused` files run through
+  `node scripts/run-exact-tests.mjs run` because `test:focused` runs no tests
+  on this host: 45 passed, 7 failed, 4 skipped. Six failures are the documented
+  Windows-only test-side failures (three `qwenClientConfiguration` `stale`
+  registrations; two `selectedSkillSetup` JSON path-containment assertions and
+  one 30 s timeout), fixed on the fork branches
+  `fix/windows-setup-test-portability` and
+  `fix/windows-client-configuration-paths`. The seventh is upstream's
+  `browserCli` parity case "runs analysis, session, WebMCP, screenshot, and
+  comparison from explicit request scope": since upstream `9aca543f4`,
+  `analyze_web_bundle` runs in an owned worker process, which on a Windows
+  source checkout without `native/windows/build/` reports
+  `capability_unavailable` ("REA Windows native controls are unavailable"). It
+  failed identically when the file ran alone (13 passed, 1 failed), so it is
+  environmental rather than a SaaS contract change. The four SaaS CLI files
+  (5 passed), the fork's comparison cases in `browserCli` and
+  `browserScenarioMcp` (2 passed, 20.5 s) passed.
+- Browser lifecycle lane (six files): 98 passed, 1 failed, 2 skipped. The
+  failure, upstream's `browserScenarioCleanup` case "retries a late Playwright
+  open after cancellation before accepting another capture", passed 8/8 when
+  its file ran alone (6 s); it is a timing flake under lane load in a file the
+  fork does not modify. The skips are the `win32` skips of
+  `browserScenarioCancellationCli`.
+- `node scripts/run-exact-tests.mjs run tests/boundary/filesystem/saasUpstreamIntegration.test.ts`: 25 passed, 4 skipped (`win32` signal cases), 261 s.
+- `npm run check:fast`: passed.
+- `npm run docs:check`: exits 1 on this host before any check runs because
+  `scripts/run-exclusive.mjs` requires the packaged Windows native controls
+  (`native/windows/build/manifest.json`, absent in a source checkout). The
+  wrapped pieces passed when run directly: `npx turbo run docs:check:built`
+  (6 tasks) and `npm run test:local -- tests/conformance/readmeConsistency.test.ts`
+  (5 passed).
+- `npm run format:check` (4,536 files), `npm run knip` and `git diff --check`:
+  passed. A `knip` run started while `compile --force` was rewriting `dist/`
+  reported the `#javascript-analysis-worker` import as unresolved; it passed
+  once the build had finished.
+
+Remaining limitations: Node and npm were newer patch releases than the pinned
+`24.18.0` and `npm@11.16.0`, so the combined CI candidate check was not
+reproduced locally. Linux and macOS results come from the fork's SaaS workflows
+after the feature branch is fast-forwarded; a push to the integration branch
+alone triggers neither workflow. No full-suite, real-provider or vendor
+behavior was verified.
 
 ## Safe upstream-sync procedure
 
