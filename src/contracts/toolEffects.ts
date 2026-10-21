@@ -634,6 +634,17 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffects>> = {
     executesForeignCode: true,
     idempotent: false,
   }),
+  run_saas_investigation: effects({
+    mutatesTarget: true,
+    mutatesSession: true,
+    writesFilesystem: true,
+    launchesProcess: true,
+    accessesNetwork: true,
+    changesUiState: true,
+    mayDiscardData: true,
+    executesForeignCode: true,
+    idempotent: false,
+  }),
   list_electron_targets: browserEvidence,
   inspect_electron_page: browserEvidence,
   capture_electron_scenario: effects({

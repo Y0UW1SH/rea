@@ -73,6 +73,7 @@ import { registerApplicationTools } from "./registerApplicationTools.js";
 import { registerArtifactTools } from "./registerArtifactTools.js";
 import { registerNativeTools } from "./registerNativeTools.js";
 import { registerBrowserScenarioTool } from "./registerBrowserScenarioTool.js";
+import { registerSaasInvestigationTool } from "./registerSaasInvestigationTool.js";
 import { registerBrowserTools } from "./registerBrowserTools.js";
 import { registerWebScriptTool } from "./registerWebScriptTool.js";
 import { registerWebModuleTool } from "./registerWebModuleTool.js";
@@ -962,6 +963,12 @@ const registerObservationTools = ({
   });
   registerBrowserScenarioTool(server, {
     ...common,
+    provider: options.browserScenarioCapture,
+    loadFailure: options.optionalProviderLoadFailures?.browserScenarioCapture,
+  });
+  registerSaasInvestigationTool(server, {
+    ...common,
+    artifactResources,
     provider: options.browserScenarioCapture,
     loadFailure: options.optionalProviderLoadFailures?.browserScenarioCapture,
   });

@@ -64,7 +64,7 @@ describe("scenarioCaptureRecords", () => {
     );
   });
 
-  it("leaves a transaction that cannot be attributed to one request and response unrepresented", () => {
+  it("retains observed request identity while withholding an ambiguous response", () => {
     const capture = scenarioCaptureFixture(SCENARIO_EXCHANGES.slice(1, 2));
     const response = capture.events.items.find(
       (event) => event.kind === "response",
@@ -78,13 +78,15 @@ describe("scenarioCaptureRecords", () => {
       },
     };
     const projected = scenarioCaptureRecords(duplicated, "manifest");
-    expect(projected.records[0]?.reported).toEqual({});
-    // No manifest tool can cite it, so it is not counted among bodiless tools.
+    expect(projected.records[0]?.reported).toEqual({
+      request: { method: "GET", url: "http://127.0.0.1:3101/api/users/2" },
+    });
+    expect(projected.records[0]?.binary_fields).toEqual([]);
     expect(
       projected.limitations.some((limitation) =>
         limitation.includes("retained no response body"),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("replays a redacted body's markers, counts it, and treats a body redaction emptied as not retained", () => {

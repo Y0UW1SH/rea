@@ -97,6 +97,7 @@ export const toolFamilyCatalog = (sources) => {
         ...sources.browserContracts.BROWSER_TOOL_CONTRACTS,
         ...sources.webRuntimeContracts.WEB_RUNTIME_TOOL_CONTRACTS,
         ...sources.browserScenarioContracts.BROWSER_SCENARIO_TOOL_CONTRACTS,
+        ...sources.saasInvestigationContracts.SAAS_INVESTIGATION_TOOL_CONTRACTS,
         ...sources.webNetworkCaptureContracts
           .WEB_NETWORK_CAPTURE_TOOL_CONTRACTS,
       ],
@@ -361,8 +362,10 @@ export const providerCatalog = (sources) => {
     {
       identity:
         sources.browserIdentities.PLAYWRIGHT_BROWSER_SCENARIO_PROVIDER_IDENTITY,
-      contracts:
-        sources.browserScenarioContracts.BROWSER_SCENARIO_TOOL_CONTRACTS,
+      contracts: [
+        ...sources.browserScenarioContracts.BROWSER_SCENARIO_TOOL_CONTRACTS,
+        ...sources.saasInvestigationContracts.SAAS_INVESTIGATION_TOOL_CONTRACTS,
+      ],
     },
     {
       identity: sources.browserIdentities.CDP_ELECTRON_PROVIDER_IDENTITY,

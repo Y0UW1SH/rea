@@ -31,10 +31,13 @@ regression gates and the safe upstream-sync procedure.
   gaps that need further collection.
 - Serve retained responses through the existing environment tools, with optional
   strict path/query/JSON-body matching that refuses unsupported requests.
+- Run a [live investigation](saas-live-investigation.md) through the installed CLI
+  or MCP: select from supplied distinguishing experiments, verify context and
+  saved-state readbacks, update hypotheses and resume interrupted actions safely.
 
-These additions analyse retained evidence from cloud applications locally.
-**Live collection uses REA's existing browser tools; offline evaluation uses the
-saved results.** Once the required evidence is retained, evaluation can be repeated
+These additions collect and analyse evidence from cloud applications locally.
+**Live collection uses REA's browser tools and bounded investigation controller;
+offline evaluation uses the saved results.** Once the required evidence is retained, evaluation can be repeated
 without contacting or changing the vendor account.
 
 | Stage                         | Current capability                                                                                                                                                                                 |
@@ -640,9 +643,10 @@ Further work remains intentionally separate:
   comparisons are available now; live download retention remains deferred as explained above.
 - Role enforcement, retries, interruption and mutation tests against live targets.
 - Migration adapters preserving identities, relationships and history.
-- An uncertainty-driven experiment planner beyond declared-versus-observed
-  surface coverage, and cross-view reconciliation beyond endpoints, operations,
-  procedures and routes. The surface-coverage companion above plans experiments
+- Automatic generation of hypotheses and new experiments, and cross-view
+  reconciliation beyond endpoints, operations, procedures and routes. The live
+  controller selects and executes caller-supplied distinguishing experiments;
+  the surface-coverage companion above plans experiments
   for the gaps it can see; UI state coverage remains separate.
 - Vendor drift collection and comparison over time.
 
@@ -655,6 +659,7 @@ Related upstream discussions provide extension points, not implemented guarantee
 [capture-derived environments #4933](https://github.com/morluto/rea/issues/4933).
 The companion scripts operate on local files. Serving recorded responses and
 strict request matching use REA's existing [agent environments](agent-environments.md).
-An autonomous SaaS investigation loop and mutable business-state emulation remain
-future work; existing capture, serving and retained-view ownership stay with their
-respective REA components.
+The [live investigation controller](saas-live-investigation.md) now executes and
+adapts within supplied experiments. Automatic experiment generation and mutable
+business-state emulation remain future work; capture, serving and retained-view
+ownership stay with their respective REA components.

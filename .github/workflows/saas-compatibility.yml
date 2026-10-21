@@ -41,6 +41,10 @@ jobs:
         run: >-
           npm run test:local --
           src/domain/browserScenarioDiff.test.ts
+          src/domain/saasInvestigation.test.ts
+          src/domain/analysisView/scenarioCaptureRecords.test.ts
+          src/contracts/toolEffects.test.ts
+          src/application/saas/SaasInvestigationService.test.ts
           tests/conformance/managedSkillInventory.test.ts
           tests/conformance/readmeConsistency.test.ts
       - name: Check pinned workflow actions
@@ -50,6 +54,9 @@ jobs:
           npm run test:focused --
           tests/boundary/cli/browserCli.test.ts
           tests/boundary/mcp/browserScenarioMcp.test.ts
+          tests/boundary/mcp/saasInvestigationMcp.test.ts
+          tests/boundary/cli/saasInvestigationCli.test.ts
+          tests/process-global/saasInvestigationLifecycle.test.ts
           tests/boundary/cli/saasCompatibility.test.ts
           tests/boundary/cli/saasCompatibilityLab.test.ts
           tests/boundary/cli/saasProductProfile.test.ts
@@ -60,3 +67,9 @@ jobs:
           tests/acceptance/setup/selectedSkillSetup.test.ts
           tests/boundary/filesystem/setupSkill.test.ts
           tests/boundary/filesystem/qwenClientConfiguration.test.ts
+      - name: Install the locked Playwright browser for the local HTTP fixture
+        run: node node_modules/playwright-core/cli.js install --with-deps chromium
+      - name: Run the live investigation through Chromium and the installed CLI
+        run: |
+          REA_TEST_CHROMIUM="$(node --input-type=module -e 'import { chromium } from "playwright-core"; console.log(chromium.executablePath())')" \
+            npm run test:focused -- tests/acceptance/browser/saasInvestigationLiveCli.test.ts
