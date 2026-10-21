@@ -151,6 +151,7 @@ describe("tool effects", () => {
       "push_adb_file",
       "resume_frida_session",
       "rizin_debug_command",
+      "run_saas_investigation",
       "start_adb_activity",
       "start_adb_app",
       "start_rizin_debug_session",

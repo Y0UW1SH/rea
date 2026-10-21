@@ -172,18 +172,27 @@ const record = (
   };
   const responses = index.responses.get(request.transaction_id) ?? [];
   const response = responses.length === 1 ? responses[0] : undefined;
-  // One request, at most one response and one content event per phase: otherwise the
-  // transaction cannot be attributed and is left unrepresented.
+  // Ambiguous attribution withholds response/body facts, but never erases the
+  // observed request line: consumers must still count matching requests.
   if (
     index.requestCounts.get(request.transaction_id) !== 1 ||
     responses.length > 1 ||
+    (response !== undefined &&
+      (response.method !== request.method ||
+        (response.url.redacted && !request.url.redacted) ||
+        response.url.url !== request.url.url)) ||
     (index.contents.get(request.sequence)?.length ?? 0) > 1 ||
     (response !== undefined &&
       (index.contents.get(response.sequence)?.length ?? 0) > 1)
   )
     return {
-      record: { ordinal, location, reported: {}, ...empty },
-      represented: false,
+      record: {
+        ordinal,
+        location,
+        reported: { request: reportedRequest(request, undefined, purpose) },
+        ...empty,
+      },
+      represented: !request.url.redacted,
       body: false,
       redacted: false,
     };

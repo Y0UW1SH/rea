@@ -1,0 +1,210 @@
+{
+  "plan": {
+    "version": 1,
+    "investigation_id": "synthetic-tax-rounding",
+    "question": "For two five-cent lines with a hypothetical 10% tax, is half-up rounding applied per line or to the document?",
+    "study": {
+      "study_id": "authorized-calculation-study",
+      "scenario_id": "tax-rounding"
+    },
+    "actor_id": "operator",
+    "workspace_id": "test-workspace",
+    "allowed_origins": ["https://app.example.test"],
+    "allow_mutations": true,
+    "limits": {
+      "max_experiments": 1,
+      "max_actions": 20,
+      "max_run_ms": 60000,
+      "max_journal_bytes": 16777216
+    },
+    "hypotheses": [
+      {
+        "id": "per-line",
+        "description": "Half-up rounding of each line tax in minor units, then sum"
+      },
+      {
+        "id": "per-document",
+        "description": "Half-up rounding of the document tax in minor units"
+      }
+    ],
+    "experiments": [
+      {
+        "id": "two-five-cent-lines",
+        "description": "Create one uniquely named synthetic test record and read its saved tax",
+        "mutates": true,
+        "before": {
+          "scenario": {
+            "browser": {
+              "mode": "connect",
+              "cdp_endpoint": "http://127.0.0.1:9222",
+              "target_id": "REPLACE_WITH_AUTHORIZED_TARGET_ID"
+            },
+            "start_url": {
+              "url": "https://app.example.test/api/test-records/rea-probe-20261021-01"
+            },
+            "actions": [
+              {
+                "step_id": "settle",
+                "action": "wait_for_timeout",
+                "duration_ms": 250
+              }
+            ],
+            "capture": {
+              "events": ["network"],
+              "network": {
+                "request_body": true,
+                "response_body": true
+              }
+            }
+          },
+          "response_url": "https://app.example.test/api/test-records/rea-probe-20261021-01",
+          "actor_pointer": "/actorId",
+          "workspace_pointer": "/workspaceId",
+          "assertions": [
+            {
+              "pointer": "/recordId",
+              "equals": null
+            }
+          ]
+        },
+        "action": {
+          "browser": {
+            "mode": "connect",
+            "cdp_endpoint": "http://127.0.0.1:9222",
+            "target_id": "REPLACE_WITH_AUTHORIZED_TARGET_ID"
+          },
+          "start_url": {
+            "url": "https://app.example.test/test-records/new"
+          },
+          "actions": [
+            {
+              "step_id": "record-id",
+              "action": "fill",
+              "locator": {
+                "kind": "test_id",
+                "value": "record-id"
+              },
+              "value": {
+                "source": "literal",
+                "value": "rea-probe-20261021-01"
+              },
+              "timeout_ms": 5000
+            },
+            {
+              "step_id": "unit-price",
+              "action": "fill",
+              "locator": {
+                "kind": "test_id",
+                "value": "unit-price"
+              },
+              "value": {
+                "source": "literal",
+                "value": "0.05"
+              },
+              "timeout_ms": 5000
+            },
+            {
+              "step_id": "line-count",
+              "action": "fill",
+              "locator": {
+                "kind": "test_id",
+                "value": "line-count"
+              },
+              "value": {
+                "source": "literal",
+                "value": "2"
+              },
+              "timeout_ms": 5000
+            },
+            {
+              "step_id": "tax-percent",
+              "action": "fill",
+              "locator": {
+                "kind": "test_id",
+                "value": "tax-percent"
+              },
+              "value": {
+                "source": "literal",
+                "value": "10"
+              },
+              "timeout_ms": 5000
+            },
+            {
+              "step_id": "save",
+              "action": "click",
+              "locator": {
+                "kind": "test_id",
+                "value": "save"
+              },
+              "timeout_ms": 5000
+            },
+            {
+              "step_id": "saved",
+              "action": "wait_for",
+              "locator": {
+                "kind": "test_id",
+                "value": "saved"
+              },
+              "state": "visible",
+              "timeout_ms": 5000
+            }
+          ],
+          "capture": {
+            "events": ["network"],
+            "network": {
+              "request_body": true,
+              "response_body": true
+            }
+          }
+        },
+        "after": {
+          "scenario": {
+            "browser": {
+              "mode": "connect",
+              "cdp_endpoint": "http://127.0.0.1:9222",
+              "target_id": "REPLACE_WITH_AUTHORIZED_TARGET_ID"
+            },
+            "start_url": {
+              "url": "https://app.example.test/api/test-records/rea-probe-20261021-01"
+            },
+            "actions": [
+              {
+                "step_id": "settle",
+                "action": "wait_for_timeout",
+                "duration_ms": 250
+              }
+            ],
+            "capture": {
+              "events": ["network"],
+              "network": {
+                "request_body": true,
+                "response_body": true
+              }
+            }
+          },
+          "response_url": "https://app.example.test/api/test-records/rea-probe-20261021-01",
+          "actor_pointer": "/actorId",
+          "workspace_pointer": "/workspaceId",
+          "assertions": [
+            {
+              "pointer": "/recordId",
+              "equals": "rea-probe-20261021-01"
+            }
+          ]
+        },
+        "outcome_pointer": "/taxMinor",
+        "predictions": [
+          {
+            "hypothesis_id": "per-line",
+            "value": 2
+          },
+          {
+            "hypothesis_id": "per-document",
+            "value": 1
+          }
+        ]
+      }
+    ]
+  },
+  "journal_path": "/absolute/private/directory/investigation.json"
+}
