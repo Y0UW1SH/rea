@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   windows-native-artifact:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Build Windows bridge security boundary
     runs-on: ubuntu-latest
     steps:

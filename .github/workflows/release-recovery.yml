@@ -19,7 +19,7 @@ concurrency:
 jobs:
   verify:
     name: Verify existing published package
-    if: github.ref == 'refs/heads/main'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

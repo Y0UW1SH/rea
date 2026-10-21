@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   check:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Website checks
     runs-on: ubuntu-latest
     timeout-minutes: 10

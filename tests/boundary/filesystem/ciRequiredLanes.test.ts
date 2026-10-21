@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../support/workflowForkGuard.js";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
@@ -412,7 +413,9 @@ it("keeps fast feedback separate from complete qualification and release proof",
   );
   // Failed dependencies still reach the gate, but superseded PR runs must
   // release their concurrency slot without waiting for another runner.
-  expect(ci.jobs.required?.if).toBe("${{ !cancelled() }}");
+  expect(ci.jobs.required?.if).toBe(
+    inheritedJobCondition("${{ !cancelled() }}"),
+  );
   const shards = ci.jobs["test-shard"]?.steps ?? [];
   const fast = shards.find((step) => step.run?.includes("npm run test:built"));
   const full = shards.find((step) => step.run?.includes("test:ci:shard:run"));

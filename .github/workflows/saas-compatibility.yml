@@ -43,8 +43,11 @@ jobs:
           src/domain/browserScenarioDiff.test.ts
           tests/conformance/managedSkillInventory.test.ts
           tests/conformance/readmeConsistency.test.ts
-      - name: Check pinned workflow actions
-        run: node scripts/run-exact-tests.mjs run tests/boundary/filesystem/workflowActionPinning.test.ts
+      - name: Check pinned actions and fork workflow guards
+        run: >-
+          node scripts/run-exact-tests.mjs run
+          tests/boundary/filesystem/workflowActionPinning.test.ts
+          tests/boundary/filesystem/workflowForkSafety.test.ts
       - name: Check CLI, MCP and installed skill boundaries
         run: >-
           npm run test:focused --

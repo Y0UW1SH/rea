@@ -13,7 +13,7 @@ permissions:
 jobs:
   native-artifact:
     name: Build matching Windows native artifact
-    if: github.ref == 'refs/heads/main'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

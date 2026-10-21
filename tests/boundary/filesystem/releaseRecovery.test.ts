@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../support/workflowForkGuard.js";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -177,7 +178,9 @@ it("limits recovery to verification and dependent MCP publication from the relea
       parse(await readFile(".github/workflows/release-recovery.yml", "utf8")),
     );
   expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
-  expect(workflow.jobs.verify.if).toBe("github.ref == 'refs/heads/main'");
+  expect(workflow.jobs.verify.if).toBe(
+    inheritedJobCondition("github.ref == 'refs/heads/main'"),
+  );
   expect(workflow.jobs.verify.permissions).toEqual({
     contents: "read",
     actions: "read",

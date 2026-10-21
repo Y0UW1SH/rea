@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   real-browser:
+    if: github.repository != 'Y0UW1SH/rea'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

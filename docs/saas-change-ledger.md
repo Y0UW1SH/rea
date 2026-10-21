@@ -29,6 +29,79 @@ backup outside the working machine. Do not assume a local checkpoint was pushed;
 verify the remote reference and resolved commit. This ledger does not assert that
 any tag has been published or that the feature branch has been merged into `main`.
 
+## Review regression repairs (2026-10-21)
+
+- The combined gate runs each unchanged command through the candidate's existing
+  owned-command supervisor, using a separate `saas-integration` lock. Cancellation
+  retains the live supervisor until its process group or Windows job cleanup
+  settles; stopping only the direct npm/npx process is insufficient. Linux
+  regressions exercise real npx descendants that ignore SIGINT/SIGTERM. This is
+  ordinary command ownership, not containment of hostile detached processes.
+- The known study CLI companion is selected from the actual candidate only when
+  its regular test file and focused-workflow declaration both exist. One-sided
+  inventory drift fails before gate commands. Standalone trees without either
+  remain valid, and the complete workflow-command mirror remains mandatory.
+  This does not import the separate study-foundation feature.
+- SaaS report and contract serialization preserves numeric negative zero as a
+  JSON `-0` token. Comparison verdicts, numeric types, strings and source evidence
+  remain unchanged. Export report-byte admission includes the sign. The explicit
+  `test:saas` inventory includes the signed-zero CLI/serialization/budget
+  regressions in `scripts/saas-report-json.test.mjs`.
+
+## Fork workflow job guards (2026-10-21)
+
+- Every inherited workflow job is skipped in `Y0UW1SH/rea`. Entry jobs (no
+  `needs`) and jobs whose condition uses a status function (`always()`,
+  `cancelled()`, `failure()`, `success()`) carry a dominating
+  `github.repository != 'Y0UW1SH/rea'` condition; their existing predicates
+  remain parenthesized and unchanged. Every other job is left byte-identical to
+  upstream: it needs only fork-skipped jobs and has no status function, so
+  GitHub skips it with its dependencies. This keeps guard edits away from
+  dependent jobs (for example the CI provider callers that upstream extends),
+  so upstream merges do not conflict on guard lines. Other repositories,
+  including `morluto/rea`, retain their original conditions and implicit status
+  behavior.
+- Only the exact `saas-compatibility` job in `saas-compatibility.yml` and
+  `combined-candidate` job in `saas-upstream-integration.yml` are exempt.
+  `tests/boundary/filesystem/workflowForkSafety.test.ts` discovers every workflow
+  and job, follows `needs` to find skipped dependents, rejects missing,
+  escapable or redundant guards, and keeps those two jobs enabled. Both SaaS
+  check lanes execute this inventory regression. Existing workflow tests assert
+  the original upstream predicates, inside the fork guard where one is present.
+- These conditions skip jobs; they do not suppress workflow triggers or run
+  records. They apply only to revisions containing them. The fork's observed
+  default branch is `feat/saas-behavior-compatibility`; default-branch events gain
+  these guards only after the guarded revision reaches that branch. The
+  upstream-tracking `main` remains unchanged, so pushes to it and manual runs
+  selecting it can still use unguarded inherited workflows.
+- An inventory failure is a review gate, not a sandbox: a newly added unguarded
+  job can execute concurrently before the regression fails if Actions is already
+  active. Repository-wide activation therefore needs a separately reviewed
+  workflow/event policy covering unguarded branches and newly inherited paths.
+  Merging these guards alone does not establish safe global activation. No
+  Actions activation, workflow disabling, repository settings or merge is part
+  of this code change.
+
+## Sync gate and UTF-8 hardening (2026-10-21)
+
+- Workflow/profile CLIs and both persisted lab readers reject malformed UTF-8
+  before parsing. Literal U+FFFD, embedded U+FEFF and other valid Unicode remain
+  unchanged; leading JSON BOMs remain invalid. The changed lab implementation
+  remains covered by its source-derived revision.
+- The combined gate accepts ordinary PR events for both maintained branches,
+  verifies the event merge's exact base/head parents even in a shallow checkout,
+  and preserves that proposed change when building the three-source candidate.
+  Push and manual events also retain their exact triggering SHA.
+- Preparation and checking compare the controller/candidate helper's committed
+  blob and regular-file mode. Candidate-only gate changes require a reviewed
+  matching controller; a candidate self-test cannot prove an older controller
+  executed the current command inventory.
+- Regression owners: the workflow, profile and lab companion tests, plus
+  `tests/boundary/filesystem/saasUpstreamIntegration.test.ts`. The API contract,
+  surface, GraphQL and strict-replay additions remain intact.
+- This change does not enable Actions, configure protection, merge a PR, or
+  install an upstream polling schedule. Those operational changes are separate.
+
 ## Evidence correctness repairs (2026-10-21)
 
 - GraphQL surface reconciliation treats names as candidates until static transport
@@ -332,10 +405,17 @@ The supplemental [upstream integration workflow](../.github/workflows/saas-upstr
 checks one disposable candidate: the feature branch, then fork `main`, then
 `morluto/rea` upstream `main`, using ordinary sequential merges. It never updates
 those branches. Its controller runs outside the candidate and snapshots all
-three source SHAs before fetching and merging them. For a push, the pushed
-branch uses that event's exact SHA even if its remote ref has already advanced.
-Other source refs are observed when the job starts; a result does not qualify
-later changes.
+three source SHAs before fetching and merging them. Push and manual runs pin the
+selected fork branch to the event's exact SHA even if its remote ref advances.
+For a PR into the feature branch, that source is the exact event merge commit;
+for a PR into fork `main`, the fork-main source is that merge commit. The helper
+validates the event repository, target, PR number/ref, full SHAs and the merge's
+ordered base/head parents, including depth-one checkouts. If the other named
+fork branch is the same-repository PR head, it is pinned to the event head SHA;
+a similarly named external-fork branch cannot override a fork source. Remaining
+source refs are observed once when the job starts. An unavailable event object
+fails closed rather than substituting a later merge or branch tip. A result does
+not qualify later changes.
 
 The run summary records the clean controller commit/tree and source SHAs, observed remote heads,
 merge bases, each merge's parents, final candidate commit/tree, toolchain and
@@ -343,7 +423,13 @@ executed checks. Missing refs, fetch errors, unrelated histories, merge conflict
 changed candidate files and failing checks fail closed. `prepared` or `checking`
 is incomplete evidence; only `passed` means every supplemental check finished.
 Synthetic commits exist only in the disposable candidate repository.
-The executing helper must be the tracked controller file. Reports stay outside
+The executing helper must be the tracked controller file. Before dependency
+installation and again before gate commands, controller and candidate must have
+the same committed helper blob and regular-file mode. A changed helper requires
+a reviewed controller containing the merged gate changes; candidate self-tests
+do not establish that an older controller executed new requirements. Git blob
+identity permits ordinary CRLF checkout conversion without relaxing content
+identity. The report records both helper identities. Reports stay outside
 both checkouts; preparation does not replace an existing caller-owned report,
 and a summary-rendering failure does not erase provenance. Cancellation forwards
 SIGINT/SIGTERM to the active gate command, escalates after one second, and waits
@@ -355,15 +441,21 @@ check, adds capture/cancellation/cleanup regressions and its own Git-fixture
 regressions, then runs `check:fast`, `docs:check`, `format:check` and `knip`.
 Focused boundary tests prepare the compiled runtime and packaged skill. Exact
 files must exist; changed-file selection and zero-test success are not used.
-This gate does not replace the unchanged full CI/provider lanes or qualify a
-real integration PR through their source-identity contracts. Review that PR and
-its own CI before accepting the integration.
+This gate does not replace the unchanged full CI/provider lanes. Its candidate
+can contain additional upstream changes beyond the proposed PR merge; the
+separate SaaS compatibility workflow checks GitHub's proposed merge tree itself.
+Review the PR and all applicable CI before accepting the integration. These
+same-runner checks are not a hostile-code sandbox or independent attestation.
 
-Triggers are fork pushes to `main` or `feat/saas-behavior-compatibility` and
-manual dispatch. A push only to upstream does not trigger a workflow in this
-fork. No polling schedule is installed. The workflow must be present on fork
-`main` for main-push/manual activation, and GitHub Actions must be enabled;
-adding this file on the feature branch alone does not establish that coverage.
+Triggers are fork pushes to `main` or `feat/saas-behavior-compatibility`, ordinary
+PRs targeting either branch, and manual dispatch, without path filters. A push
+only to upstream does not trigger a workflow in this fork. No polling schedule
+is installed. Main-push coverage requires the workflow on `main`; manual dispatch
+requires it on the repository's actual default branch (observed as the feature
+branch on 2026-10-21). GitHub Actions must be enabled separately. A manual run
+is diagnostic, not an eligible PR ruleset check; validate automatic PR/push runs
+and their actual check names before making them required. No hosted pass or
+branch protection is established by committing the workflow.
 No settings are changed by this addition. Before enabling repository Actions,
 review inherited workflows too: `release.yml` can update release proposals on
 main pushes, and general CI includes scheduled runs.

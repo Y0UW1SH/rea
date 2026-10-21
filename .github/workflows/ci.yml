@@ -32,6 +32,7 @@ env:
 
 jobs:
   changes:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Classify changes
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -113,7 +114,7 @@ jobs:
   static:
     name: Static checks
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.tier != 'reused' }}
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (!cancelled() && needs.changes.outputs.tier != 'reused') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -382,7 +383,7 @@ jobs:
   test:
     name: Portable tests
     needs: [changes, test-source, test-shard]
-    if: ${{ !cancelled() && needs.changes.outputs.tier != 'reused' }}
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (!cancelled() && needs.changes.outputs.tier != 'reused') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -939,7 +940,7 @@ jobs:
   required:
     name: CI required
     # Report failed dependencies, but release superseded PR concurrency slots.
-    if: ${{ !cancelled() }}
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (!cancelled()) }}
     needs:
       [
         changes,

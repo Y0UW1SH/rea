@@ -392,3 +392,84 @@ test("CLI rejects numeric token information loss before comparison", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("CLI rejects malformed UTF-8 before different bytes can compare equal", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rea-saas-utf8-"));
+  const file = join(directory, "case.json");
+  const cli = fileURLToPath(
+    new URL("./saas-compatibility.mjs", import.meta.url),
+  );
+  const input = fixture();
+  input.reference.observations[0].value.label = "REFERENCE_TEXT";
+  input.replacement.observations[0].value.label = "REPLACEMENT_TEXT";
+  const [start, rest] = JSON.stringify(input).split("REFERENCE_TEXT");
+  const [middle, end] = rest.split("REPLACEMENT_TEXT");
+  try {
+    for (const bytes of [
+      [0x80],
+      [0xc0, 0xaf],
+      [0xed, 0xa0, 0x80],
+      [0xf4, 0x90, 0x80, 0x80],
+      [0xe2, 0x82],
+    ]) {
+      for (const [reference, replacement] of [
+        [Buffer.from(bytes), Buffer.from([0x81])],
+        [Buffer.from(bytes), Buffer.from("\ufffd")],
+        [Buffer.from("valid"), Buffer.from(bytes)],
+      ]) {
+        writeFileSync(
+          file,
+          Buffer.concat([
+            Buffer.from(start),
+            reference,
+            Buffer.from(middle),
+            replacement,
+            Buffer.from(end),
+          ]),
+        );
+        const result = spawnSync(process.execPath, [cli, file], {
+          encoding: "utf8",
+        });
+        assert.equal(result.status, 2, `${bytes}: ${result.stdout}`);
+        assert.equal(result.stdout, "");
+        assert.match(result.stderr, /utf-8/i);
+      }
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI preserves valid Unicode values and its leading-BOM rejection", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rea-saas-unicode-"));
+  const file = join(directory, "case.json");
+  const cli = fileURLToPath(
+    new URL("./saas-compatibility.mjs", import.meta.url),
+  );
+  try {
+    for (const [reference, replacement, status] of [
+      ["客户 café 😀 \ufffd \ufeff", "客户 café 😀 \ufffd \ufeff", "pass"],
+      ["é", "e\u0301", "fail"],
+      ["\ufffd", "different", "fail"],
+      ["\ufeffx", "x", "fail"],
+    ]) {
+      const input = fixture();
+      input.reference.observations[0].value.label = reference;
+      input.replacement.observations[0].value.label = replacement;
+      writeFileSync(file, JSON.stringify(input));
+      const result = spawnSync(process.execPath, [cli, file], {
+        encoding: "utf8",
+      });
+      assert.equal(result.status, status === "pass" ? 0 : 1, result.stderr);
+      assert.equal(JSON.parse(result.stdout).status, status);
+    }
+    writeFileSync(file, `\ufeff${JSON.stringify(fixture())}`);
+    const result = spawnSync(process.execPath, [cli, file], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
