@@ -1010,3 +1010,218 @@ const textArtifact = (text: string) => {
     text,
   };
 };
+
+const pairedOriginInput = () => {
+  const before = scenarioCapture({});
+  const after = browserScenarioCaptureSchema.parse(
+    JSON.parse(
+      JSON.stringify(before).replaceAll(
+        "https://app.example.test",
+        "http://localhost:4300",
+      ),
+    ),
+  );
+  return {
+    before_scenario: before,
+    after_scenario: after,
+    normalization: {
+      rules: [],
+      origin_pairs: [
+        {
+          before_origin: "https://app.example.test",
+          after_origin: "http://localhost:4300",
+        },
+      ],
+    },
+  };
+};
+
+describe("explicit deployment origin correspondence", () => {
+  it("pairs structured URLs, records the policy, and preserves source captures", () => {
+    const input = pairedOriginInput();
+    const original = JSON.stringify(input);
+    const result = compareBrowserScenarios(
+      compareBrowserScenariosInputSchema.parse(input),
+    );
+    expect(result.overall_status).toBe("unchanged");
+    expect(result.normalization).toMatchObject({
+      origin_pairs: input.normalization.origin_pairs,
+    });
+    expect(JSON.stringify(input)).toBe(original);
+    expect(
+      compareBrowserScenarios(
+        compareBrowserScenariosInputSchema.parse({
+          ...input,
+          normalization: { rules: [] },
+        }),
+      ).overall_status,
+    ).not.toBe("unchanged");
+  });
+
+  it("does not hide a wrong-side origin, URL path, browser version, or missing evidence", () => {
+    for (const mutate of [
+      (capture: BrowserScenarioCapture) => {
+        capture.steps[0]!.after_url = {
+          ...capture.steps[0]!.after_url,
+          url: "https://app.example.test/settings",
+          origin: "https://app.example.test",
+        };
+      },
+      (capture: BrowserScenarioCapture) => {
+        capture.steps[0]!.after_url.url += "/unexpected";
+      },
+      (capture: BrowserScenarioCapture) => {
+        capture.browser.version = "150.0";
+      },
+      (capture: BrowserScenarioCapture) => {
+        capture.steps[0]!.artifacts.url = {
+          state: "missing",
+          reason: "not observed",
+        };
+      },
+    ]) {
+      const input = pairedOriginInput();
+      mutate(input.after_scenario);
+      expect(
+        compareBrowserScenarios(compareBrowserScenariosInputSchema.parse(input))
+          .overall_status,
+      ).not.toBe("unchanged");
+    }
+  });
+
+  it("does not rewrite URLs embedded in DOM text", () => {
+    const input = pairedOriginInput();
+    input.before_scenario.steps[0]!.artifacts.dom = {
+      state: "captured",
+      value: textArtifact("https://app.example.test"),
+    };
+    input.after_scenario.steps[0]!.artifacts.dom = {
+      state: "captured",
+      value: textArtifact("http://localhost:4300"),
+    };
+    expect(
+      compareBrowserScenarios(compareBrowserScenariosInputSchema.parse(input))
+        .overall_status,
+    ).toBe("changed");
+  });
+
+  it.each([
+    "https://app.example.test/path",
+    "https://user:password@app.example.test",
+    "file://",
+    "https://app.example.test?x=1",
+    "https://app.example.test#part",
+  ])("rejects non-origin declaration %s", (origin) => {
+    const input = pairedOriginInput();
+    input.normalization.origin_pairs[0]!.before_origin = origin;
+    expect(compareBrowserScenariosInputSchema.safeParse(input).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects ambiguous origin pairs", () => {
+    const input = pairedOriginInput();
+    input.normalization.origin_pairs.push({
+      before_origin: "https://app.example.test",
+      after_origin: "https://other.test",
+    });
+    expect(compareBrowserScenariosInputSchema.safeParse(input).success).toBe(
+      false,
+    );
+  });
+});
+
+it("maps history and request URLs but preserves query, fragment and undeclared service differences", () => {
+  const before = networkCapture(3, 0);
+  const step = before.steps[0]!;
+  const url = {
+    ...step.after_url,
+    url: "https://app.example.test/settings?mode=one#top",
+    query_parameter_names: ["mode"],
+  };
+  step.artifacts.history = {
+    state: "captured",
+    value: {
+      length: 1,
+      current_url: url,
+      navigation_entries: [{ type: "navigate", name: url }],
+    },
+  };
+  const after = browserScenarioCaptureSchema.parse(
+    JSON.parse(
+      JSON.stringify(before).replaceAll(
+        "https://app.example.test",
+        "http://localhost:4300",
+      ),
+    ),
+  );
+  const input = {
+    before_scenario: before,
+    after_scenario: after,
+    normalization: pairedOriginInput().normalization,
+  };
+  expect(
+    compareBrowserScenarios(compareBrowserScenariosInputSchema.parse(input))
+      .overall_status,
+  ).toBe("unchanged");
+  const history = after.steps[0]!.artifacts.history;
+  if (history.state !== "captured") throw new Error("Expected history");
+  for (const suffix of ["?mode=two#top", "?mode=one#bottom"]) {
+    history.value.current_url.url = `http://localhost:4300/settings${suffix}`;
+    expect(
+      compareBrowserScenarios(compareBrowserScenariosInputSchema.parse(input))
+        .overall_status,
+    ).toBe("changed");
+  }
+  history.value.current_url.url = "http://localhost:4300/settings?mode=one#top";
+  const request = after.events.items[0]!;
+  if (request.kind !== "request") throw new Error("Expected request");
+  request.url = {
+    ...request.url,
+    url: "http://localhost.attacker.test:4300/api",
+    origin: "http://localhost.attacker.test:4300",
+  };
+  expect(
+    compareBrowserScenarios(compareBrowserScenariosInputSchema.parse(input))
+      .overall_status,
+  ).toBe("changed");
+});
+
+it("commits mapping policy canonically and keeps inconsistent URL evidence visible", () => {
+  const input = pairedOriginInput();
+  input.normalization.origin_pairs.push({
+    before_origin: "https://api.example.test",
+    after_origin: "http://localhost:4301",
+  });
+  const first = compareBrowserScenarios(
+    compareBrowserScenariosInputSchema.parse(input),
+  );
+  input.normalization.origin_pairs.reverse();
+  expect(
+    compareBrowserScenarios(compareBrowserScenariosInputSchema.parse(input)),
+  ).toEqual(first);
+  input.after_scenario.steps[0]!.after_url.origin = "https://api.example.test";
+  expect(
+    compareBrowserScenarios(compareBrowserScenariosInputSchema.parse(input))
+      .overall_status,
+  ).toBe("changed");
+});
+
+it("cannot confuse unmapped retained strings with internal pair identities", () => {
+  const input = pairedOriginInput();
+  input.after_scenario.scenario.start_origin = "origin-correspondence:0";
+  input.after_scenario.steps[0]!.after_url = {
+    ...input.after_scenario.steps[0]!.after_url,
+    url: "origin-correspondence:0/settings",
+    origin: "origin-correspondence:0",
+  };
+  const result = compareBrowserScenarios(
+    compareBrowserScenariosInputSchema.parse(input),
+  );
+  expect(result.alignment.failures).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ code: "capture_context_mismatch" }),
+    ]),
+  );
+  expect(result.overall_status).toBe("changed");
+});

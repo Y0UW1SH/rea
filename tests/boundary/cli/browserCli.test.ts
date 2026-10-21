@@ -286,6 +286,43 @@ describe("scenario comparison CLI diagnostics", () => {
   };
   it.each([
     {
+      name: "ambiguous replacement origins",
+      normalization: {
+        origin_pairs: [
+          {
+            before_origin: "https://one.test",
+            after_origin: "http://localhost:4300",
+          },
+          {
+            before_origin: "https://two.test",
+            after_origin: "http://localhost:4300",
+          },
+        ],
+      },
+      issue: {
+        path: ["normalization", "origin_pairs", 1, "after_origin"],
+        reason: "invalid_value",
+        message: "Origin correspondence must be one-to-one on each side",
+      },
+    },
+    {
+      name: "non-origin mapping URLs",
+      normalization: {
+        origin_pairs: [
+          {
+            before_origin: "https://one.test/path",
+            after_origin: "http://localhost:4300",
+          },
+        ],
+      },
+      issue: {
+        path: ["normalization", "origin_pairs", 0, "before_origin"],
+        reason: "invalid_value",
+        message:
+          "Expected a canonical HTTP(S) or WS(S) origin without credentials, path, query, or fragment",
+      },
+    },
+    {
       name: "duplicate rule IDs",
       normalization: { rules: [rule, rule] },
       issue: {
@@ -728,3 +765,41 @@ const scenarioCaptureWithConsole = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+it(
+  "compares declared deployment origins through the public CLI",
+  async () => {
+    const scenarioCapture = completeScenarioCapture();
+    const originPairs = [
+      {
+        before_origin: "https://app.example.test",
+        after_origin: "http://localhost:4300",
+      },
+    ];
+    const paired = await runCli(
+      [
+        "compare-web-captures",
+        JSON.stringify(scenarioCapture),
+        JSON.stringify(scenarioCapture).replaceAll(
+          "https://app.example.test",
+          "http://localhost:4300",
+        ),
+        "--normalization-json",
+        JSON.stringify({ origin_pairs: originPairs }),
+        "--json",
+      ],
+      process.env,
+    );
+    expect(paired).toMatchObject({
+      parameters: {
+        before_start_origin: "https://app.example.test",
+        after_start_origin: "http://localhost:4300",
+      },
+      normalized_result: {
+        overall_status: "unchanged",
+        normalization: { origin_pairs: originPairs },
+      },
+    });
+  },
+  INTEGRATION_TEST_TIMEOUT_MS,
+);

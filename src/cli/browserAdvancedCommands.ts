@@ -115,7 +115,7 @@ const registerCaptureDiff = (
         .string()
         .default('{"rules":[]}')
         .describe(
-          "Recorded literal normalization policy JSON or JSON file path for browser scenarios",
+          "Recorded literal and origin-pair normalization policy JSON or JSON file path for browser scenarios",
         ),
     }),
     run: ({ args, options }) =>

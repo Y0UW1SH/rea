@@ -1,0 +1,132 @@
+{
+  "kind": "api-surface",
+  "view": {
+    "kind": "api-surface",
+    "offset": 0,
+    "limit": 50
+  },
+  "parent_evidence_id": "ev_5555555555555555555555555555555555555555555555555555555555555555",
+  "parent_operation": "inspect_web_network_capture",
+  "parent_digest": "5555555555555555555555555555555555555555555555555555555555555555",
+  "artifact": {
+    "path": "captures/reference.har",
+    "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "records": {
+    "examined": 10,
+    "total": 10,
+    "excluded": 0
+  },
+  "coverage": {
+    "status": "page",
+    "examined": 9,
+    "total": 9,
+    "next_offset": null,
+    "exhausted": true
+  },
+  "groups": [
+    {
+      "method": "GET",
+      "origin": "https://app.example.test",
+      "path_template": "/api/customers/{numeric}",
+      "templated_segments": [
+        {
+          "segment_index": 2,
+          "rule": "numeric",
+          "basis": "inferred",
+          "observed_values": ["42", "43"]
+        }
+      ],
+      "record_ordinals": [1, 2],
+      "statuses": [200],
+      "content_types": ["application/json"],
+      "flags": []
+    },
+    {
+      "method": "GET",
+      "origin": "https://app.example.test",
+      "path_template": "/api/invoices",
+      "templated_segments": [],
+      "record_ordinals": [0],
+      "statuses": [200],
+      "content_types": ["application/json"],
+      "flags": ["single-sample"]
+    },
+    {
+      "method": "POST",
+      "origin": "https://app.example.test",
+      "path_template": "/api/invoices",
+      "templated_segments": [],
+      "record_ordinals": [6],
+      "statuses": [201],
+      "content_types": ["application/json"],
+      "flags": ["single-sample"]
+    },
+    {
+      "method": "POST",
+      "origin": "https://app.example.test",
+      "path_template": "/api/invoices/archive",
+      "templated_segments": [],
+      "record_ordinals": [8],
+      "statuses": [204],
+      "content_types": ["application/json"],
+      "flags": ["single-sample"]
+    },
+    {
+      "method": "GET",
+      "origin": "https://app.example.test",
+      "path_template": "/api/reports/stream",
+      "templated_segments": [],
+      "record_ordinals": [4],
+      "statuses": [200],
+      "content_types": ["text/event-stream"],
+      "flags": ["single-sample"]
+    },
+    {
+      "method": "GET",
+      "origin": "https://app.example.test",
+      "path_template": "/assets/logo.png",
+      "templated_segments": [],
+      "record_ordinals": [3],
+      "statuses": [200],
+      "content_types": ["image/png"],
+      "flags": ["single-sample"]
+    },
+    {
+      "method": "POST",
+      "origin": "https://app.example.test",
+      "path_template": "/graphql",
+      "templated_segments": [],
+      "record_ordinals": [7],
+      "statuses": [200],
+      "content_types": ["application/json"],
+      "flags": ["single-sample"]
+    },
+    {
+      "method": "GET",
+      "origin": "https://app.example.test",
+      "path_template": "/trpc/user.byId,user.list",
+      "templated_segments": [],
+      "record_ordinals": [5],
+      "statuses": [200],
+      "content_types": ["application/json"],
+      "flags": ["single-sample"]
+    },
+    {
+      "method": "GET",
+      "origin": "https://cdn.example.test",
+      "path_template": "/lib.json",
+      "templated_segments": [],
+      "record_ordinals": [9],
+      "statuses": [200],
+      "content_types": ["application/json"],
+      "flags": ["single-sample"]
+    }
+  ],
+  "templated_groups": 1,
+  "excluded_records": [],
+  "limitations": [
+    "Groups describe recorded request lines; HAR bodies were not decoded."
+  ],
+  "unknowns": []
+}

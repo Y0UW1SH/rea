@@ -1,0 +1,62 @@
+name: SaaS compatibility
+
+on:
+  push:
+    branches: [main, feat/saas-behavior-compatibility]
+  pull_request:
+    branches: [main, feat/saas-behavior-compatibility]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Pushes test the branch head; PRs test GitHub's proposed merge result.
+  # Keep those distinct while cancelling superseded runs of either kind.
+  group: saas-compatibility-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: "0"
+
+jobs:
+  saas-compatibility:
+    name: SaaS behavior and integration regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+      - name: Use the repository-pinned npm version
+        run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+      - run: npm ci
+      - name: Check feature record and workflow formatting
+        run: npx --no-install oxfmt --check README.md docs/saas-change-ledger.md .github/workflows/saas-compatibility.yml
+      - name: Evaluate synthetic workflows, profiles and offline exports
+        run: npm run test:saas
+      - name: Check origin policy, authored skill inventory and README consistency
+        run: >-
+          npm run test:local --
+          src/domain/browserScenarioDiff.test.ts
+          tests/conformance/managedSkillInventory.test.ts
+          tests/conformance/readmeConsistency.test.ts
+      - name: Check pinned workflow actions
+        run: node scripts/run-exact-tests.mjs run tests/boundary/filesystem/workflowActionPinning.test.ts
+      - name: Check CLI, MCP and installed skill boundaries
+        run: >-
+          npm run test:focused --
+          tests/boundary/cli/browserCli.test.ts
+          tests/boundary/mcp/browserScenarioMcp.test.ts
+          tests/boundary/cli/saasCompatibility.test.ts
+          tests/boundary/cli/saasCompatibilityLab.test.ts
+          tests/boundary/cli/saasProductProfile.test.ts
+          tests/boundary/cli/saasExportCompare.test.ts
+          tests/boundary/cli/saasApiContract.test.ts
+          tests/boundary/cli/saasSurfaceCoverage.test.ts
+          tests/boundary/filesystem/saasSurfaceFixtures.test.ts
+          tests/acceptance/setup/selectedSkillSetup.test.ts
+          tests/boundary/filesystem/setupSkill.test.ts
+          tests/boundary/filesystem/qwenClientConfiguration.test.ts

@@ -1,3 +1,8 @@
+> **Y0UW1SH fork notice (English):** This fork adds cloud-software behavior
+> comparison. See the [SaaS compatibility guide](../saas-compatibility.md).
+> Examples are synthetic; live Lightspeed/QuickBooks behavior is not verified.
+> Upstream npm releases do not include these fork additions.
+
 <div align="center">
 
 [English](../../README.md) · [简体中文](README_zh.md) · [繁體中文](README_zh-TW.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Türkçe](README_tr.md) · [Русский](README_ru.md) · [Tiếng Việt](README_vi.md) · [ไทย](README_th.md) · [Deutsch](README_de.md) · [Español](README_es.md) · [Français](README_fr.md) · [Українська](README_uk.md) · [Polski](README_pl.md) · [Português (Brasil)](README_pt-BR.md) · [العربية](README_ar.md) · [فارسی](README_fa.md) · [Bahasa Indonesia](README_id.md) · **Italiano**
@@ -150,6 +155,7 @@ REA richiede Node.js 22.x (>=22.19), 24.x (>=24.11) o 26+, oltre a npm. Strument
 | Bytecode EVM                 | Selettori di dispatch, offset dei byte, argomenti inferiti e mutabilità                           | Carrier raw/hex locale; [guida EVM offline](../evm-bytecode.md)                                                                 |
 | Rust binaries                | Embedded cargo-auditable dependency list                                                          | [Rust binaries](../rust-binaries.md)                                                                                            |
 | Crash Linux registrati       | Note grezze, registri/segnai di ogni thread registrato e candidati mapping opzionali              | pwntools fornito dal chiamante; GDB/pwndbg opzionale; [crash registrati](../recorded-crashes.md)                                |
+| Installazioni desktop        | Runtime candidati, file di supporto, componenti e passi successivi                                | Ispezione limitata di directory e intestazioni；[Applicazioni desktop](../desktop-applications.md)                              |
 | JavaScript / Electron        | Moduli, import, source map, route, IPC e relazioni con add-on nativi                              | Node.js e npm; [analisi delle applicazioni](../javascript-application-workflows.md)                                             |
 | Siti web                     | Struttura della pagina, script, osservazioni di rete e screenshot richiesti                       | Un browser della famiglia Chrome; [analisi browser](../browser-observation.md)                                                  |
 | Acquisizioni di rete salvate | Richieste, risposte, payload esposti e posizioni sorgente                                         | HAR; mitmdump su Linux per acquisizioni mitmproxy native; [guida alle acquisizioni](../web-network-captures.md)                 |

@@ -23,6 +23,17 @@ export const commitBrowserScenarioNormalization = (
   const commitment = {
     built_in_rules: [...BROWSER_SCENARIO_BUILT_IN_NORMALIZATION_RULES],
     rules,
+    ...(input.origin_pairs === undefined
+      ? {}
+      : {
+          origin_pairs: [...input.origin_pairs].sort((a, b) =>
+            a.before_origin < b.before_origin
+              ? -1
+              : a.before_origin > b.before_origin
+                ? 1
+                : 0,
+          ),
+        }),
   };
   return {
     ...commitment,

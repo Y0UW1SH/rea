@@ -1,3 +1,4 @@
+import { projectScenarioOrigins } from "./browserScenarioOriginCorrespondence.js";
 import type { BrowserScenarioCapture } from "./browserScenarioCapture.js";
 import type { BrowserScenarioStep } from "./browserScenarioCaptureValues.js";
 import { z } from "zod";
@@ -62,26 +63,30 @@ interface AlignedStepComparison {
   readonly totalArtifactDiffs: number;
 }
 
-/** Compare scenario steps by stable step ID and apply only committed literal rules. */
+/** Compare scenario steps by stable step ID and apply only committed normalization. */
 export const compareBrowserScenarios = (
   input: CompareBrowserScenariosInput,
 ): BrowserScenarioDiff => {
   const normalization = commitBrowserScenarioNormalization(input.normalization);
+  const beforeCapture = projectScenarioOrigins(
+    input.before_scenario,
+    normalization.origin_pairs ?? [],
+    "before",
+  );
+  const afterCapture = projectScenarioOrigins(
+    input.after_scenario,
+    normalization.origin_pairs ?? [],
+    "after",
+  );
   const beforeEvents = prepareScenarioEvents(
-    input.before_scenario,
+    beforeCapture,
     normalization.rules,
   );
-  const afterEvents = prepareScenarioEvents(
-    input.after_scenario,
-    normalization.rules,
-  );
-  const alignment = alignScenarioSteps(
-    input.before_scenario,
-    input.after_scenario,
-  );
+  const afterEvents = prepareScenarioEvents(afterCapture, normalization.rules);
+  const alignment = alignScenarioSteps(beforeCapture, afterCapture);
   const compared = compareAlignedSteps({
-    beforeCapture: input.before_scenario,
-    afterCapture: input.after_scenario,
+    beforeCapture,
+    afterCapture,
     alignment,
     rules: normalization.rules,
     beforeEvents,
@@ -122,7 +127,7 @@ export const compareBrowserScenarios = (
     },
     limitations: [
       "Steps align only by exact, unique step_id; missing, duplicate, or action-mismatched steps are reported and prevent an unchanged claim.",
-      "Only declared literal normalization rules are applied, in canonical rule_id order, to already-redacted durable capture fields.",
+      "Declared origin pairs apply only to structured URL fields and start-origin context; paths, queries, fragments, unlisted origins and non-URL content remain significant. Original input captures are not modified. Literal rules then apply in canonical rule_id order.",
       "Elapsed time, event sequence/index values and capture-local transaction IDs are excluded as volatile; network transactions are compared as an unordered collection in the step that sent their request; screenshot bytes are compared by content digest.",
       "A changed status proves an observed normalized difference. Missing or truncated evidence, incompatible capture context, or alignment failure prevents an unchanged claim.",
     ],

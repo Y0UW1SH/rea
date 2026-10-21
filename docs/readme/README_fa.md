@@ -1,3 +1,8 @@
+> **Y0UW1SH fork notice (English):** This fork adds cloud-software behavior
+> comparison. See the [SaaS compatibility guide](../saas-compatibility.md).
+> Examples are synthetic; live Lightspeed/QuickBooks behavior is not verified.
+> Upstream npm releases do not include these fork additions.
+
 <div align="center" dir="rtl">
 
 [English](../../README.md) · [简体中文](README_zh.md) · [繁體中文](README_zh-TW.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Türkçe](README_tr.md) · [Русский](README_ru.md) · [Tiếng Việt](README_vi.md) · [ไทย](README_th.md) · [Deutsch](README_de.md) · [Español](README_es.md) · [Français](README_fr.md) · [Українська](README_uk.md) · [Polski](README_pl.md) · [Português (Brasil)](README_pt-BR.md) · [العربية](README_ar.md) · **فارسی** · [Bahasa Indonesia](README_id.md) · [Italiano](README_it.md)
@@ -138,6 +143,7 @@ REA به Node.js 22.x (>=22.19)، 24.x (>=24.11) یا 26+، به‌همراه np
 | بایت‌کد EVM             | selectorهای dispatch، offsetهای بایتی، آرگومان‌های استنباط‌شده و قابلیت تغییر وضعیت   | دادهٔ خام/hex محلی روی Linux x64؛ [راهنمای EVM آفلاین](../evm-bytecode.md)                                                          |
 | Rust binaries          | Embedded cargo-auditable dependency list                                            | [Rust binaries](../rust-binaries.md)                                                                                              |
 | کرش‌های ثبت‌شدهٔ لینوکس   | یادداشت‌های خام، رجیسترها/سیگنال‌های تمام threadهای ثبت‌شده و گزینه‌های احتمالی نگاشت   | pwntools تأمین‌شده توسط فراخواننده روی Linux x64؛ GDB/pwndbg اختیاری؛ [کرش‌های ثبت‌شده](../recorded-crashes.md)                      |
+| نصب‌های دسکتاپ          | نامزدهای زمان اجرا، فایل‌های شاهد، نشانه‌های مؤلفه‌ها و مراحل بعدی                     | بررسی محدود پوشه‌ها و سرآیندها；[برنامه‌های دسکتاپ](../desktop-applications.md)                                                     |
 | JavaScript / Electron  | ماژول‌ها، importها، source mapها، مسیرها، IPC و ارتباط افزونه‌های بومی                | Node.js و npm؛ [تحلیل برنامه](../javascript-application-workflows.md)                                                             |
 | وب‌سایت‌ها               | ساختار صفحه، اسکریپت‌ها، مشاهدات شبکه و اسکرین‌شات‌های درخواستی                        | مرورگر مبتنی بر Chrome؛ [تحلیل مرورگر](../browser-observation.md)                                                                 |
 | داده‌های ضبط‌شدهٔ شبکه    | درخواست‌ها، پاسخ‌ها، payloadهای آشکارشده و مکان آن‌ها در منبع                          | HAR؛ ابزار mitmdump در لینوکس برای ضبط‌های بومی mitmproxy؛ [راهنمای ضبط شبکه](../web-network-captures.md)                          |

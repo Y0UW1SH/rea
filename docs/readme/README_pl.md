@@ -1,3 +1,8 @@
+> **Y0UW1SH fork notice (English):** This fork adds cloud-software behavior
+> comparison. See the [SaaS compatibility guide](../saas-compatibility.md).
+> Examples are synthetic; live Lightspeed/QuickBooks behavior is not verified.
+> Upstream npm releases do not include these fork additions.
+
 <div align="center">
 
 [English](../../README.md) · [简体中文](README_zh.md) · [繁體中文](README_zh-TW.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Türkçe](README_tr.md) · [Русский](README_ru.md) · [Tiếng Việt](README_vi.md) · [ไทย](README_th.md) · [Deutsch](README_de.md) · [Español](README_es.md) · [Français](README_fr.md) · [Українська](README_uk.md) · **Polski** · [Português (Brasil)](README_pt-BR.md) · [العربية](README_ar.md) · [فارسی](README_fa.md) · [Bahasa Indonesia](README_id.md) · [Italiano](README_it.md)
@@ -146,6 +151,7 @@ REA wymaga Node.js 22.x (>=22.19), 24.x (>=24.11) lub 26+ oraz npm. Dodatkowe na
 | Kod bajtowy EVM                         | Selektory wywołań, przesunięcia bajtowe, wywnioskowane argumenty i mutowalność                                        | Lokalny plik z surowymi bajtami lub zapisem szesnastkowym w systemie Linux x64; [przewodnik EVM offline](../evm-bytecode.md)         |
 | Rust binaries                           | Embedded cargo-auditable dependency list                                                                              | [Rust binaries](../rust-binaries.md)                                                                                                 |
 | Zarejestrowane awarie systemu Linux     | Surowe rekordy note, rejestry/sygnały każdego zarejestrowanego wątku i opcjonalni kandydaci na mapowania              | pwntools dostarczone przez użytkownika w systemie Linux x64; opcjonalnie GDB/pwndbg; [zarejestrowane awarie](../recorded-crashes.md) |
+| Instalacje desktopowe                   | Kandydaci środowisk uruchomieniowych, pliki źródłowe dowodów, komponenty i dalsze kroki                               | Ograniczona inspekcja katalogów i nagłówków；[Aplikacje desktopowe](../desktop-applications.md)                                      |
 | JavaScript / Electron                   | Moduły, importy, mapy źródeł, trasy, IPC i powiązania z natywnymi dodatkami                                           | Node.js i npm; [analiza aplikacji](../javascript-application-workflows.md)                                                           |
 | Strony internetowe                      | Struktura strony, skrypty, obserwacje sieciowe i zamówione zrzuty ekranu                                              | Przeglądarka z rodziny Chrome; [analiza w przeglądarce](../browser-observation.md)                                                   |
 | Zapisane przechwycenia ruchu sieciowego | Żądania, odpowiedzi, dostępne dane przesyłane i lokalizacje źródłowe                                                  | HAR; mitmdump w systemie Linux dla natywnych przechwyceń mitmproxy; [przewodnik przechwytywania](../web-network-captures.md)         |

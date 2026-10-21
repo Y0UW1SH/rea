@@ -629,6 +629,7 @@ describe("canonical skill transaction", () => {
     const paths = [
       "SKILL.md",
       "references/android-applications.md",
+      "references/cloud-compatibility.md",
       "references/connection-and-recovery.md",
       "references/evidence-workflows.md",
       "references/javascript-applications.md",

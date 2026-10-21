@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MAX_REQUEST_BODY_SIZE,
   hostHeaderValidationResponse,
   isInitializeRequest,
   isJsonContentType,
@@ -11,7 +12,6 @@ import {
   type Server,
 } from "@modelcontextprotocol/server";
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
 import {
   createServer as createHttpServer,
   type IncomingMessage,
@@ -25,6 +25,7 @@ import {
   UnsupportedRequestTargetError,
   writeWebResponse,
 } from "./nodeHttpBridge.js";
+import { listenHttpServer } from "./listenHttpServer.js";
 import { StreamableHttpListenError } from "./streamableHttpListenError.js";
 import {
   NodeHttpRequestOwner,
@@ -33,6 +34,7 @@ import {
 } from "./NodeHttpRequestOwner.js";
 import { RequestTrackingMcpServer } from "../RequestTrackingMcpServer.js";
 import { AnalysisResourceConstraintError } from "../../domain/analysisErrorCore.js";
+import { readStrictJsonBody } from "./readStrictJsonBody.js";
 
 /** MCP endpoint path shared by `rea mcp --http` and agent environment servers. */
 export const MCP_HTTP_PATH = "/mcp";
@@ -47,6 +49,8 @@ export interface StreamableHttpRoute {
 export interface ServeStreamableHttpOptions {
   readonly host: string;
   readonly port: number;
+  /** Cancellation during listener startup; later shutdown remains owned by close(). */
+  readonly signal?: AbortSignal;
   /** Called once; the instance serves every session in turn on a fresh transport. */
   readonly createMcpServer: (
     context: McpRequestContext,
@@ -55,10 +59,12 @@ export interface ServeStreamableHttpOptions {
   readonly sessionDrainTimeoutMs?: number;
   /** Concurrent HTTP input/route work (default 8); unread uploads retain their permit. */
   readonly maxConcurrentDispatches?: number;
+  /** Refuse JSON numeric conversion loss before SDK parsing, for exact replay matching. */
+  readonly requireExactJsonNumbers?: boolean;
   readonly routes?: readonly StreamableHttpRoute[];
   readonly logger?: Logger;
   /** Reports listener failures after binding; request failures are logged instead. */
-  readonly onerror?: (error: Error) => void;
+  readonly onerror?: (error: StreamableHttpListenError) => void;
   /** Close the server instance as the last stage of `close`; false when the factory's owner closes it. */
   readonly closeInstance?: boolean;
 }
@@ -105,11 +111,17 @@ export const hostHeaderAllowlist = (
   return [...new Set([...localhostAllowedHostnames(), ...known])];
 };
 
-const jsonError = (status: number, code: number, message: string): Response =>
+/** A JSON-RPC error answered outside any session, so its id is null. */
+export const jsonRpcErrorResponse = (
+  status: number,
+  code: number,
+  message: string,
+): Response =>
   Response.json(
     { jsonrpc: "2.0", error: { code, message }, id: null },
     { status },
   );
+const jsonError = jsonRpcErrorResponse;
 
 const protocolOf = (instance: McpServer | Server): Server =>
   "server" in instance ? instance.server : instance;
@@ -190,7 +202,10 @@ const hasStreamablePostHeaders = (request: Request): boolean => {
 };
 
 /** Only a new client's initialize travels without a session id; peek within the SDK body bound. */
-const isInitializePost = async (request: Request): Promise<boolean> => {
+const isInitializePost = async (
+  request: Request,
+  strict: boolean,
+): Promise<boolean> => {
   if (
     request.method !== "POST" ||
     request.headers.has("mcp-session-id") ||
@@ -199,9 +214,16 @@ const isInitializePost = async (request: Request): Promise<boolean> => {
     return false;
   const probe = request.clone();
   try {
-    const read = await readRequestBody(probe);
-    if (read.tooLarge) return false;
-    const body: unknown = JSON.parse(read.text);
+    let body: unknown;
+    if (strict) {
+      const read = await readStrictJsonBody(probe);
+      if (read.kind !== "json") return false;
+      body = read.value;
+    } else {
+      const read = await readRequestBody(probe);
+      if (read.tooLarge) return false;
+      body = JSON.parse(read.text);
+    }
     // The transport accepts only a lone initialize, so only that may evict a session.
     return Array.isArray(body)
       ? body.length === 1 && isInitializeRequest(body[0])
@@ -223,6 +245,7 @@ class LiveSession {
   constructor(
     readonly transport: WebStandardStreamableHTTPServerTransport,
     private readonly instance: RequestTrackingMcpServer,
+    private readonly requireExactJsonNumbers: boolean,
   ) {
     this.#shutdown = transport.close.bind(transport);
   }
@@ -260,7 +283,7 @@ class LiveSession {
                   ),
                   duplex: "half",
                 } as RequestInit);
-          const response = await this.transport.handleRequest(guarded);
+          const response = await this.#handleRequest(guarded);
           if (!this.#closed) return response;
           // The SDK may have crossed an await before close and created its SSE
           // response afterwards. Cancel that stream before releasing its owner.
@@ -273,6 +296,35 @@ class LiveSession {
         }
       }),
     );
+  }
+
+  /** Parse within this session's abortable dispatch and the SDK's byte bound. */
+  async #handleRequest(request: Request): Promise<Response> {
+    if (!this.requireExactJsonNumbers || request.method !== "POST")
+      return this.transport.handleRequest(request);
+    if (!isJsonContentType(request.headers.get("content-type")))
+      return this.transport.handleRequest(request);
+    // A header refusal must never become a route around strict body admission.
+    if (!hasStreamablePostHeaders(request))
+      return jsonRpcErrorResponse(
+        406,
+        -32000,
+        "Not Acceptable: Client must accept application/json and text/event-stream",
+      );
+    const read = await readStrictJsonBody(request);
+    if (read.kind === "too-large")
+      return jsonRpcErrorResponse(
+        413,
+        -32000,
+        `Request body must not exceed ${String(DEFAULT_MAX_REQUEST_BODY_SIZE)} bytes`,
+      );
+    if (read.kind === "invalid")
+      return jsonRpcErrorResponse(
+        400,
+        -32600,
+        "Strict replay requires valid UTF-8 JSON with exact numeric fidelity",
+      );
+    return this.transport.handleRequest(request, { parsedBody: read.value });
   }
 
   shutdown(): Promise<void> {
@@ -297,6 +349,7 @@ export class McpSessionSlot {
     private readonly instance: RequestTrackingMcpServer,
     private readonly logger: Logger | undefined,
     private readonly drainTimeoutMs = DEFAULT_SESSION_DRAIN_TIMEOUT_MS,
+    private readonly requireExactJsonNumbers = false,
   ) {
     instance.enableRequestTracking();
     const protocol = protocolOf(instance);
@@ -333,7 +386,7 @@ export class McpSessionSlot {
     const open = this.#live;
     if (
       open?.transport.sessionId !== undefined &&
-      (await isInitializePost(request)) &&
+      (await isInitializePost(request, this.requireExactJsonNumbers)) &&
       // A client that left while its initialize was probed would evict the session for nobody.
       !request.signal.aborted
     ) {
@@ -389,7 +442,11 @@ export class McpSessionSlot {
       onsessionclosed: () =>
         this.logger?.info("MCP HTTP session closed by the client"),
     });
-    const session = new LiveSession(transport, this.instance);
+    const session = new LiveSession(
+      transport,
+      this.instance,
+      this.requireExactJsonNumbers,
+    );
     // The SDK closes the transport on DELETE; that ends the session, not the server.
     transport.close = () => this.#endSession(session);
     await this.instance.connect(transport);
@@ -518,9 +575,13 @@ export const serveStreamableHttp = async (
     () => requests.drain(),
   ]);
   try {
-    httpServer.listen(port, host);
-    await once(httpServer, "listening");
+    await listenHttpServer(httpServer, host, port, options.signal);
+    options.signal?.throwIfAborted();
   } catch (cause: unknown) {
+    if (options.signal?.aborted && cause === options.signal.reason) {
+      if (httpServer.listening) await prepareTransportShutdown();
+      throw cause;
+    }
     throw new StreamableHttpListenError(cause);
   }
   const bound = httpServer.address();
@@ -545,7 +606,9 @@ export const serveStreamableHttp = async (
     });
   });
   // Bind failures already rejected the listening wait above; only later listener errors are reported.
-  httpServer.on("error", (error) => options.onerror?.(error));
+  httpServer.on("error", (error) =>
+    options.onerror?.(new StreamableHttpListenError(error, "serving")),
+  );
   let instance: RequestTrackingMcpServer;
   try {
     instance = await options.createMcpServer({ era: "legacy" });
@@ -560,8 +623,21 @@ export const serveStreamableHttp = async (
     instance,
     logger,
     options.sessionDrainTimeoutMs,
+    options.requireExactJsonNumbers,
   );
   slot = live;
+  const prepareShutdown = stagedClose([
+    prepareTransportShutdown,
+    () => live.close(),
+  ]);
+  const close = stagedClose([
+    prepareShutdown,
+    ...(closeInstance ? [() => instance.close()] : []),
+  ]);
+  if (options.signal?.aborted) {
+    await close();
+    throw options.signal.reason;
+  }
   if (allowedHosts === undefined)
     logger?.warn(
       { host },
@@ -571,14 +647,6 @@ export const serveStreamableHttp = async (
   logger
     ?.child({}, { level: "info" })
     .info({ transport: "streamable-http", url }, "MCP transport listening");
-  const prepareShutdown = stagedClose([
-    prepareTransportShutdown,
-    () => live.close(),
-  ]);
-  const close = stagedClose([
-    prepareShutdown,
-    ...(closeInstance ? [() => instance.close()] : []),
-  ]);
   return { url, prepareShutdown, close };
 };
 

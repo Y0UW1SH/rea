@@ -1,0 +1,16 @@
+[
+  {
+    "invoice": "INV-2",
+    "customer": "CUSTOMER-B",
+    "total": "19.99",
+    "paid": "0",
+    "balance": "19.99"
+  },
+  {
+    "invoice": "INV-1",
+    "customer": "CUSTOMER-A",
+    "total": "100",
+    "paid": "40",
+    "balance": "60"
+  }
+]

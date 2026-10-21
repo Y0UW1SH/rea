@@ -1,3 +1,8 @@
+> **Y0UW1SH fork notice (English):** This fork adds cloud-software behavior
+> comparison. See the [SaaS compatibility guide](../saas-compatibility.md).
+> Examples are synthetic; live Lightspeed/QuickBooks behavior is not verified.
+> Upstream npm releases do not include these fork additions.
+
 <div align="center">
 
 [English](../../README.md) · [简体中文](README_zh.md) · [繁體中文](README_zh-TW.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · **Türkçe** · [Русский](README_ru.md) · [Tiếng Việt](README_vi.md) · [ไทย](README_th.md) · [Deutsch](README_de.md) · [Español](README_es.md) · [Français](README_fr.md) · [Українська](README_uk.md) · [Polski](README_pl.md) · [Português (Brasil)](README_pt-BR.md) · [العربية](README_ar.md) · [فارسی](README_fa.md) · [Bahasa Indonesia](README_id.md) · [Italiano](README_it.md)
@@ -151,6 +156,7 @@ REA; Node.js 22.x (>=22.19), 24.x (>=24.11) veya 26+ ve npm gerektirir. Ek araç
 | EVM bayt kodu                           | Yönlendirme seçicileri, bayt ofsetleri, çıkarımla belirlenen argümanlar ve durum değiştirilebilirliği       | Linux x64 üzerinde yerel ham bayt/onaltılık girdi; [çevrimdışı EVM rehberi](../evm-bytecode.md)                                    |
 | SQLite veritabanları                    | Tablolar, sütunlar, index'ler, view'lar, trigger'lar ve seçilen sıradan tablo satırları                     | Yerel database/WAL snapshot'ı; native SQLite sınırlarıyla Node.js 24.x >=24.15 veya 26+                                            |
 | Kaydedilmiş Linux çökmeleri             | Ham note kayıtları, kaydedilen her iş parçacığının yazmaçları/sinyalleri ve isteğe bağlı eşleme adayları    | Linux x64 üzerinde çağıranın sağladığı pwntools; isteğe bağlı GDB/pwndbg; [kaydedilmiş çökmeler](../recorded-crashes.md)           |
+| Masaüstü kurulumları                    | Çalışma zamanı adayları, kanıt dosyaları, bileşen işaretleri ve sonraki adımlar                             | Sınırlı dizin ve başlık incelemesi；[Masaüstü uygulamaları](../desktop-applications.md)                                            |
 | JavaScript / Electron                   | Modüller, içe aktarmalar, kaynak haritaları, rotalar, IPC ve yerel eklenti ilişkileri                       | Node.js ve npm; [uygulama analizi](../javascript-application-workflows.md)                                                         |
 | Web siteleri                            | Sayfa yapısı, betikler, ağ gözlemleri ve istenen ekran görüntüleri                                          | Chrome ailesinden bir tarayıcı; [tarayıcı analizi](../browser-observation.md)                                                      |
 | Kaydedilmiş ağ yakalamaları             | İstekler, yanıtlar, erişilebilir yük içerikleri ve kaynak konumları                                         | HAR veya Fiddler Everywhere SAZ; Linux'ta native mitmproxy için mitmdump; [ağ yakalama rehberi](../web-network-captures.md)        |

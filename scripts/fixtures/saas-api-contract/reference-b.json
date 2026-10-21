@@ -1,0 +1,1136 @@
+{
+  "browser": {
+    "mode": "launch",
+    "process_ownership": "provider-owned",
+    "cleanup": "terminated-owned-process",
+    "product": "Chromium",
+    "version": "149.0"
+  },
+  "scenario": {
+    "start_origin": "https://app.example.test",
+    "action_count": 2,
+    "secret_references": [],
+    "network_content": {
+      "request_body": true,
+      "response_body": true,
+      "header_values": true
+    },
+    "event_families": ["network"],
+    "limits": {
+      "max_events": 10000,
+      "max_event_allocation_bytes": 4194304,
+      "max_total_event_allocation_bytes": 16777216,
+      "max_network_transactions": 1024,
+      "max_network_body_bytes": 65536,
+      "max_network_body_allocation_bytes": 1048576,
+      "max_network_header_allocation_bytes": 1048576,
+      "max_network_metadata_allocation_bytes": 1048576
+    }
+  },
+  "duration_ms": 120,
+  "steps": [
+    {
+      "step_index": 0,
+      "step_id": "scenario_start",
+      "action": "scenario_start",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 0,
+      "before_url": {
+        "url": "https://app.example.test/",
+        "origin": "https://app.example.test",
+        "query_parameter_names": [],
+        "redacted": false
+      },
+      "after_url": {
+        "url": "https://app.example.test/",
+        "origin": "https://app.example.test",
+        "query_parameter_names": [],
+        "redacted": false
+      },
+      "event_sequence_start": 1,
+      "event_sequence_end": 0,
+      "artifacts": {
+        "screenshot": {
+          "state": "not_requested"
+        },
+        "dom": {
+          "state": "not_requested"
+        },
+        "accessibility": {
+          "state": "not_requested"
+        },
+        "url": {
+          "state": "captured",
+          "value": {
+            "url": "https://app.example.test/",
+            "origin": "https://app.example.test",
+            "query_parameter_names": [],
+            "redacted": false
+          }
+        },
+        "history": {
+          "state": "not_requested"
+        },
+        "storage": {
+          "state": "not_requested"
+        }
+      },
+      "completeness": {
+        "status": "complete",
+        "equality_eligible": true,
+        "missing_sections": [],
+        "truncated_sections": []
+      }
+    },
+    {
+      "step_index": 1,
+      "step_id": "open-invoices",
+      "action": "click",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 40,
+      "before_url": {
+        "url": "https://app.example.test/",
+        "origin": "https://app.example.test",
+        "query_parameter_names": [],
+        "redacted": false
+      },
+      "after_url": {
+        "url": "https://app.example.test/invoices",
+        "origin": "https://app.example.test",
+        "query_parameter_names": [],
+        "redacted": false
+      },
+      "event_sequence_start": 1,
+      "event_sequence_end": 24,
+      "artifacts": {
+        "screenshot": {
+          "state": "not_requested"
+        },
+        "dom": {
+          "state": "not_requested"
+        },
+        "accessibility": {
+          "state": "not_requested"
+        },
+        "url": {
+          "state": "captured",
+          "value": {
+            "url": "https://app.example.test/invoices",
+            "origin": "https://app.example.test",
+            "query_parameter_names": [],
+            "redacted": false
+          }
+        },
+        "history": {
+          "state": "not_requested"
+        },
+        "storage": {
+          "state": "not_requested"
+        }
+      },
+      "completeness": {
+        "status": "complete",
+        "equality_eligible": true,
+        "missing_sections": [],
+        "truncated_sections": []
+      }
+    },
+    {
+      "step_index": 2,
+      "step_id": "create-invoice",
+      "action": "click",
+      "status": "completed",
+      "error": null,
+      "elapsed_ms": 80,
+      "before_url": {
+        "url": "https://app.example.test/invoices",
+        "origin": "https://app.example.test",
+        "query_parameter_names": [],
+        "redacted": false
+      },
+      "after_url": {
+        "url": "https://app.example.test/invoices/new",
+        "origin": "https://app.example.test",
+        "query_parameter_names": [],
+        "redacted": false
+      },
+      "event_sequence_start": 25,
+      "event_sequence_end": 42,
+      "artifacts": {
+        "screenshot": {
+          "state": "not_requested"
+        },
+        "dom": {
+          "state": "not_requested"
+        },
+        "accessibility": {
+          "state": "not_requested"
+        },
+        "url": {
+          "state": "captured",
+          "value": {
+            "url": "https://app.example.test/invoices/new",
+            "origin": "https://app.example.test",
+            "query_parameter_names": [],
+            "redacted": false
+          }
+        },
+        "history": {
+          "state": "not_requested"
+        },
+        "storage": {
+          "state": "not_requested"
+        }
+      },
+      "completeness": {
+        "status": "complete",
+        "equality_eligible": true,
+        "missing_sections": [],
+        "truncated_sections": []
+      }
+    }
+  ],
+  "events": {
+    "retained": 42,
+    "dropped": 0,
+    "items": [
+      {
+        "step_index": 1,
+        "transaction_id": "t1",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices?page=1",
+          "origin": "https://app.example.test",
+          "query_parameter_names": ["page"],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 1,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t1",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices?page=1",
+          "origin": "https://app.example.test",
+          "query_parameter_names": ["page"],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 2,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 200
+      },
+      {
+        "sequence": 3,
+        "step_index": 1,
+        "kind": "network-content",
+        "transaction_id": "t1",
+        "phase": "response",
+        "source_event_sequence": 2,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "W3siaWQiOjk4MjAsIm51bWJlciI6IklOVi0xIiwiY3VzdG9tZXIiOnsiaWQiOjY3MzMsIm5hbWUiOiJDdXN0b21lciBBIn0sInRvdGFsIjoiMjUwLjAwIiwic3RhdHVzIjoicGFpZCIsImlzc3VlZF9vbiI6IjIwMjYtMTAtMDUifSx7ImlkIjo5ODIxLCJudW1iZXIiOiJJTlYtMiIsImN1c3RvbWVyIjp7ImlkIjo2NzMzLCJuYW1lIjoiQ3VzdG9tZXIgQSJ9LCJ0b3RhbCI6IjI1MC4wMCIsInN0YXR1cyI6InBhaWQiLCJpc3N1ZWRfb24iOiIyMDI2LTEwLTA1In0seyJpZCI6OTgyMiwibnVtYmVyIjoiSU5WLTMiLCJjdXN0b21lciI6eyJpZCI6NjczMywibmFtZSI6IkN1c3RvbWVyIEEifSwidG90YWwiOiIyNTAuMDAiLCJzdGF0dXMiOiJwYWlkIiwiaXNzdWVkX29uIjoiMjAyNi0xMC0wNSJ9XQ==",
+          "bytes": 391,
+          "sha256": "f8de1e3185c6bf09c0e936a7ea744bbf2b9926e51f3b79437f95cfb67879a2bd",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t1",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices?page=1",
+          "origin": "https://app.example.test",
+          "query_parameter_names": ["page"],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 4,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t2",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/customers/6733",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 5,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t2",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/customers/6733",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 6,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 200
+      },
+      {
+        "sequence": 7,
+        "step_index": 1,
+        "kind": "network-content",
+        "transaction_id": "t2",
+        "phase": "response",
+        "source_event_sequence": 6,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "eyJpZCI6NjczMywibmFtZSI6IkN1c3RvbWVyIEEiLCJjcmVhdGVkX2F0IjoiMjAyNi0wMS0wMlQwMzowNDowNS4wMDBaIiwidGFncyI6WyJ2aXAiXSwiYmFsYW5jZSI6IjYwLjAwIiwiZW1haWwiOiJjdXN0b21lci5hQGV4YW1wbGUudGVzdCJ9",
+          "bytes": 138,
+          "sha256": "17ece884ee8c67e192aaec217d15688038373dc3397d3486e8db0a95bbab7a01",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t2",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/customers/6733",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 8,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t3",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/customers/6740",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 9,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t3",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/customers/6740",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 10,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 200
+      },
+      {
+        "sequence": 11,
+        "step_index": 1,
+        "kind": "network-content",
+        "transaction_id": "t3",
+        "phase": "response",
+        "source_event_sequence": 10,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "eyJpZCI6Njc0MCwibmFtZSI6IkN1c3RvbWVyIEIiLCJjcmVhdGVkX2F0IjoiMjAyNi0wMS0wMlQwMzowNDowNS4wMDBaIiwidGFncyI6WyJ2aXAiXSwiYmFsYW5jZSI6IjYwLjAwIiwiZW1haWwiOiJjdXN0b21lci5iQGV4YW1wbGUudGVzdCJ9",
+          "bytes": 138,
+          "sha256": "3f38b1475c756ec1ae57e2c06544b8e674fb4860ed34b27983949a112d71fea1",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t3",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/customers/6740",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 12,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t4",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/assets/logo.png",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 13,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t4",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/assets/logo.png",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 14,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 200
+      },
+      {
+        "sequence": 15,
+        "step_index": 1,
+        "kind": "network-content",
+        "transaction_id": "t4",
+        "phase": "response",
+        "source_event_sequence": 14,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "UE5H",
+          "bytes": 3,
+          "sha256": "796120837694d3f3f29259cfeb25091698c2a0aa87873658d840b4993ee889b3",
+          "media_type": "image/png",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t4",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/assets/logo.png",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 16,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t5",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://cdn.example.test/lib.json",
+          "origin": "https://cdn.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 17,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t5",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://cdn.example.test/lib.json",
+          "origin": "https://cdn.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 18,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 200
+      },
+      {
+        "sequence": 19,
+        "step_index": 1,
+        "kind": "network-content",
+        "transaction_id": "t5",
+        "phase": "response",
+        "source_event_sequence": 18,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "eyJjZG4iOnRydWV9",
+          "bytes": 12,
+          "sha256": "8ebd9c02ccecd797f9fc84c92696e202fc3ec6ce4ed133a7d3c8572037bc916d",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t5",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://cdn.example.test/lib.json",
+          "origin": "https://cdn.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 20,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t6",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/reports/2026-10-05",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 21,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t6",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/reports/2026-10-05",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 22,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 200
+      },
+      {
+        "sequence": 23,
+        "step_index": 1,
+        "kind": "network-content",
+        "transaction_id": "t6",
+        "phase": "response",
+        "source_event_sequence": 22,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "unavailable",
+          "reason": "body-size-limit",
+          "message": "Response body exceeded the retained size limit",
+          "limit_bytes": 65536,
+          "observed_bytes": 90000
+        }
+      },
+      {
+        "step_index": 1,
+        "transaction_id": "t6",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/reports/2026-10-05",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 24,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t7",
+        "redirected_from_transaction_id": null,
+        "method": "POST",
+        "url": {
+          "url": "https://app.example.test/api/invoices",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 25,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "sequence": 26,
+        "step_index": 2,
+        "kind": "network-content",
+        "transaction_id": "t7",
+        "phase": "request",
+        "source_event_sequence": 25,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "accept",
+              "value": "application/json",
+              "redacted": false
+            },
+            {
+              "name": "x-trace-id",
+              "value": "trace-SENTINEL-VALUE-1",
+              "redacted": false
+            },
+            {
+              "name": "authorization",
+              "value": null,
+              "redacted": true
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "browser-exposed-request-bytes",
+          "encoding": "base64",
+          "content": "eyJjdXN0b21lcl9pZCI6NjczMywibGluZXMiOlt7InNrdSI6IlctMSIsInF1YW50aXR5IjoyLCJ1bml0X3ByaWNlIjoiMTIuNTAifV0sIm5vdGVzIjpudWxsfQ==",
+          "bytes": 91,
+          "sha256": "162e3646525784fb82df08d844781af166f8e5afa2798be1283ad87a8c9adf66",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t7",
+        "redirected_from_transaction_id": null,
+        "method": "POST",
+        "url": {
+          "url": "https://app.example.test/api/invoices",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 27,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 201
+      },
+      {
+        "sequence": 28,
+        "step_index": 2,
+        "kind": "network-content",
+        "transaction_id": "t7",
+        "phase": "response",
+        "source_event_sequence": 27,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "eyJpZCI6OTgyMywibnVtYmVyIjoiSU5WLTQiLCJ0b3RhbCI6IjI1LjAwIiwic3RhdHVzIjoib3BlbiJ9",
+          "bytes": 60,
+          "sha256": "a26f635489ce0daf311491f02aa8064e8508b15cc3c8f7e0c462b05aedde3c53",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t7",
+        "redirected_from_transaction_id": null,
+        "method": "POST",
+        "url": {
+          "url": "https://app.example.test/api/invoices",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 29,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t8",
+        "redirected_from_transaction_id": null,
+        "method": "POST",
+        "url": {
+          "url": "https://app.example.test/graphql",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 30,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "sequence": 31,
+        "step_index": 2,
+        "kind": "network-content",
+        "transaction_id": "t8",
+        "phase": "request",
+        "source_event_sequence": 30,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "accept",
+              "value": "application/json",
+              "redacted": false
+            },
+            {
+              "name": "x-trace-id",
+              "value": "trace-SENTINEL-VALUE-1",
+              "redacted": false
+            },
+            {
+              "name": "authorization",
+              "value": null,
+              "redacted": true
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "browser-exposed-request-bytes",
+          "encoding": "base64",
+          "content": "eyJxdWVyeSI6InF1ZXJ5IExpc3RDdXN0b21lcnMoJGZpcnN0OiBJbnQpIHsgY3VzdG9tZXJzKGZpcnN0OiAkZmlyc3QpIHsgaWQgbmFtZSB9IH0iLCJvcGVyYXRpb25OYW1lIjoiTGlzdEN1c3RvbWVycyIsInZhcmlhYmxlcyI6eyJmaXJzdCI6MTB9fQ==",
+          "bytes": 142,
+          "sha256": "f9e939b7eda8872af7c50d4303e0faf3aa09f5ffc8933a886d6679dabff210ca",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t8",
+        "redirected_from_transaction_id": null,
+        "method": "POST",
+        "url": {
+          "url": "https://app.example.test/graphql",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 32,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 200
+      },
+      {
+        "sequence": 33,
+        "step_index": 2,
+        "kind": "network-content",
+        "transaction_id": "t8",
+        "phase": "response",
+        "source_event_sequence": 32,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "eyJkYXRhIjp7ImN1c3RvbWVycyI6W3siaWQiOiI2NzMzIiwibmFtZSI6IkN1c3RvbWVyIEEifV19fQ==",
+          "bytes": 58,
+          "sha256": "b16af9f11384abdfa4ed8d9fb3dea2ba854a642cf1948008a9070a9b2a731b24",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t8",
+        "redirected_from_transaction_id": null,
+        "method": "POST",
+        "url": {
+          "url": "https://app.example.test/graphql",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 34,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t9",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices/9823",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 35,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t9",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices/9823",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 36,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 200
+      },
+      {
+        "sequence": 37,
+        "step_index": 2,
+        "kind": "network-content",
+        "transaction_id": "t9",
+        "phase": "response",
+        "source_event_sequence": 36,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "eyJpZCI6OTgyMywibnVtYmVyIjoiSU5WLTQiLCJjdXN0b21lciI6eyJpZCI6NjczMywibmFtZSI6IkN1c3RvbWVyIEEifSwidG90YWwiOiIyNTAuMDAiLCJzdGF0dXMiOiJwYWlkIiwiaXNzdWVkX29uIjoiMjAyNi0xMC0wNSJ9",
+          "bytes": 129,
+          "sha256": "101e70659041d0b3dd8e7a997f0dec0cc56d2d9bf6fe653a8c7eb7dc1010bbed",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t9",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices/9823",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 38,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t10",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices/999999",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 39,
+        "kind": "request",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t10",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices/999999",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 40,
+        "kind": "response",
+        "redirected_from_transaction_state": "root",
+        "status": 404
+      },
+      {
+        "sequence": 41,
+        "step_index": 2,
+        "kind": "network-content",
+        "transaction_id": "t10",
+        "phase": "response",
+        "source_event_sequence": 40,
+        "headers": {
+          "state": "captured",
+          "items": [
+            {
+              "name": "content-type",
+              "value": "application/json",
+              "redacted": false
+            }
+          ]
+        },
+        "body": {
+          "state": "captured",
+          "representation": "playwright-response-body-bytes",
+          "encoding": "base64",
+          "content": "eyJlcnJvciI6Im5vdF9mb3VuZCJ9",
+          "bytes": 21,
+          "sha256": "d2dfdc9511fbeaa0701d1f8730f4989313b062ca1b61a2bd8bed8f4f5d654b5d",
+          "media_type": "application/json",
+          "redacted": false
+        }
+      },
+      {
+        "step_index": 2,
+        "transaction_id": "t10",
+        "redirected_from_transaction_id": null,
+        "method": "GET",
+        "url": {
+          "url": "https://app.example.test/api/invoices/999999",
+          "origin": "https://app.example.test",
+          "query_parameter_names": [],
+          "redacted": false
+        },
+        "resource_type": "fetch",
+        "header_names": ["accept", "x-trace-id", "authorization"],
+        "failure": null,
+        "sequence": 42,
+        "kind": "request-finished",
+        "redirected_from_transaction_state": "root",
+        "status": null
+      }
+    ],
+    "omissions": {
+      "by_kind": [],
+      "network_transactions": [],
+      "network_transaction_range": null
+    }
+  },
+  "completeness": {
+    "status": "complete",
+    "equality_eligible": true,
+    "missing_sections": [],
+    "truncated_sections": []
+  },
+  "limitations": []
+}

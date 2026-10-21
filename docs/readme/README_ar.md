@@ -1,3 +1,8 @@
+> **Y0UW1SH fork notice (English):** This fork adds cloud-software behavior
+> comparison. See the [SaaS compatibility guide](../saas-compatibility.md).
+> Examples are synthetic; live Lightspeed/QuickBooks behavior is not verified.
+> Upstream npm releases do not include these fork additions.
+
 <div align="center">
 
 [English](../../README.md) · [简体中文](README_zh.md) · [繁體中文](README_zh-TW.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Türkçe](README_tr.md) · [Русский](README_ru.md) · [Tiếng Việt](README_vi.md) · [ไทย](README_th.md) · [Deutsch](README_de.md) · [Español](README_es.md) · [Français](README_fr.md) · [Українська](README_uk.md) · [Polski](README_pl.md) · [Português (Brasil)](README_pt-BR.md) · **العربية** · [فارسی](README_fa.md) · [Bahasa Indonesia](README_id.md) · [Italiano](README_it.md)
@@ -146,6 +151,7 @@ npx rea-agents@latest setup
 | شيفرة EVM البايتية              | محددات التوجيه، وإزاحات البايتات، والمعاملات المستنتجة، وقابلية تغيير الحالة                                | مدخل محلي يحمل بايتات خامًا أو تمثيلًا سداسيًا عشريًا على Linux x64؛ [دليل EVM دون تشغيل](../evm-bytecode.md)                      |
 | Rust binaries                   | Embedded cargo-auditable dependency list                                                                   | [Rust binaries](../rust-binaries.md)                                                                                          |
 | أعطال Linux المسجّلة             | سجلات note الخام، ومسجّلات المعالج/الإشارات لكل خيط مسجّل، وترشيحات اختيارية لخرائط الذاكرة                     | pwntools يوفّره المستدعي على Linux x64؛ GDB/pwndbg اختياريان؛ [الأعطال المسجّلة](../recorded-crashes.md)                         |
+| تثبيتات سطح المكتب              | عائلات وقت التشغيل، والملفات الداعمة، وعلامات المكونات، والخطوات التالية                                     | فحص محدود للملفات والترويسات；[تطبيقات سطح المكتب](../desktop-applications.md)                                                |
 | JavaScript / Electron           | الوحدات، وعمليات الاستيراد، وخرائط المصدر، والمسارات، وIPC، وعلاقات إضافات الشيفرة الأصلية                    | Node.js وnpm؛ [تحليل التطبيقات](../javascript-application-workflows.md)                                                       |
 | المواقع                         | بنية الصفحة، والسكربتات، وملاحظات الشبكة، ولقطات الشاشة المطلوبة                                            | متصفح من عائلة Chrome؛ [تحليل المتصفح](../browser-observation.md)                                                             |
 | تسجيلات الشبكة المحفوظة          | الطلبات، والاستجابات، ومحتويات الحمولة المتاحة، ومواضعها في المصدر                                          | HAR؛ وmitmdump على Linux لتسجيلات mitmproxy بصيغتها الأصلية؛ [دليل تسجيلات الشبكة](../web-network-captures.md)                   |

@@ -1,0 +1,3 @@
+invoice,customer,total,paid,balance,note
+INV-1,CUSTOMER-A,100.00,40.00,60.00,Synthetic reference export
+INV-2,CUSTOMER-B,19.99,0.00,19.99,Synthetic reference export
