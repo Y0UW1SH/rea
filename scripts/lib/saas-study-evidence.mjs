@@ -37,12 +37,14 @@ function observationResults(capture, refs, complete) {
   });
 }
 
-// Declared actions are plan labels for existing capture steps. A capture that lacks
-// one did not exercise the plan; like other incomplete accounting it stays unknown
-// rather than contradicting retained bytes. Only manifest labels are reported.
-function missingActionSteps(capture, scenario) {
+// Declared actions are plan labels for existing capture steps. A capture is one
+// actor's session, so it owes only that actor's actions. Lacking one means the plan
+// was not exercised; like other incomplete accounting it stays unknown rather than
+// contradicting retained bytes. Only manifest labels are reported.
+function missingActionSteps(capture, scenario, actorId) {
   const present = new Set(capture.steps.map((step) => step.step_id));
   return scenario.actions
+    .filter((action) => action.actorId === actorId)
     .map((action) => action.stepId)
     .filter((stepId) => !present.has(stepId));
 }
@@ -110,7 +112,11 @@ export async function verifyStudyCaptures(study, root) {
         entry,
         captureVerdict(
           complete,
-          missingActionSteps(read.capture, scenarios.get(selected.scenarioId)),
+          missingActionSteps(
+            read.capture,
+            scenarios.get(selected.scenarioId),
+            selected.actorId,
+          ),
         ),
       );
       entry.completeness = completeness;

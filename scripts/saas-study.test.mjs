@@ -182,6 +182,45 @@ test("two actors keep distinct capture provenance through serialization and asyn
   assert.equal(result.captures[1].sha256, study.evidence.captures[1].sha256);
 });
 
+test("each actor capture verifies with only its own actor's declared action steps", async (t) => {
+  const { dir, study, capture } = await captureStudy(t);
+  const original = await fixture();
+  study.scenarios[0].actions = original.scenarios[0].actions;
+  study.scenarios[0].expectedObservations =
+    original.scenarios[0].expectedObservations;
+  const retain = async (file, data, stepId) => {
+    data.steps[2].step_id = stepId;
+    const content = JSON.stringify(data);
+    await writeFile(join(dir, file), content);
+    return {
+      bytes: Buffer.byteLength(content),
+      sha256: createHash("sha256").update(content).digest("hex"),
+    };
+  };
+  // The manager session holds only manager-update; the clerk's only clerk-update.
+  Object.assign(
+    study.evidence.captures[0],
+    await retain("capture.json", capture, "manager-update"),
+  );
+  study.evidence.observations[0].stepId =
+    capture.steps[capture.events.items[0].step_index].step_id;
+  study.evidence.captures.push({
+    captureId: "clerk-read",
+    actorId: "clerk",
+    contextId: "clerk-context",
+    scenarioId: "invoice",
+    file: "clerk.json",
+    ...(await retain(
+      "clerk.json",
+      structuredClone(buildContractFixture("reference-b")),
+      "clerk-update",
+    )),
+  });
+  const result = await checkStudyEvidence(study, dir);
+  assert.equal(result.status, "verified", JSON.stringify(result));
+  assert.ok(result.captures.every((entry) => !entry.missingActionStepIds));
+});
+
 test("study retains unknown missing evidence and detects digest, size and observation contradictions", async (t) => {
   const { dir, study } = await captureStudy(t);
   const absent = structuredClone(study);
@@ -242,7 +281,7 @@ test("a rehashed capture whose own action count exceeds its steps remains unknow
   assert.equal((await checkStudyEvidence(study, dir)).status, "unknown");
 });
 
-test("a capture lacking a manifest-declared action step remains unknown and names only the missing labels", async (t) => {
+test("a capture lacking one of its own actor's declared action steps remains unknown and names only the missing labels", async (t) => {
   const { dir, study } = await captureStudy(t);
   const declared = study.scenarios[0].actions;
   for (const stepId of ["x1", "x2"])
@@ -422,9 +461,9 @@ test("CLI exits nonzero when a bound capture lacks a declared action step", asyn
   assert.equal(missing.status, 2, missing.stdout);
   const evidence = JSON.parse(missing.stdout).evidence;
   assert.equal(evidence.status, "unknown");
+  // clerk-update belongs to the clerk session, not this manager capture.
   assert.deepEqual(evidence.captures[0].missingActionStepIds, [
     "manager-update",
-    "clerk-update",
     "x1",
     "x2",
     "x3",
