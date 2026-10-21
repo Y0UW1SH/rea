@@ -615,3 +615,9 @@ Related upstream discussions provide extension points, not implemented guarantee
 [capture-derived environments #4933](https://github.com/morluto/rea/issues/4933).
 The companion does not add an HTTP server, replay engine, autonomous SaaS executor,
 or duplicate retained-view ownership.
+
+## Versioned study manifests
+
+See [the SaaS study guide](saas-study.md) for investigation identities, authority
+declarations and bounded local evidence checks. The source-checkout inspector
+executes no scenario and makes no behavioral compatibility claim.

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "studyId": "invoice-concurrency",
+  "target": {
+    "product": "Synthetic accounting",
+    "edition": null,
+    "region": null,
+    "origins": ["https://accounting.example.test"]
+  },
+  "revision": {
+    "status": "unknown",
+    "reason": "No version evidence captured"
+  },
+  "workspace": {
+    "workspaceId": "synthetic-company",
+    "kind": "synthetic"
+  },
+  "actors": [
+    {
+      "actorId": "manager",
+      "role": "manager",
+      "sessionId": "manager-session"
+    },
+    {
+      "actorId": "clerk",
+      "role": "clerk",
+      "sessionId": "clerk-session"
+    }
+  ],
+  "scenarios": [
+    {
+      "scenarioId": "invoice",
+      "workflowId": "invoice.update",
+      "actorIds": ["manager", "clerk"],
+      "initialState": {
+        "status": "unknown",
+        "reason": "Initial invoice state has not been observed"
+      },
+      "actions": [
+        {
+          "stepId": "manager-update",
+          "actorId": "manager",
+          "operationId": "invoice.update"
+        },
+        {
+          "stepId": "clerk-update",
+          "actorId": "clerk",
+          "operationId": "invoice.update"
+        }
+      ],
+      "expectedObservations": [
+        {
+          "expectationId": "saved-manager-update",
+          "stepId": "manager-update",
+          "kind": "persisted-read"
+        }
+      ]
+    }
+  ],
+  "authority": {
+    "origins": ["https://accounting.example.test"],
+    "mutations": ["invoice.update"],
+    "externalEffects": []
+  },
+  "limits": {
+    "deadlineMs": 30000,
+    "maxConcurrency": 2,
+    "maxRequests": 100,
+    "requestsPerSecond": 10,
+    "maxEvidenceBytes": 16777216
+  },
+  "evidence": {
+    "captures": [],
+    "observations": []
+  },
+  "coveragePolicy": {
+    "requiredOperations": ["invoice.read", "invoice.update"],
+    "requiredRoles": ["manager", "clerk"],
+    "requiredStates": ["invoice.saved"],
+    "requiredWorkflows": ["invoice.update"],
+    "unsupportedOperations": ["invoice.delete"]
+  }
+}

@@ -511,3 +511,13 @@ behavior was verified.
 Passing tests reduce regression risk; they do not guarantee that an arbitrary
 future fork sync is safe. Preserve history, review conflicts and verify behavior
 at every integration.
+
+## Dependent study manifest foundation (2026-10-21)
+
+Developed separately from base `f9fcd4305d3a7bccebf822a68c0294cbf2d0afd5`.
+See [the study guide](saas-study.md) for the versioned manifest, bounded local
+evidence validation and explicit limitations. Regression owners are
+`scripts/saas-study.test.mjs` and `tests/boundary/cli/saasStudy.test.ts`.
+Actor/session/context identities, observation references, explicit unknowns and
+unsupported operations survive serialization. No browser or provider authority
+is expanded; the base branch owns GraphQL and contract coverage corrections.
