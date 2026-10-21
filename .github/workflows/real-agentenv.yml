@@ -20,6 +20,7 @@ env:
 
 jobs:
   real-agentenv:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Export and run an environment bundle with the agentenv runner
     runs-on: ubuntu-24.04
     timeout-minutes: 30

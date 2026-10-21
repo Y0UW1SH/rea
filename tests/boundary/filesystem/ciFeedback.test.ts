@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../support/workflowForkGuard.js";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -78,7 +79,7 @@ it.each(["fast", "full"] as const)(
   async (tier) => {
     const jobs = await workflow();
     expect(jobs["reverse-tools-quality"]?.if).toBe(
-      "needs.changes.outputs.reverse_tools == 'true'",
+      inheritedJobCondition("needs.changes.outputs.reverse_tools == 'true'"),
     );
     expect(jobs.required?.needs).toContain("reverse-tools-quality");
     const steps = jobs["reverse-tools-quality"]?.steps ?? [];

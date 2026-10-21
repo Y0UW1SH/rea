@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   clean-setup:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Clean setup, CLI, and MCP
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -34,6 +35,7 @@ jobs:
         run: sudo --preserve-env=REA_VERIFY_SERVER_COMMAND,PATH npm run verify:setup:linux
 
   verify:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Installed package against real Linux Hopper
     runs-on: [self-hosted, Linux, hopper]
     timeout-minutes: 20

@@ -1,5 +1,73 @@
 # SaaS fork validation
 
+## Fork workflow guards — 2026-10-21, 14:48 UTC
+
+This follow-up to draft PR #4 starts from published head
+`a72d9c3e57100bb561313c5fb0de1729f702640d`. The tested implementation is
+`c3cd49eeccc33a1963f1b8c9ab54bf3f99c89bac`, tree
+`fb5cfade64b9630d5dbcdbb86dca6ab07110be49`; this receipt is a subsequent
+validation-document-only change. The feature base remains
+`90fb608273d8dac36d5c3c0cc6cf64081aabcc45`.
+
+### Current source checks
+
+Linux validation used locked `npm ci`, Node **24.18.0**, npm **11.16.0** and
+writable caches. The full serial static command recorded below passed again,
+followed by architecture guards, generated docs and test discovery (**1,834
+files**, each discovered once). Static checking reported zero lint errors with
+existing-style warnings; no warnings or checks were suppressed.
+
+- The new inventory regression initially failed on the **69 inherited jobs**
+  with **19 fixture cases passing**. The final **22 guard tests** passed, covering
+  missing/step-only guards, reusable jobs, `always()`, OR escape, malformed
+  expressions/YAML and the exact two SaaS job exceptions. Action pinning added
+  **5 passing tests** in the same selected lane.
+- All selected source lanes passed: **161 SaaS**, **35 domain/inventory/README**,
+  **27 guard/pinning**, **70 CLI/MCP/setup**, **101 browser/lifecycle** and
+  **47 combined-helper** tests (**441 total**). These ran against the source
+  tree, not a successfully merged newer-upstream candidate. Docs separately
+  reran **5 README tests**.
+- The broader affected workflow selection passed **378 tests across 10 files**,
+  including CI events, scope, required lanes, feedback, cache/report handling,
+  mutation, release/recovery and the same 47 helper tests. This count overlaps
+  the selected lanes and is not an additional unique-test total.
+- An initial raw-Node workflow run lacked the npm CLI environment required by
+  the existing static-context fixture (**377 passed, 1 failed**). The complete
+  selection passed with `npm_execpath` pointing at the pinned npm CLI. An
+  overlapping artifact command was refused before the boundary tests started;
+  the affected selected lanes were rerun successfully after the lock released.
+- Independent parsed-YAML review verified all **31 inherited workflow files**:
+  each of **69 job conditions** retains its entire original predicate under the
+  fork exclusion, including **15 reusable callers** and **7 status-function
+  jobs** (4 with `always()`). Other inherited YAML structure is identical to the
+  published parent. Both SaaS jobs remain unconditional. Independent code and
+  documentation review found no actionable issue.
+
+### New upstream snapshot is blocked, not qualified
+
+A fresh local exact-object rehearsal used the same PR event validation with
+feature base `90fb608273d8dac36d5c3c0cc6cf64081aabcc45`, implementation head
+`c3cd49eeccc33a1963f1b8c9ab54bf3f99c89bac`, and simulated PR merge controller
+`67e8fc122820d15093f2c2dac89f22e4766eab6e` (tree
+`fb5cfade64b9630d5dbcdbb86dca6ab07110be49`). Frozen Git mirrors held fork main
+`1c2c2f1e78a74cdf5e4909ab8e775b090998a51f` and newly fetched upstream main
+`6d356b84344659085f2b912857b5e27fe0160c9b`.
+
+Preparation **failed closed at `merge:upstreamMain`**, with conflicts in
+`.github/workflows/ci.yml` and
+`tests/boundary/filesystem/ciRequiredLanes.test.ts`. Upstream changed the same
+provider-lane CI/test area, including new reusable-workflow secret mappings.
+The report has **zero executed candidate check stages**; there is no qualified
+combined candidate for this snapshot. This scoped follow-up does not integrate
+that broader upstream CI redesign. The earlier 11-stage success below remains
+historical evidence for its own exact snapshot only.
+
+The code guards apply only to revisions carrying them; unguarded `main` and
+concurrent newly added jobs remain activation risks as described in the
+[change ledger](saas-change-ledger.md#fork-workflow-job-guards-2026-10-21).
+No hosted Actions pass, full repository suite, Windows/macOS execution, live
+vendor validation, repository-wide activation safety or merge is claimed.
+
 ## Stage 1 sync hardening — 2026-10-21
 
 This draft increment starts from SaaS feature commit

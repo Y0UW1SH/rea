@@ -15,6 +15,7 @@ env:
 
 jobs:
   build:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Build documentation
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -40,6 +40,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   tshark:
+    if: github.repository != 'Y0UW1SH/rea'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

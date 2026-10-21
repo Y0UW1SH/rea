@@ -32,6 +32,7 @@ env:
 
 jobs:
   changes:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Classify changes
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -113,7 +114,7 @@ jobs:
   static:
     name: Static checks
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.tier != 'reused' }}
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (!cancelled() && needs.changes.outputs.tier != 'reused') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -183,7 +184,7 @@ jobs:
   test-source:
     name: Source tests
     needs: changes
-    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.tier == 'fast'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.code == 'true' && needs.changes.outputs.tier == 'fast') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -211,7 +212,7 @@ jobs:
   test-shard:
     name: Test shard (${{ matrix.shard }})
     needs: [changes, build]
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.code == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -259,7 +260,7 @@ jobs:
   reverse-tools-quality:
     name: Reverse tools quality
     needs: [changes, static]
-    if: needs.changes.outputs.reverse_tools == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.reverse_tools == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -294,17 +295,7 @@ jobs:
     needs: changes
     # Reusable provider workflows consume this run's portable build artifact,
     # even when a workflow-only edit selects the lane without portable tests.
-    if: >-
-      needs.changes.outputs.code == 'true' ||
-      needs.changes.outputs.browser == 'true' ||
-      needs.changes.outputs.binary_layout == 'true' ||
-      needs.changes.outputs.evm == 'true' ||
-      needs.changes.outputs.javascript_recovery == 'true' ||
-      needs.changes.outputs.recorded_crash == 'true' ||
-      needs.changes.outputs.web_network == 'true' ||
-      needs.changes.outputs.web_runtime == 'true' ||
-      needs.changes.outputs.web_source_map == 'true' ||
-      needs.changes.outputs.agentenv == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.code == 'true' || needs.changes.outputs.browser == 'true' || needs.changes.outputs.binary_layout == 'true' || needs.changes.outputs.evm == 'true' || needs.changes.outputs.javascript_recovery == 'true' || needs.changes.outputs.recorded_crash == 'true' || needs.changes.outputs.web_network == 'true' || needs.changes.outputs.web_runtime == 'true' || needs.changes.outputs.web_source_map == 'true' || needs.changes.outputs.agentenv == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -376,13 +367,13 @@ jobs:
     # Preserve all selected coverage, but admit expensive host/provider work
     # only after static validation. Portable tests still provide early feedback.
     needs: [changes, static, build]
-    if: needs.changes.outputs.sqlite == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.sqlite == 'true') }}
     uses: ./.github/workflows/sqlite-runtime.yml
 
   test:
     name: Portable tests
     needs: [changes, test-source, test-shard]
-    if: ${{ !cancelled() && needs.changes.outputs.tier != 'reused' }}
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (!cancelled() && needs.changes.outputs.tier != 'reused') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -494,7 +485,7 @@ jobs:
   conformance-fixtures:
     name: Source-built conformance fixtures
     needs: [changes, static]
-    if: needs.changes.outputs.fixtures == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.fixtures == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -505,7 +496,7 @@ jobs:
   windows-native-build:
     name: Build bundled Windows x64 native controls
     needs: [changes, static]
-    if: needs.changes.outputs.runtime == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.runtime == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -556,7 +547,7 @@ jobs:
   package-e2e:
     name: Native package baseline (${{ matrix.platform }} ${{ matrix.architecture }})
     needs: [changes, static, build, windows-native-build]
-    if: needs.changes.outputs.runtime == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.runtime == 'true') }}
     strategy:
       fail-fast: false
       # The four platform jobs use independent hosted runners; keep each
@@ -619,7 +610,7 @@ jobs:
   apple-artifacts:
     name: Real Apple artifact CLI/MCP E2E
     needs: [changes, static, build]
-    if: needs.changes.outputs.apple == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.apple == 'true') }}
     runs-on: macos-15
     timeout-minutes: 15
     steps:
@@ -671,7 +662,7 @@ jobs:
   reconstruction-readiness:
     name: Reconstruction readiness
     needs: [changes, static]
-    if: needs.changes.outputs.readiness == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.readiness == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -702,7 +693,7 @@ jobs:
   windows-curated:
     name: Windows capability and package lane
     needs: [changes, static, build, windows-native-build]
-    if: needs.changes.outputs.package == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.package == 'true') }}
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -834,7 +825,7 @@ jobs:
   docs:
     name: Docs Generation
     needs: changes
-    if: needs.changes.outputs.docs == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.docs == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -860,86 +851,86 @@ jobs:
 
   browser:
     needs: [changes, static, build]
-    if: needs.changes.outputs.browser == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.browser == 'true') }}
     uses: ./.github/workflows/real-browser.yml
     with:
       build_cache_artifact: rea-build-cache
 
   binary_layout:
     needs: [changes, static, build]
-    if: needs.changes.outputs.binary_layout == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.binary_layout == 'true') }}
     uses: ./.github/workflows/real-binary-layout.yml
     with:
       build_cache_artifact: rea-build-cache
 
   evm:
     needs: [changes, static, build]
-    if: needs.changes.outputs.evm == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.evm == 'true') }}
     uses: ./.github/workflows/real-evm-interface.yml
     with:
       build_cache_artifact: rea-build-cache
 
   javascript_recovery:
     needs: [changes, static, build]
-    if: needs.changes.outputs.javascript_recovery == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.javascript_recovery == 'true') }}
     uses: ./.github/workflows/real-javascript-recovery.yml
     with:
       build_cache_artifact: rea-build-cache
 
   recorded_crash:
     needs: [changes, static, build]
-    if: needs.changes.outputs.recorded_crash == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.recorded_crash == 'true') }}
     uses: ./.github/workflows/real-recorded-crash.yml
     with:
       build_cache_artifact: rea-build-cache
 
   web_network:
     needs: [changes, static, build]
-    if: needs.changes.outputs.web_network == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.web_network == 'true') }}
     uses: ./.github/workflows/real-web-network-captures.yml
     with:
       build_cache_artifact: rea-build-cache
 
   web_runtime:
     needs: [changes, static, build]
-    if: needs.changes.outputs.web_runtime == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.web_runtime == 'true') }}
     uses: ./.github/workflows/real-web-runtime.yml
     with:
       build_cache_artifact: rea-build-cache
 
   web_source_map:
     needs: [changes, static, build]
-    if: needs.changes.outputs.web_source_map == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.web_source_map == 'true') }}
     uses: ./.github/workflows/real-web-source-map.yml
     with:
       build_cache_artifact: rea-build-cache
 
   agentenv:
     needs: [changes, static, build]
-    if: needs.changes.outputs.agentenv == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.agentenv == 'true') }}
     uses: ./.github/workflows/real-agentenv.yml
     with:
       build_cache_artifact: rea-build-cache
 
   nativeaot:
     needs: [changes, static]
-    if: needs.changes.outputs.nativeaot == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.nativeaot == 'true') }}
     uses: ./.github/workflows/nativeaot-fixtures.yml
 
   ghidra_bridge:
     needs: [changes, static]
-    if: needs.changes.outputs.ghidra_bridge == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.ghidra_bridge == 'true') }}
     uses: ./.github/workflows/ghidra-bridge-sources.yml
 
   website:
     needs: [changes, static]
-    if: needs.changes.outputs.website == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.website == 'true') }}
     uses: ./.github/workflows/website-check.yml
 
   required:
     name: CI required
     # Report failed dependencies, but release superseded PR concurrency slots.
-    if: ${{ !cancelled() }}
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (!cancelled()) }}
     needs:
       [
         changes,

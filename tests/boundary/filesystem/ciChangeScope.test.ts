@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../support/workflowForkGuard.js";
 import {
   chmod,
   cp,
@@ -1029,7 +1030,7 @@ it.each([
       );
     expect(ci.jobs[scope]).toMatchObject({
       uses: `./.github/workflows/${name}.yml`,
-      if: `needs.changes.outputs.${scope} == 'true'`,
+      if: inheritedJobCondition(`needs.changes.outputs.${scope} == 'true'`),
     });
   },
 );

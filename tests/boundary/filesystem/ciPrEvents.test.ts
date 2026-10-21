@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../support/workflowForkGuard.js";
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 import { parse } from "yaml";
@@ -51,7 +52,7 @@ it("refreshes title validation on edits without checking out PR code or cancelli
   const jobs = Object.values(title.jobs);
   expect(jobs).toHaveLength(1);
   expect(jobs[0]?.name).toBe("Conventional PR title");
-  expect(jobs[0]?.if).toBeUndefined(); // A skipped check must not green-light an invalid title on body edits.
+  expect(jobs[0]?.if).toBe(inheritedJobCondition()); // A skipped check must not green-light an invalid title on body edits.
   const steps = jobs[0]?.steps ?? [];
   expect(steps).toHaveLength(1);
   expect(steps[0]?.uses).toBeUndefined();
@@ -87,7 +88,7 @@ it("qualifies only ci:full label additions at the caller's merge revision", asyn
   expect(Object.values(full.jobs)).toEqual([
     {
       name: "Qualify labeled PR revision",
-      if: "github.event.label.name == 'ci:full'",
+      if: inheritedJobCondition("github.event.label.name == 'ci:full'"),
       uses: "./.github/workflows/ci.yml",
       with: { source_sha: "${{ github.sha }}" },
     },

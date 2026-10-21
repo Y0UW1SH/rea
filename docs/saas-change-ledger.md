@@ -29,6 +29,33 @@ backup outside the working machine. Do not assume a local checkpoint was pushed;
 verify the remote reference and resolved commit. This ledger does not assert that
 any tag has been published or that the feature branch has been merged into `main`.
 
+## Fork workflow job guards (2026-10-21)
+
+- Every inherited workflow job excludes `Y0UW1SH/rea` through a dominating
+  `github.repository != 'Y0UW1SH/rea'` condition. Existing predicates remain
+  parenthesized and unchanged, including status functions, reusable callers,
+  release publishers and aggregate jobs. Other repositories, including
+  `morluto/rea`, retain their original conditions and implicit status behavior.
+- Only the exact `saas-compatibility` job in `saas-compatibility.yml` and
+  `combined-candidate` job in `saas-upstream-integration.yml` are exempt.
+  `tests/boundary/filesystem/workflowForkSafety.test.ts` discovers every workflow
+  and job, rejects missing or escapable guards, and keeps those two jobs enabled.
+  Both SaaS check lanes execute this inventory regression. Existing workflow
+  tests still assert the original upstream predicates inside the fork guard.
+- These conditions skip jobs; they do not suppress workflow triggers or run
+  records. They apply only to revisions containing them. The fork's observed
+  default branch is `feat/saas-behavior-compatibility`; default-branch events gain
+  these guards only after the guarded revision reaches that branch. The
+  upstream-tracking `main` remains unchanged, so pushes to it and manual runs
+  selecting it can still use unguarded inherited workflows.
+- An inventory failure is a review gate, not a sandbox: a newly added unguarded
+  job can execute concurrently before the regression fails if Actions is already
+  active. Repository-wide activation therefore needs a separately reviewed
+  workflow/event policy covering unguarded branches and newly inherited paths.
+  Merging these guards alone does not establish safe global activation. No
+  Actions activation, workflow disabling, repository settings or merge is part
+  of this code change.
+
 ## Sync gate and UTF-8 hardening (2026-10-21)
 
 - Workflow/profile CLIs and both persisted lab readers reject malformed UTF-8

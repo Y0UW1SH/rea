@@ -12,7 +12,7 @@ permissions:
 jobs:
   qualification:
     name: Qualify labeled PR revision
-    if: github.event.label.name == 'ci:full'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (github.event.label.name == 'ci:full') }}
     uses: ./.github/workflows/ci.yml
     with:
       source_sha: ${{ github.sha }}

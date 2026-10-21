@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   windows-native-artifact:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Build Windows bridge security boundary
     runs-on: ubuntu-latest
     steps:
@@ -29,6 +30,7 @@ jobs:
           if-no-files-found: error
 
   cutter-upstream:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Cutter upstream smoke (${{ matrix.platform }})
     needs: windows-native-artifact
     runs-on: ${{ matrix.runner }}

@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   verify:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Installed package against real Hopper
     runs-on: [self-hosted, macOS, hopper]
     timeout-minutes: 20

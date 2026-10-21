@@ -49,6 +49,7 @@ const commands = [
     "scripts/run-exact-tests.mjs",
     "run",
     "tests/boundary/filesystem/workflowActionPinning.test.ts",
+    "tests/boundary/filesystem/workflowForkSafety.test.ts",
   ],
   [
     "npm",
