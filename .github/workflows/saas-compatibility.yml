@@ -56,6 +56,7 @@ jobs:
           tests/boundary/cli/saasExportCompare.test.ts
           tests/boundary/cli/saasApiContract.test.ts
           tests/boundary/cli/saasSurfaceCoverage.test.ts
+          tests/boundary/cli/saasStudy.test.ts
           tests/boundary/filesystem/saasSurfaceFixtures.test.ts
           tests/acceptance/setup/selectedSkillSetup.test.ts
           tests/boundary/filesystem/setupSkill.test.ts
