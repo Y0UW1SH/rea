@@ -29,6 +29,25 @@ backup outside the working machine. Do not assume a local checkpoint was pushed;
 verify the remote reference and resolved commit. This ledger does not assert that
 any tag has been published or that the feature branch has been merged into `main`.
 
+## Review regression repairs (2026-10-21)
+
+- The combined gate runs each unchanged command through the candidate's existing
+  owned-command supervisor, using a separate `saas-integration` lock. Cancellation
+  retains the live supervisor until its process group or Windows job cleanup
+  settles; stopping only the direct npm/npx process is insufficient. Linux
+  regressions exercise real npx descendants that ignore SIGINT/SIGTERM. This is
+  ordinary command ownership, not containment of hostile detached processes.
+- The known study CLI companion is selected from the actual candidate only when
+  its regular test file and focused-workflow declaration both exist. One-sided
+  inventory drift fails before gate commands. Standalone trees without either
+  remain valid, and the complete workflow-command mirror remains mandatory.
+  This does not import the separate study-foundation feature.
+- SaaS report and contract serialization preserves numeric negative zero as a
+  JSON `-0` token. Comparison verdicts, numeric types, strings and source evidence
+  remain unchanged. Export report-byte admission includes the sign. The explicit
+  `test:saas` inventory includes the signed-zero CLI/serialization/budget
+  regressions in `scripts/saas-report-json.test.mjs`.
+
 ## Fork workflow job guards (2026-10-21)
 
 - Every inherited workflow job excludes `Y0UW1SH/rea` through a dominating

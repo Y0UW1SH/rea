@@ -1,15 +1,17 @@
+import { spawn } from "node:child_process";
 import {
   chmod,
   link,
   mkdir,
   readFile,
+  symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { parse } from "yaml";
 import { z } from "zod";
 
@@ -91,6 +93,27 @@ async function fixture(conflict?: "forkMain" | "upstreamMain") {
     join(remote, "scripts/ci/saas-upstream-integration.mjs"),
     await readFile(script, "utf8"),
   );
+  for (const path of [
+    "scripts/run-exclusive.mjs",
+    "scripts/run-exclusive-command.mjs",
+    "scripts/lib/windows-owned-command.mjs",
+    ".github/workflows/saas-compatibility.yml",
+  ]) {
+    await mkdir(join(remote, path, ".."), { recursive: true });
+    const content = await readFile(join(root, path), "utf8");
+    // Start the isolated fixture without the optional study feature, even when
+    // the real checkout contains it; dedicated cases add both halves explicitly.
+    await writeFile(
+      join(remote, path),
+      path.endsWith("saas-compatibility.yml")
+        ? content.replace(
+            /^.*tests\/boundary\/cli\/saasStudy\.test\.ts.*\n/gmu,
+            "",
+          )
+        : content,
+    );
+  }
+  await writeFile(join(remote, ".gitignore"), "node_modules\n.cache/\n");
   await writeFile(join(remote, "common.txt"), "base\n");
   await writeFile(join(remote, ".nvmrc"), `${process.versions.node}\n`);
   const { packageManager } = z
@@ -249,6 +272,22 @@ async function gateCommands(
   f: Awaited<ReturnType<typeof fixture>>,
   behavior = "pass",
 ) {
+  try {
+    await symlink(
+      join(root, "node_modules"),
+      join(f.candidate, "node_modules"),
+      "junction",
+    );
+  } catch (error) {
+    // Prepare-failure fixtures have no candidate and never execute commands.
+    if (
+      !error ||
+      typeof error !== "object" ||
+      !("code" in error) ||
+      error.code !== "ENOENT"
+    )
+      throw error;
+  }
   const bin = join(f.directory, "bin");
   await mkdir(bin);
   const driver = join(f.directory, "command-fixture.mjs");
@@ -266,13 +305,7 @@ if (command === "npm" && args[0] === "--version") {
 } else {
   appendFileSync(${JSON.stringify(records)}, JSON.stringify({ command, args, cwd: process.cwd() }) + "\\n");
   if (${JSON.stringify(behavior)} === "mutate" && args.join(" ") === "run knip") writeFileSync("unexpected-module.mjs", "changed");
-  if (${JSON.stringify(behavior)} === "cancel") {
-    process.on("SIGTERM", () => { writeFileSync(${JSON.stringify(barrier)}, "received"); process.exit(0); });
-    writeFileSync(${JSON.stringify(barrier)}, "ready");
-    // The handler is ready and the first command is active before cancellation.
-    process.kill(process.ppid, "SIGTERM");
-    setTimeout(() => process.exit(91), 3000); // Bound cleanup on a broken runner.
-  }
+
 }
 `,
   );
@@ -782,6 +815,11 @@ it.skipIf(process.platform === "win32")(
   async () => {
     const f = await fixture();
     await invoke(f.env);
+    await symlink(
+      join(root, "node_modules"),
+      join(f.candidate, "node_modules"),
+      "junction",
+    );
     const bin = join(f.directory, "bin");
     await mkdir(bin);
     const executable = join(bin, "npx");
@@ -818,7 +856,7 @@ it.skipIf(process.platform === "win32")(
     const report = await readReport(f.report);
     const inventory = z
       .array(z.array(z.string()))
-      .parse(JSON.parse((await invoke(process.env, "commands")).stdout));
+      .parse(JSON.parse((await invoke(f.env, "commands")).stdout));
     expect(report).toMatchObject({
       status: "passed",
       stage: "complete",
@@ -857,24 +895,69 @@ it.skipIf(process.platform === "win32")(
   },
 );
 
-it.skipIf(process.platform === "win32")(
-  "forwards SIGTERM, settles the command and cannot advance or pass after cancellation",
-  async () => {
+it.skipIf(process.platform === "win32").each(["SIGINT", "SIGTERM"] as const)(
+  "settles real npx descendants before reporting %s cancellation",
+  async (signal) => {
     const f = await fixture();
     await invoke(f.env);
-    const commands = await gateCommands(f, "cancel");
-    await expect(invoke(commands.env, "check")).rejects.toMatchObject({
-      code: 143,
+    await mkdir(join(f.candidate, "node_modules/.bin"), { recursive: true });
+    await symlink(
+      join(root, "node_modules/cross-spawn"),
+      join(f.candidate, "node_modules/cross-spawn"),
+      "junction",
+    );
+    const ready = join(f.directory, "descendant-ready");
+    const late = join(f.directory, "descendant-outlived-owner");
+    const executable = join(f.candidate, "node_modules/.bin/oxfmt");
+    await writeFile(
+      executable,
+      `#!${process.execPath}
+const fs = require("node:fs");
+process.on("SIGTERM", () => {});
+process.on("SIGINT", () => {});
+fs.writeFileSync(${JSON.stringify(ready)}, "ready");
+setTimeout(() => { fs.writeFileSync(${JSON.stringify(late)}, "escaped"); process.exit(0); }, 2500);
+`,
+    );
+    await chmod(executable, 0o755);
+    const child = spawn(
+      process.execPath,
+      [join(f.controller, "scripts/ci/saas-upstream-integration.mjs"), "check"],
+      {
+        cwd: f.controller,
+        env: f.env,
+        stdio: "ignore",
+      },
+    );
+    const closed = new Promise((resolveCode, reject) => {
+      child.once("error", reject);
+      child.once("close", resolveCode);
     });
-    expect(await readFile(commands.barrier, "utf8")).toBe("received");
-    const report = await readReport(f.report);
-    expect(report.status).toBe("cancelled");
-    expect(report.checks).toHaveLength(1);
-    expect(report.checks[0]).toMatchObject({
-      status: "cancelled",
-      exitCode: 143,
-    });
+    try {
+      await vi.waitFor(
+        async () => expect(await readFile(ready, "utf8")).toBe("ready"),
+        { timeout: 5000 },
+      );
+      child.kill(signal);
+      expect(await closed).toBe(signal === "SIGINT" ? 130 : 143);
+      const report = await readReport(f.report);
+      expect(report.status).toBe("cancelled");
+      expect(report.checks).toHaveLength(1);
+      expect(report.checks[0]).toMatchObject({
+        status: "cancelled",
+        exitCode: signal === "SIGINT" ? 130 : 143,
+      });
+      // The bounded fixture writes after 2.5s if only npx, rather than its owned
+      // process group, was stopped. Wait beyond that deadline on broken code.
+      await new Promise((resolveWait) => setTimeout(resolveWait, 2800));
+      await expect(readFile(late)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGTERM");
+      await closed;
+    }
   },
+  15000,
 );
 
 it("preserves provenance when writing the presentation summary fails", async () => {
@@ -924,8 +1007,91 @@ it("preserves controller bytes when a prepared report is hard-linked into its ch
   expect(await readFile(f.report, "utf8")).toBe(before);
 });
 
+const studyTest = "tests/boundary/cli/saasStudy.test.ts";
+const focusedWorkflow = ".github/workflows/saas-compatibility.yml";
+
+async function addStudyInventory(
+  directory: string,
+  file: boolean,
+  declaration: boolean,
+) {
+  if (file) {
+    await mkdir(join(directory, "tests/boundary/cli"), { recursive: true });
+    await writeFile(join(directory, studyTest), "// study fixture\n");
+  }
+  if (declaration) {
+    const source = await readFile(join(directory, focusedWorkflow), "utf8");
+    await writeFile(
+      join(directory, focusedWorkflow),
+      source.replace(
+        "tests/boundary/cli/saasSurfaceCoverage.test.ts",
+        `tests/boundary/cli/saasSurfaceCoverage.test.ts\n          ${studyTest}`,
+      ),
+    );
+  }
+}
+
+it.each([false, true])(
+  "selects the complete declared study inventory when present=%s",
+  async (present) => {
+    const f = await fixture();
+    await addStudyInventory(f.controller, present, present);
+    const { stdout } = await invoke(f.env, "commands");
+    const inventory = z.array(z.array(z.string())).parse(JSON.parse(stdout));
+    expect(inventory.flat().includes(studyTest)).toBe(present);
+  },
+);
+
+it.each([
+  [true, false],
+  [false, true],
+])(
+  "rejects one-sided study inventory drift (file=%s, declaration=%s)",
+  async (file, declaration) => {
+    const f = await fixture();
+    await addStudyInventory(f.controller, file, declaration);
+    await expect(invoke(f.env, "commands")).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("Study test inventory differs"),
+    });
+  },
+);
+
+it("rejects a non-regular declared study test", async () => {
+  const f = await fixture();
+  await addStudyInventory(f.controller, false, true);
+  await mkdir(join(f.controller, studyTest), { recursive: true });
+  await expect(invoke(f.env, "commands")).rejects.toMatchObject({ code: 1 });
+});
+
+it.skipIf(process.platform === "win32")(
+  "uses the candidate study inventory even when the controller lacks it",
+  async () => {
+    const f = await fixture();
+    await addStudyInventory(f.upstream, true, true);
+    await workflowGit(f.upstream, ["add", "."]);
+    await workflowGit(f.upstream, ["commit", "-m", "add study coverage"]);
+    await workflowGit(f.upstream, ["branch", "-f", "main", "HEAD"]);
+    await invoke(f.env);
+    const commands = await gateCommands(f);
+    await invoke(commands.env, "check");
+    const report = await readReport(f.report);
+    expect(report.status).toBe("passed");
+    expect(report.checks.flatMap((entry) => entry.command)).toContain(
+      studyTest,
+    );
+  },
+);
+
 it("preserves all SaaS workflow commands and a read-only PR/manual/push workflow", async () => {
-  const { stdout } = await invoke(process.env, "commands");
+  // GitHub's outer workspace differs from the candidate checkout in the
+  // combined workflow. Real-source inspection must use this checkout's root.
+  const outerWorkspace = await createTestTempDirectory("rea-saas-outer-");
+  const { stdout } = await invoke(
+    { ...process.env, GITHUB_WORKSPACE: outerWorkspace },
+    "commands",
+    root,
+  );
   const commands = z
     .array(z.array(z.string()))
     .parse(JSON.parse(stdout))

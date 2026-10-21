@@ -1,5 +1,102 @@
 # SaaS fork validation
 
+## Cancellation, study inventory and signed-zero repairs — 2026-10-21, 15:45 UTC
+
+These repairs start from published PR #4 head
+`a80bf7fe8126e27d32086236827e1c76850bbf61`. The final tested source is
+`871d3e85bd0e05dfda0b69d5f147116de300edd8`, tree
+`df0fea133ca1b9092e01a4479bd4dfb382ff4dd2`. The production repair is
+`f0378fb3395545d85c5a7ebb5e71ac30b5316458`; subsequent test-only fixes make
+isolated study fixtures independent of the surrounding checkout and bind the
+real workflow mirror to the explicit candidate root. This receipt is a subsequent
+validation-document-only change.
+
+### Source validation
+
+Linux checks used Node **24.18.0**, npm **11.16.0**, the previously locked install
+with unchanged package-lock/dependencies, and writable caches.
+
+- **451 selected tests passed**: 164 SaaS, 35 domain/inventory/README,
+  27 guard/action-pinning, 70 CLI/MCP/setup, 101 browser/lifecycle and
+  54 combined-helper tests. The signed-zero regression is explicitly included
+  in `test:saas`, which both SaaS workflows execute. Production code is unchanged
+  since that selection; all 54 helper cases and the full static inventory were
+  rerun after the final test-only correction.
+- The full static inventory passed with the serial command below: six Turbo
+  tasks, followed by architecture guards. Generated docs also passed, including
+  five README tests. Lint warnings remain; no checks or diagnostics were
+  suppressed. These are source-tree results, not a successful current-upstream
+  combined run.
+- The existing owned-runner cancellation suite separately passed **6 tests**
+  with **5 platform/condition skips**. Real-npx SIGINT/SIGTERM regression tests
+  failed before the fix when bounded descendants wrote after helper exit.
+  Independent probes now pass for both signals, a TERM-ignoring descendant and
+  a nested owned-command supervisor. The tested cleanup retained ownership for
+  approximately one second before forced group termination. Arbitrary hostile
+  detached-process containment and Windows/macOS execution were not established.
+- All three signed-zero regressions failed on the original PR head and pass on
+  the repair. Independent checks passed eight adversarial CLI cases, 300 JSON
+  round-trips, and exact 16 MiB/+1-byte report-boundary probes. Numeric types,
+  literal strings and comparison verdicts remain unchanged.
+- Final review reproduced a CI-only mirror-test failure when GitHub's outer
+  `GITHUB_WORKSPACE` differed from the candidate checkout. The regression now
+  supplies an empty outer workspace and resolves the real-source command list
+  from the explicit repository root. All 54 helper tests pass with the actual
+  environment also pointing outside the checkout; fixture authority defaults
+  remain unchanged. Independent recheck confirms the repair.
+- Independent review found no remaining actionable repair issue. An initial fixture setup
+  used a directory-only Git ignore for a dependency symlink; that fixture was
+  corrected, then all 54 helper cases passed. No production check was weakened.
+
+```bash
+GOMAXPROCS=1 GOMEMLIMIT=768MiB UV_THREADPOOL_SIZE=1 HUSKY=0 \
+  node scripts/run-exclusive.mjs artifacts node_modules/.bin/turbo run \
+  typecheck lint:built format:check knip metadata:check --concurrency=1
+npm run verify:architecture-guards
+npm run docs:check
+```
+
+### Separate study-PR combination
+
+A temporary combination with PR #3 head
+`94beecf6f4b001006a24a59e7b12c6ba6891da75` was checked at tree
+`79d969e961d7907ae7f183fb8b911ca281d88ccb`. Its sole merge conflict was the
+`package.json` `test:saas` line: the temporary resolution retains both the new
+report regression and the study suite. All **10 study-only** and **66 fix-branch-only**
+paths preserve their source Git blob/mode entries exactly; the shared workflow,
+docs and package script retain both additions.
+
+The combination passed **83 helper/study/guard/pinning tests** and **175 SaaS
+script tests**. These overlap source coverage and are not additional unique
+source-test totals. The complete workflow-command mirror now passes with the
+study CLI included. This is bounded interaction evidence, not a full validation
+or import of PR #3; its branch and PR were not changed.
+
+### Current-base and upstream qualification
+
+During validation, the feature base advanced to
+`87a3ee21748bde3a9cdae7e595b0a5540a7e8416`. That change only clarifies live
+capture versus offline evaluation in `docs/saas-compatibility.md`; its merge with
+the repaired source is clean. A fresh simulated PR controller
+`1c981d23fdd894331ac804074ae4b9bbc9fecae3`, tree
+`f1c56f058f41efb133774e184513ab8af117ce6b`, has ordered parents consisting of
+that exact new base and tested source `871d3e85`.
+
+Using fixed Git-object mirrors, the supplemental gate selected that event merge,
+fork main `1c2c2f1e78a74cdf5e4909ab8e775b090998a51f`, and upstream
+`f86206535f8ec71014781f9d432a84b01e183e5d`. It **failed closed at the upstream
+merge**, with the same two conflict paths:
+
+- `.github/workflows/ci.yml`
+- `tests/boundary/filesystem/ciRequiredLanes.test.ts`
+
+**Zero candidate check stages ran.** No conflict was suppressed or broadly
+resolved in this three-fix change. Earlier successful combined runs below remain
+bound to their historical snapshots. No hosted CI, full repository suite,
+Windows/macOS runtime, live vendor behavior or globally safe Actions activation
+is claimed. Publication, merging, activation and repository settings are separate
+from these local results.
+
 ## Fork workflow guards — 2026-10-21, 14:48 UTC
 
 This follow-up to draft PR #4 starts from published head

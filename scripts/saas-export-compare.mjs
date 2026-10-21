@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { dirname, basename, resolve } from "node:path";
+import { serializeReport } from "./lib/saas-report-json.mjs";
 import {
   readBoundedExport,
   decodeExportText,
@@ -22,7 +23,7 @@ if (args.length !== 1) {
       parseExportJson(decodeExportText(input)),
       dirname(path),
     );
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    process.stdout.write(serializeReport(report));
     process.exitCode =
       report.status === "pass" ? 0 : report.status === "fail" ? 1 : 2;
   } catch (error) {

@@ -93,12 +93,42 @@ const commands = [
   ["npm", "run", "knip"],
 ];
 
+async function selectedCommands(directory) {
+  const studyTest = "tests/boundary/cli/saasStudy.test.ts";
+  let present = false;
+  try {
+    const metadata = await lstat(resolve(directory, studyTest));
+    if (!metadata.isFile())
+      throw new Error("Study test must be a regular file");
+    present = true;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const workflow = await readFile(
+    resolve(directory, ".github/workflows/saas-compatibility.yml"),
+    "utf8",
+  );
+  const declared = workflow.split(/\s+/u).includes(studyTest);
+  if (present !== declared)
+    throw new Error(
+      "Study test inventory differs between the file and focused workflow",
+    );
+  // Only this known companion suite is conditional. The full workflow command
+  // mirror remains mandatory and rejects any other missing or changed command.
+  return commands.map((command) =>
+    command.flatMap((argument) =>
+      present && argument === "tests/boundary/cli/saasSurfaceCoverage.test.ts"
+        ? [argument, studyTest]
+        : [argument],
+    ),
+  );
+}
+
 const [mode, ...extra] = process.argv.slice(2);
 const candidate = resolve(process.env.SAAS_CANDIDATE ?? "candidate");
 const reportPath = resolve(process.env.SAAS_REPORT ?? "saas-integration.json");
 let ownsReport = false;
 let gateChild;
-let forceTimer;
 let shutdownSignal;
 const signalExitCodes = { SIGINT: 130, SIGTERM: 143 };
 if (mode === "check")
@@ -111,9 +141,9 @@ if (mode === "check")
         gateChild.exitCode === null &&
         gateChild.signalCode === null
       ) {
+        // The owned-command supervisor retains its group/job identity through
+        // forced cleanup. Do not kill its wrapper early and orphan descendants.
         gateChild.kill(signal);
-        forceTimer = setTimeout(() => gateChild?.kill("SIGKILL"), 1_000);
-        forceTimer.unref();
       }
     });
 let report = {
@@ -173,14 +203,21 @@ function requireRunning() {
 async function runGate(args) {
   requireRunning();
   return new Promise((resolveCode, reject) => {
-    gateChild = spawn(args[0], args.slice(1), {
-      cwd: candidate,
-      stdio: "inherit",
-      env: { ...process.env, HUSKY: "0" },
-    });
+    gateChild = spawn(
+      process.execPath,
+      [
+        resolve(candidate, "scripts/run-exclusive.mjs"),
+        "saas-integration",
+        ...args,
+      ],
+      {
+        cwd: candidate,
+        stdio: "inherit",
+        env: { ...process.env, HUSKY: "0" },
+      },
+    );
     gateChild.once("error", reject);
     gateChild.once("close", (exitCode) => {
-      clearTimeout(forceTimer);
       gateChild = undefined;
       resolveCode(
         shutdownSignal ? signalExitCodes[shutdownSignal] : (exitCode ?? 1),
@@ -531,9 +568,11 @@ async function check() {
     throw new Error(
       "Execution must use the candidate-pinned Node and npm versions",
     );
+  report.stage = "command-inventory";
+  const inventory = await selectedCommands(candidate);
   report.status = "checking";
   await save();
-  for (const args of commands) {
+  for (const args of inventory) {
     report.stage = args.join(" ");
     console.log(`\nSaaS integration: ${report.stage}`);
     const result = { command: args, status: "running" };
@@ -560,7 +599,8 @@ async function check() {
 
 try {
   if (extra.length) throw new Error("Unexpected arguments");
-  if (mode === "commands") console.log(JSON.stringify(commands));
+  if (mode === "commands")
+    console.log(JSON.stringify(await selectedCommands(process.cwd())));
   else if (mode === "prepare") {
     await verifyReportPlacement();
     const created = await open(reportPath, "wx");

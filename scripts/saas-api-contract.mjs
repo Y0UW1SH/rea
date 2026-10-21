@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { basename, dirname, resolve } from "node:path";
+import { serializeReport } from "./lib/saas-report-json.mjs";
 import {
   decodeExportText,
   parseExportJson,
@@ -16,8 +17,7 @@ const USAGE = [
   "  node scripts/saas-api-contract.mjs infer MANIFEST.json --out DIR",
   "  node scripts/saas-api-contract.mjs verify CONTRACT_DIR CAPTURE.json [--origin-map REF=REP]... [--coverage-policy FILE.json]",
 ].join("\n");
-const emit = (report) =>
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+const emit = (report) => process.stdout.write(serializeReport(report));
 const fail = (message) => {
   console.error(message);
   process.exitCode = 2;

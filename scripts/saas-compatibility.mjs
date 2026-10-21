@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
+import { serializeReport } from "./lib/saas-report-json.mjs";
 import {
   evaluateCompatibility,
   parseCompatibilityJson,
@@ -17,7 +18,7 @@ if (args.length !== 1) {
         ),
       ),
     );
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    process.stdout.write(serializeReport(report));
     process.exitCode =
       report.status === "pass" ? 0 : report.status === "fail" ? 1 : 2;
   } catch (error) {

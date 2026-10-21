@@ -141,6 +141,12 @@ The synthetic lab's persisted readers apply the same rule. Valid Unicode,
 including literal U+FFFD and embedded U+FEFF, remains unchanged; these JSON inputs
 continue to reject a leading BOM. Strings are not Unicode-normalized.
 
+Reports retain numeric negative zero as the JSON token `-0`, including nested
+observation values and context. This preserves the existing distinction between
+negative and positive zero in comparisons without turning numbers into strings.
+Literal strings such as `"-0"` are unchanged. Export report-size accounting uses
+the same serialized representation, including the sign and final newline.
+
 ### Case contract, version 1
 
 Copy a synthetic fixture to start a case. The validator rejects unknown envelope
