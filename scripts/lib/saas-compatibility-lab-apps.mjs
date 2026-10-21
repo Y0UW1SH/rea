@@ -62,7 +62,11 @@ export function referenceApp(path, workflow, input) {
   return { ids, receipts };
 }
 export function readReference(path, workflow) {
-  const journal = JSON.parse(readFileSync(path, "utf8"));
+  const journal = JSON.parse(
+    new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      readFileSync(path),
+    ),
+  );
   if (workflow === "accounting") {
     const invoice = journal.find((e) => e.type === "invoice");
     const payments = journal.filter((e) => e.type === "payment");
@@ -160,7 +164,11 @@ export function replacementApp(path, workflow, input, mutation) {
 }
 export function readReplacement(path, workflow) {
   // Reopen the persisted file, not the live in-memory model or success receipt.
-  const raw = JSON.parse(readFileSync(path, "utf8"));
+  const raw = JSON.parse(
+    new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      readFileSync(path),
+    ),
+  );
   const row = raw.document;
   const common = {
     party: row.owner,

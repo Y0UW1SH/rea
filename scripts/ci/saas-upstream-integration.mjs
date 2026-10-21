@@ -22,6 +22,7 @@ import { promisify } from "node:util";
 const execute = promisify(execFile);
 const fork = "Y0UW1SH/rea";
 const featureRef = "refs/heads/feat/saas-behavior-compatibility";
+const helperPath = "scripts/ci/saas-upstream-integration.mjs";
 const shaPattern = /^[0-9a-f]{40}$/u;
 const commands = [
   [
@@ -223,15 +224,110 @@ async function ancestor(older, newer) {
 }
 
 async function verifyExecutingHelper() {
-  const trackedPath = "scripts/ci/saas-upstream-integration.mjs";
-  const expected = resolve(process.cwd(), trackedPath);
+  const expected = resolve(process.cwd(), helperPath);
   if (
     !(await lstat(expected)).isFile() ||
     (await realpath(fileURLToPath(import.meta.url))) !==
       (await realpath(expected))
   )
     throw new Error("Executing helper must be the controller's tracked script");
-  await git(["ls-files", "--error-unmatch", "--", trackedPath], process.cwd());
+  await git(["ls-files", "--error-unmatch", "--", helperPath], process.cwd());
+}
+
+async function verifyCandidateHelper() {
+  report.stage = "verify-candidate-helper";
+  for (const [name, cwd] of [
+    ["controller", process.cwd()],
+    ["candidate", candidate],
+  ]) {
+    const entry = await git(
+      ["ls-tree", "-z", "HEAD", "--", helperPath],
+      cwd,
+      true,
+    );
+    const match = /^(100644|100755) blob ([0-9a-f]{40})\t([^\0]+)\0$/u.exec(
+      entry,
+    );
+    if (!match || match[3] !== helperPath)
+      throw new Error("Integration helper must be a tracked regular file");
+    report[`${name}HelperMode`] = match[1];
+    report[`${name}HelperBlob`] = match[2];
+  }
+  // The controller owns execution. A candidate's self-tests cannot establish
+  // that an older controller retained newly merged commands or helper guards.
+  if (
+    report.controllerHelperBlob !== report.candidateHelperBlob ||
+    report.controllerHelperMode !== report.candidateHelperMode
+  )
+    throw new Error(
+      "Candidate integration helper differs; use a reviewed controller containing the merged gate changes",
+    );
+}
+
+async function eventIdentity(name, ref, sha, controller) {
+  const event = { name, ref, sha };
+  if (name !== "pull_request") return event;
+  const payload = JSON.parse(
+    new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      await readFile(process.env.GITHUB_EVENT_PATH),
+    ),
+  );
+  const pr = payload?.pull_request;
+  if (
+    !Number.isSafeInteger(payload?.number) ||
+    payload.number <= 0 ||
+    pr?.number !== payload.number ||
+    ref !== `refs/pull/${payload.number}/merge` ||
+    payload.repository?.full_name !== fork ||
+    pr.base?.repo?.full_name !== fork ||
+    !["main", "feat/saas-behavior-compatibility"].includes(pr.base?.ref) ||
+    typeof pr.head?.repo?.full_name !== "string" ||
+    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(pr.head.repo.full_name) ||
+    typeof pr.head?.ref !== "string"
+  )
+    throw new Error("Unsupported pull request identity");
+  await git(["check-ref-format", `refs/heads/${pr.head.ref}`], controller);
+  event.pullRequest = {
+    number: payload.number,
+    base: { repository: fork, ref: pr.base.ref, sha: requireSha(pr.base.sha) },
+    head: {
+      repository: pr.head.repo.full_name,
+      ref: pr.head.ref,
+      sha: requireSha(pr.head.sha),
+    },
+  };
+  // checkout's depth-one boundary hides parents from revision walking (%P).
+  // Read only the raw commit headers, never the commit message or a later ref.
+  const headers = (await git(["cat-file", "-p", sha], controller, true)).split(
+    "\n\n",
+    1,
+  )[0];
+  const parents = headers
+    .split("\n")
+    .filter((line) => line.startsWith("parent "))
+    .map((line) => line.slice(7));
+  if (
+    parents.length !== 2 ||
+    parents[0] !== pr.base.sha ||
+    parents[1] !== pr.head.sha
+  )
+    throw new Error(
+      "Controller merge parents do not match the pull request event",
+    );
+  return event;
+}
+
+function selectedSourceSha(owner, sourceRef, observedSha) {
+  if (owner !== fork) return observedSha;
+  const { ref, sha, pullRequest } = report.event;
+  if (!pullRequest) return sourceRef === ref ? sha : observedSha;
+  if (sourceRef === `refs/heads/${pullRequest.base.ref}`) return sha;
+  if (
+    pullRequest.head.repository === fork &&
+    sourceRef === `refs/heads/${pullRequest.head.ref}`
+  )
+    return pullRequest.head.sha;
+  return observedSha;
 }
 
 async function prepare() {
@@ -243,8 +339,8 @@ async function prepare() {
   } = process.env;
   if (
     repository !== fork ||
-    !["push", "workflow_dispatch"].includes(event) ||
-    ![featureRef, "refs/heads/main"].includes(ref)
+    !["push", "workflow_dispatch", "pull_request"].includes(event) ||
+    (event !== "pull_request" && ![featureRef, "refs/heads/main"].includes(ref))
   )
     throw new Error("Unsupported repository, event or branch");
   requireSha(eventSha);
@@ -260,7 +356,7 @@ async function prepare() {
     throw new Error("Controller checkout does not match the triggering SHA");
   if (await git(["status", "--porcelain", "--untracked-files=all"], controller))
     throw new Error("Controller checkout must be clean");
-  report.event = { name: event, ref, sha: eventSha };
+  report.event = await eventIdentity(event, ref, eventSha, controller);
   report.observedAt = new Date().toISOString();
   await snapshotSources(controller);
   report.stage = "create-candidate";
@@ -284,6 +380,7 @@ async function prepare() {
   await mergeSources();
   report.candidateSha = requireSha(await git(["rev-parse", "HEAD"]));
   report.candidateTree = requireSha(await git(["rev-parse", "HEAD^{tree}"]));
+  await verifyCandidateHelper();
   report.stage = "toolchain";
   const nodeVersion = (
     await readFile(resolve(candidate, ".nvmrc"), "utf8")
@@ -304,7 +401,6 @@ async function prepare() {
 }
 
 async function snapshotSources(controller) {
-  const { name: event, ref, sha: eventSha } = report.event;
   report.sources = {};
   for (const [name, owner, sourceRef] of [
     ["feature", fork, featureRef],
@@ -325,10 +421,7 @@ async function snapshotSources(controller) {
       repository: owner,
       ref: sourceRef,
       observedSha,
-      sha:
-        event === "push" && owner === fork && sourceRef === ref
-          ? eventSha
-          : observedSha,
+      sha: selectedSourceSha(owner, sourceRef, observedSha),
     };
   }
 }
@@ -417,6 +510,8 @@ async function check() {
   )
     throw new Error("Controller differs from its recorded clean identity");
   await verifyCandidate();
+  requireRunning();
+  await verifyCandidateHelper();
   requireRunning();
   report.stage = "toolchain";
   const { stdout: npmVersion } = await execute("npm", ["--version"], {

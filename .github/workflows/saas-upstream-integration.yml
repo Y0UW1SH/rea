@@ -3,6 +3,8 @@ name: SaaS upstream integration
 on:
   push:
     branches: [main, feat/saas-behavior-compatibility]
+  pull_request:
+    branches: [main, feat/saas-behavior-compatibility]
   workflow_dispatch:
 
 permissions:

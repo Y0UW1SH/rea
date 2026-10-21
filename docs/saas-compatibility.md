@@ -134,6 +134,13 @@ in the upstream npm package. For core browser
 comparison changes, build this checkout with the repository's pinned toolchain;
 running `npx rea-agents@latest` would run upstream instead.
 
+Workflow-case and product-profile files must contain valid UTF-8. Their CLIs
+reject malformed byte sequences with exit code 2 before JSON parsing, rather than
+silently replacing different corrupted bytes with the same U+FFFD character.
+The synthetic lab's persisted readers apply the same rule. Valid Unicode,
+including literal U+FFFD and embedded U+FEFF, remains unchanged; these JSON inputs
+continue to reject a leading BOM. Strings are not Unicode-normalized.
+
 ### Case contract, version 1
 
 Copy a synthetic fixture to start a case. The validator rejects unknown envelope

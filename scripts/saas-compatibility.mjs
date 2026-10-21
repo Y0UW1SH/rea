@@ -11,7 +11,11 @@ if (args.length !== 1) {
 } else {
   try {
     const report = evaluateCompatibility(
-      parseCompatibilityJson(await readFile(args[0], "utf8")),
+      parseCompatibilityJson(
+        new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+          await readFile(args[0]),
+        ),
+      ),
     );
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     process.exitCode =
