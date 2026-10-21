@@ -35,6 +35,8 @@ again, because they can change after this document was written.
 > regressions for integration bugs. Compare failures with the starting fork and
 > upstream where needed; distinguish new regressions, existing failures and
 > environment limitations. Do not weaken assertions or omit failing checks.
+> Confirm that CI actually selects the PR's base branch and tested revision;
+> absent or skipped checks are unverified, not passing.
 >
 > Fix demonstrated regressions and open a draft integration PR. Report the exact
 > upstream SHA and tested tree, retained fork features, conflict resolutions,
@@ -58,3 +60,6 @@ receipt and identify any pending PRs that still need conflict resolution.
 The fork's `main` may be an upstream-tracking branch while a different default
 branch contains the customized product. Updating only the tracking branch does
 not update the customized product. Inspect that relationship on each run.
+
+See the [2026-10-21 integration receipt](saas-upstream-sync-validation.md) for a
+worked example, including conflicts, passing checks and unresolved failures.
