@@ -22,6 +22,7 @@ const CARD_PATH = "/.well-known/agent-env.json";
 const serveFixture = async (
   processes: TestProcesses,
   environment: Readonly<Record<string, string>> = {},
+  flags: readonly string[] = [],
 ) => {
   const root = await createTestTempDirectory("rea-environment-serve-mcp-");
   const files = await writeEnvironmentServeFiles(root);
@@ -34,6 +35,7 @@ const serveFixture = async (
       files.capturePath,
       "--port",
       "0",
+      ...flags,
     ],
     environment,
   );
@@ -48,6 +50,29 @@ const connect = async (url: URL) => {
 };
 
 describe("rea environment-serve", () => {
+  processTest(
+    "selects strict replay through the CLI and refuses unmodeled requests",
+    async ({ processes }) => {
+      const started = await serveFixture(processes, {}, [
+        "--replay-mode",
+        "strict",
+      ]);
+      const client = await connect(started.url);
+      try {
+        const { tools } = await client.listTools();
+        expect(tools[0]?.description).toContain("strict");
+        const result = await client.callTool({
+          name: "get_users_by_id",
+          arguments: { id: "999" },
+        });
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toMatch(/unmodeled request/iu);
+      } finally {
+        await client.close();
+      }
+    },
+    HTTP_BOUNDARY_TIMEOUT_MS,
+  );
   processTest(
     "lists one tool per manifest tool and replays exact and best-effort records as untrusted target content",
     async ({ processes }) => {

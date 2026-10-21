@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MAX_REQUEST_BODY_SIZE,
   hostHeaderValidationResponse,
   isInitializeRequest,
   isJsonContentType,
@@ -33,6 +34,7 @@ import {
 } from "./NodeHttpRequestOwner.js";
 import { RequestTrackingMcpServer } from "../RequestTrackingMcpServer.js";
 import { AnalysisResourceConstraintError } from "../../domain/analysisErrorCore.js";
+import { parseExactJson } from "../../domain/exactJsonNumber.js";
 
 /** MCP endpoint path shared by `rea mcp --http` and agent environment servers. */
 export const MCP_HTTP_PATH = "/mcp";
@@ -57,6 +59,8 @@ export interface ServeStreamableHttpOptions {
   readonly sessionDrainTimeoutMs?: number;
   /** Concurrent HTTP input/route work (default 8); unread uploads retain their permit. */
   readonly maxConcurrentDispatches?: number;
+  /** Refuse JSON numeric conversion loss before SDK parsing, for exact replay matching. */
+  readonly requireExactJsonNumbers?: boolean;
   readonly routes?: readonly StreamableHttpRoute[];
   readonly logger?: Logger;
   /** Reports listener failures after binding; request failures are logged instead. */
@@ -231,6 +235,7 @@ class LiveSession {
   constructor(
     readonly transport: WebStandardStreamableHTTPServerTransport,
     private readonly instance: RequestTrackingMcpServer,
+    private readonly requireExactJsonNumbers: boolean,
   ) {
     this.#shutdown = transport.close.bind(transport);
   }
@@ -268,7 +273,7 @@ class LiveSession {
                   ),
                   duplex: "half",
                 } as RequestInit);
-          const response = await this.transport.handleRequest(guarded);
+          const response = await this.#handleRequest(guarded);
           if (!this.#closed) return response;
           // The SDK may have crossed an await before close and created its SSE
           // response afterwards. Cancel that stream before releasing its owner.
@@ -281,6 +286,40 @@ class LiveSession {
         }
       }),
     );
+  }
+
+  /** Parse within this session's abortable dispatch and the SDK's byte bound. */
+  async #handleRequest(request: Request): Promise<Response> {
+    if (
+      !this.requireExactJsonNumbers ||
+      request.method !== "POST" ||
+      !hasStreamablePostHeaders(request)
+    )
+      return this.transport.handleRequest(request);
+    let read;
+    try {
+      read = await readRequestBody(request, DEFAULT_MAX_REQUEST_BODY_SIZE);
+    } catch {
+      return jsonRpcErrorResponse(
+        400,
+        -32700,
+        "Could not read JSON request body",
+      );
+    }
+    if (read.tooLarge)
+      return jsonRpcErrorResponse(
+        413,
+        -32000,
+        `Request body must not exceed ${String(DEFAULT_MAX_REQUEST_BODY_SIZE)} bytes`,
+      );
+    const parsedBody = parseExactJson(read.text);
+    if (parsedBody === undefined)
+      return jsonRpcErrorResponse(
+        400,
+        -32600,
+        "Strict replay requires valid JSON with exact numeric fidelity",
+      );
+    return this.transport.handleRequest(request, { parsedBody });
   }
 
   shutdown(): Promise<void> {
@@ -305,6 +344,7 @@ export class McpSessionSlot {
     private readonly instance: RequestTrackingMcpServer,
     private readonly logger: Logger | undefined,
     private readonly drainTimeoutMs = DEFAULT_SESSION_DRAIN_TIMEOUT_MS,
+    private readonly requireExactJsonNumbers = false,
   ) {
     instance.enableRequestTracking();
     const protocol = protocolOf(instance);
@@ -397,7 +437,11 @@ export class McpSessionSlot {
       onsessionclosed: () =>
         this.logger?.info("MCP HTTP session closed by the client"),
     });
-    const session = new LiveSession(transport, this.instance);
+    const session = new LiveSession(
+      transport,
+      this.instance,
+      this.requireExactJsonNumbers,
+    );
     // The SDK closes the transport on DELETE; that ends the session, not the server.
     transport.close = () => this.#endSession(session);
     await this.instance.connect(transport);
@@ -574,6 +618,7 @@ export const serveStreamableHttp = async (
     instance,
     logger,
     options.sessionDrainTimeoutMs,
+    options.requireExactJsonNumbers,
   );
   slot = live;
   const prepareShutdown = stagedClose([

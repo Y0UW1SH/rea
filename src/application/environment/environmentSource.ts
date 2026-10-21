@@ -10,6 +10,10 @@ import {
   type RecordedResponseBody,
 } from "../../domain/analysisView/recordedResponseBody.js";
 import { readRecordedRequestLine } from "../../domain/analysisView/webNetworkRouteTemplates.js";
+import {
+  readRecordedRequestBody,
+  type RecordedRequestBody,
+} from "../../domain/analysisView/recordedRequestBody.js";
 import { browserScenarioCaptureSchema } from "../../domain/browserScenarioCapture.js";
 import type { AnalysisError } from "../../domain/analysisErrorBase.js";
 import {
@@ -27,6 +31,7 @@ import {
 
 /** Operation name every refusal of the serve command reports. */
 export const ENVIRONMENT_SERVE_OPERATION = "environment-serve";
+export type ReplayMode = "archive" | "strict";
 
 export type EnvironmentManifest = Extract<
   AnalysisViewResult,
@@ -42,6 +47,7 @@ export interface RecordedExchange extends RecordedResponseBody {
   readonly query: string | null;
   readonly status: number | null;
   readonly contentType: string | null;
+  readonly requestBody?: RecordedRequestBody;
 }
 
 /** Replayed bodies larger than this are cut at a UTF-8 boundary and flagged. */
@@ -113,6 +119,7 @@ const recordedExchange = (
     query: line.query === undefined || line.query === "" ? null : line.query,
     status: line.status,
     contentType: line.rawMime === "" ? null : line.rawMime,
+    requestBody: readRecordedRequestBody(record),
     ...readRecordedResponseBody(record, REPLAY_BODY_LIMIT_BYTES),
   };
 };

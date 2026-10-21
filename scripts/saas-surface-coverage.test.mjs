@@ -23,7 +23,76 @@ import {
   input,
   setRequestBody,
   statusesOf,
+  sha256,
 } from "./saas-surface-test-support.mjs";
+
+test("GraphQL names never establish a service association or hide unrelated traffic", () => {
+  const capture = buildSurfaceCapture("https://unrelated.example.test");
+  for (const event of capture.events.items)
+    if (event.transaction_id === "t8" && event.url)
+      event.url.url = "https://unrelated.example.test/unrelated-api";
+  const report = reconcileSurface(
+    fixtureInputs({
+      static: input(
+        "static.json",
+        analysisOf([{ value: "ListCustomers", mechanisms: ["graphql:query"] }]),
+      ),
+      observed: [input("unrelated.json", capture)],
+    }),
+  );
+  const declaration = report.surface[0];
+  assert.equal(declaration.status, "unknown");
+  assert.equal(declaration.reason, "origin-not-exercised");
+  assert.deepEqual(declaration.evidence.observed, []);
+  const observed = report.undeclared_observed.filter(
+    (entry) => entry.family === "graphql",
+  );
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0].origin, "https://unrelated.example.test");
+  assert.equal(observed[0].endpoint_path, "/unrelated-api");
+});
+
+test("GraphQL candidates retain endpoint and document identity without inventing static linkage", () => {
+  const first = buildSurfaceCapture();
+  const second = buildSurfaceCapture();
+  for (const event of second.events.items)
+    if (event.transaction_id === "t8" && event.url)
+      event.url.url = `${SURFACE_ORIGIN}/another-graphql`;
+  const third = buildSurfaceCapture();
+  setRequestBody(
+    third,
+    "t8",
+    JSON.stringify({
+      operationName: "ListCustomers",
+      query: "query ListCustomers { accounts { id } }",
+    }),
+  );
+  const options = fixtureInputs({ observed: [input("one.json", first)] });
+  const single = reconcileSurface(options).surface.find(
+    (entry) => entry.key === "query ListCustomers",
+  );
+  assert.equal(single.status, "unknown");
+  assert.equal(single.reason, "graphql-transport-unresolved");
+  const report = reconcileSurface({
+    ...options,
+    observed: [
+      input("one.json", first),
+      input("two.json", second),
+      input("three.json", third),
+    ],
+  });
+  const declaration = report.surface.find(
+    (entry) => entry.key === "query ListCustomers",
+  );
+  assert.equal(declaration.status, "ambiguous");
+  assert.equal(declaration.reason, "graphql-operation-ambiguous");
+  const observed = report.undeclared_observed.filter(
+    (entry) => entry.family === "graphql",
+  );
+  assert.equal(observed.length, 3);
+  assert.equal(new Set(observed.map((entry) => entry.document_sha256)).size, 2);
+  assert.equal(new Set(observed.map((entry) => entry.endpoint_path)).size, 2);
+});
 
 test("pins the companion families, statuses and reason superset", () => {
   assert.deepEqual(
@@ -45,6 +114,7 @@ test("pins the companion families, statuses and reason superset", () => {
       "rpc-bodies-not-retained",
       "rpc-link-base-undeclared",
       "route-pattern-unsupported",
+      "graphql-transport-unresolved",
     ],
   );
 });
@@ -69,11 +139,12 @@ test("reconciles every declared family against api-surface groups and a capture"
   });
   assert.deepEqual(report.summary.unknown_reasons, [
     { reason: "candidate-endpoint", count: 1 },
+    { reason: "graphql-transport-unresolved", count: 1 },
     { reason: "origin-not-exercised", count: 1 },
     { reason: "rpc-bodies-not-retained", count: 1 },
     { reason: "target-unresolved", count: 1 },
   ]);
-  assert.equal(report.gaps, 7);
+  assert.equal(report.gaps, 8);
   assert.equal(Object.hasOwn(report, "profileUpdate"), false);
 });
 
@@ -130,6 +201,11 @@ test("cites static locations and observed ordinals, transactions or steps per it
       method: "POST",
       origin: SURFACE_ORIGIN,
       path_template: "/graphql",
+      endpoint_path: "/graphql",
+      document_sha256: sha256(
+        "query ListCustomers($first: Int) { customers(first: $first) { id name } }",
+      ),
+      persisted_query_sha256: null,
       transactions: [
         { transaction_id: "t8", step_id: "create-invoice", status: 200 },
       ],
@@ -148,12 +224,16 @@ test("reports undeclared traffic, plans experiments and stays deterministic", ()
       entry.family,
       entry.method ?? null,
       entry.origin,
-      entry.path ?? entry.path_template ?? entry.procedure,
+      entry.path ??
+        entry.path_template ??
+        entry.endpoint_path ??
+        entry.procedure,
     ]),
     [
       ["network", "GET", "https://app.example.test", "/assets/logo.png"],
       ["network", "GET", "https://cdn.example.test", "/lib.json"],
       ["trpc", null, "https://app.example.test", "user.list"],
+      ["graphql", "POST", "https://app.example.test", "/graphql"],
       ["route", null, "https://app.example.test", "/"],
       ["route", null, "https://app.example.test", "/help"],
     ],
@@ -171,6 +251,7 @@ test("reports undeclared traffic, plans experiments and stays deterministic", ()
         .map((key) => experimentId("network", key)),
       experimentId("trpc", "mutate user.rename"),
       experimentId("graphql", "mutation RenameCustomer"),
+      experimentId("graphql", "query ListCustomers"),
       experimentId("route", "/settings"),
     ],
   );
@@ -321,7 +402,6 @@ test("folds replacement origins onto reference origins before joining", () => {
     "network POST /api/invoices",
     "network * https://app.example.test/api/customers/42",
     "trpc query user.byId",
-    "graphql query ListCustomers",
     "route /invoices",
   ])
     assert.equal(statuses[key], "exact", key);
@@ -354,7 +434,7 @@ test("folds replacement origins onto reference origins before joining", () => {
   );
 });
 
-test("claims GraphQL absence only when every input retained bodies on an exercised declared origin", () => {
+test("keeps GraphQL absence unknown without a transport association", () => {
   const quiet = buildSurfaceCapture();
   quiet.events.items = quiet.events.items.filter(
     (event) => event.transaction_id !== "t8",
@@ -363,7 +443,10 @@ test("claims GraphQL absence only when every input retained bodies on an exercis
   const alone = reconcileSurface(
     fixtureInputs({ observed: [input("quiet.json", quiet)] }),
   );
-  assert.equal(statusesOf(alone)["graphql query ListCustomers"], "unmatched");
+  assert.equal(
+    statusesOf(alone)["graphql query ListCustomers"],
+    "unknown:graphql-transport-unresolved",
+  );
   const mixed = reconcileSurface(
     fixtureInputs({
       observed: [
@@ -435,7 +518,7 @@ test("reads persisted-query bodies by operationName and ignores names outside th
     statusesOf(
       reconcileSurface(fixtureInputs({ observed: [input("apq.json", apq)] })),
     )["graphql query ListCustomers"],
-    "exact",
+    "unknown:graphql-transport-unresolved",
   );
   const hostile = buildSurfaceCapture();
   setRequestBody(
@@ -451,7 +534,10 @@ test("reads persisted-query bodies by operationName and ignores names outside th
   );
   assert.notEqual(report.status, "invalid", report.reason);
   assert.equal(JSON.stringify(report).includes("SECRETNAME"), false);
-  assert.equal(statusesOf(report)["graphql query ListCustomers"], "exact");
+  assert.equal(
+    statusesOf(report)["graphql query ListCustomers"],
+    "unknown:graphql-transport-unresolved",
+  );
 });
 
 test("treats an api-surface page beyond the first or short of its total as incomplete", () => {

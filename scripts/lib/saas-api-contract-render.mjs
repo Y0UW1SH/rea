@@ -11,7 +11,7 @@ export const CONTRACT_LIMITATIONS = [
   "Required properties, formats and enum candidates reflect the observed samples only; absent samples prove nothing, and enum candidates are observed literal values offered as candidates, never emitted as enum.",
   "Only the four exact api-surface segment formats (numeric, uuid, hex, iso-date) are templated; the opt-in manifest rules (after-uid-literal, opaque-token, sibling-variance) are not applied.",
   "Bodies above the capture's retained size limit or the manifest maxBodyBytes contribute no schema and are counted as truncated; non-JSON bodies (including protobuf, gRPC-web and binary tRPC) exclude their transaction; pagination envelopes are not modeled.",
-  "GraphQL is grouped only for POST bodies whose JSON has a string query, by operationName or a query digest; batched operation arrays and GraphQL over GET are not grouped, and tRPC or protobuf bodies are not decoded.",
+  "GraphQL POST objects and ordered batches are grouped by endpoint path, operationName and the exact document or APQ SHA-256 identity, with per-operation request and response schemas. GraphQL over GET and semantic equivalence of differently spelled documents are not established; tRPC and protobuf bodies are not decoded.",
   "Failed and unfinished requests are counted per operation under x-rea-failures and never modeled as responses; integer versus number follows the original JSON lexeme, not the producer's declared type; header names are recorded but header values are never read.",
   "One primary origin per contract; declare secondary API or WebSocket origins in separate runs. Redaction covers declared secrets and credential header families only, so keep contracts inferred from real captures private.",
 ];
@@ -89,13 +89,24 @@ function renderGraphql(operation, options) {
       return [
         name,
         {
+          identity: entry.identity,
           samples: entry.samples,
-          ...(entry.variables.samples > 0
-            ? { variables: entry.variables.finish(options) }
-            : {}),
-          ...(entry.data.samples > 0
-            ? { data: entry.data.finish(options) }
-            : {}),
+          request: entry.request.finish(options),
+          responses: Object.fromEntries(
+            sortCodePoints(entry.responses.keys()).map((status) => {
+              const { schema } = entry.responses.get(status);
+              return [
+                status,
+                schema.samples === 0 ? null : schema.finish(options),
+              ];
+            }),
+          ),
+          unverified_response_samples: Object.fromEntries(
+            sortCodePoints(entry.responses.keys()).map((status) => [
+              status,
+              entry.responses.get(status).unverified,
+            ]),
+          ),
         },
       ];
     }),
@@ -146,8 +157,11 @@ function renderOperation(operation, manifest, inputs) {
     "x-rea-response-header-names": sortCodePoints(
       operation.responseHeaderNames,
     ),
-    ...(operation.graphql.size > 0
-      ? { "x-rea-graphql-operations": renderGraphql(operation, options) }
+    ...(operation.graphql.size > 0 || operation.unidentifiedGraphql > 0
+      ? {
+          "x-rea-graphql-operations": renderGraphql(operation, options),
+          "x-rea-graphql-unidentified-samples": operation.unidentifiedGraphql,
+        }
       : {}),
     "x-rea-evidence": renderEvidence(operation, inputs),
     "x-rea-unknowns": [

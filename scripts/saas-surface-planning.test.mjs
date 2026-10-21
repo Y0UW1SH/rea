@@ -46,7 +46,7 @@ test("appends experiments to a profile without overwriting existing ones", () =>
     report.experiments.map((experiment) => experiment.id),
   );
   assert.deepEqual(update.existing, []);
-  assert.equal(update.profile.experiments.length, 8);
+  assert.equal(update.profile.experiments.length, 9);
   assert.equal(update.profile.experiments[0].id, "fresh-read");
   assert.ok(
     report.experiments.every(
@@ -63,7 +63,7 @@ test("appends experiments to a profile without overwriting existing ones", () =>
     }),
   );
   assert.deepEqual(again.profileUpdate.added, []);
-  assert.equal(again.profileUpdate.existing.length, 7);
+  assert.equal(again.profileUpdate.existing.length, 8);
   assert.deepEqual(again.profileUpdate.profile.experiments, edited.experiments);
   assert.match(
     reconcileSurface(
@@ -112,7 +112,7 @@ test("CLI maps exit codes to all exercised, gaps found and invalid input", async
   const observed = ["--observed", surface, "--observed", capture];
   const found = run(["--static", gaps, ...observed, "--origins", origins]);
   assert.equal(found.status, 1, found.stderr);
-  assert.equal(JSON.parse(found.stdout).gaps, 7);
+  assert.equal(JSON.parse(found.stdout).gaps, 8);
   const clean = run(["--static", exercised, ...observed, "--origins", origins]);
   assert.equal(clean.status, 0, clean.stderr);
   const cleanReport = JSON.parse(clean.stdout);
@@ -130,7 +130,7 @@ test("CLI maps exit codes to all exercised, gaps found and invalid input", async
     "first-workflow",
   ]);
   assert.equal(planned.status, 1, planned.stderr);
-  assert.equal(JSON.parse(planned.stdout).profileUpdate.added.length, 7);
+  assert.equal(JSON.parse(planned.stdout).profileUpdate.added.length, 8);
   const invalid = run(["--static", gaps, "--observed", origins]);
   assert.equal(invalid.status, 2);
   assert.equal(JSON.parse(invalid.stdout).status, "invalid");
@@ -181,7 +181,7 @@ test("committed fixtures equal the builder output and the real analysis declares
   assert.equal(report.status, "complete", report.reason);
   assert.deepEqual(statusesOf(report), expectedBundleStatuses(report));
   assert.equal(report.inputs.static.endpoint_nodes, 17);
-  assert.equal(report.gaps, 7);
+  assert.equal(report.gaps, 8);
   const metrics = report.surface.find(
     (item) => item.key === "POST /api/metrics",
   );
@@ -215,6 +215,6 @@ test("committed fixtures equal the builder output and the real analysis declares
   ]);
   assert.equal(found.status, 1, found.stderr);
   const parsed = JSON.parse(found.stdout);
-  assert.equal(parsed.gaps, 7);
-  assert.equal(parsed.profileUpdate.added.length, 7);
+  assert.equal(parsed.gaps, 8);
+  assert.equal(parsed.profileUpdate.added.length, 8);
 });

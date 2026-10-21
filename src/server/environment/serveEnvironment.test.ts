@@ -9,6 +9,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { environmentServeSource } from "../../../tests/fixtures/environmentServe.js";
 import {
+  analysisViewCaptureEvidence,
+  environmentManifestCaptureFixture,
+} from "../../../tests/fixtures/analysisView.js";
+import { inspectAnalysisView } from "../../application/analysisView/AnalysisViewService.js";
+import {
   environmentCard,
   environmentToolDefinitions as prepareDefinitions,
   REPLAY_CATALOG_INSTRUCTIONS,
@@ -85,7 +90,125 @@ const start = async (environmentName?: string): Promise<ServedEnvironment> => {
   return entry;
 };
 
+describe("strict request fidelity over MCP", () => {
+  it("accepts strict JSON batch bodies and refuses lossy raw MCP numbers before matching", async () => {
+    const batch = [
+      { query: "query First { id }" },
+      { query: "query Second { name }" },
+    ];
+    const capture = analysisViewCaptureEvidence(
+      environmentManifestCaptureFixture(
+        [
+          batch,
+          { id: 1 },
+          { id: 0 },
+          { id: 9007199254740992 },
+          null,
+          "text",
+          3,
+          true,
+        ].map((body) => ({
+          request: {
+            method: "POST",
+            url: "https://app.test/graphql",
+            postData: {
+              mimeType: "application/json",
+              text: JSON.stringify(body),
+            },
+          },
+          response: {
+            status: 200,
+            content: { mimeType: "application/json", text: '{"matched":true}' },
+          },
+        })),
+      ),
+    );
+    const manifest = inspectAnalysisView({
+      source: { kind: "inline", evidence: capture },
+      view: { kind: "environment-manifest" },
+    });
+    if (!manifest.ok) throw manifest.error;
+    const fixture = environmentServeSource({
+      manifest: manifest.value,
+      capture,
+    });
+    const name = fixture.manifest.tools[0]?.name;
+    if (name === undefined) throw new Error("Missing GraphQL tool");
+    const entry = await serveEnvironment({
+      source: fixture,
+      host: "127.0.0.1",
+      port: 0,
+      replayMode: "strict",
+    });
+    served.push(entry);
+    const client = new Client({ name: "strict-json", version: "1" });
+    const transport = new StreamableHTTPClientTransport(new URL(entry.url));
+    await client.connect(transport);
+    try {
+      for (const body of [batch, { id: 1 }, null, "text", 3, true]) {
+        const result = await client.callTool({ name, arguments: { body } });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+          replay: { exact_match: true },
+        });
+      }
+      const sessionId = transport.sessionId;
+      if (sessionId === undefined) throw new Error("No MCP session");
+      for (const number of [
+        "1.0000000000000001",
+        "9007199254740993",
+        "1e-400",
+        "-0",
+      ]) {
+        const response = await fetch(entry.url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            "mcp-session-id": sessionId,
+          },
+          body: `{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":${JSON.stringify(name)},"arguments":{"body":{"id":${number}}}}}`,
+        });
+        expect(response.status, number).toBe(400);
+        await expect(response.json()).resolves.toMatchObject({
+          error: { message: expect.stringMatching(/numeric fidelity/iu) },
+        });
+      }
+      // Refusing one raw request must not damage the live SDK session.
+      expect(
+        (await client.callTool({ name, arguments: { body: { id: 1 } } }))
+          .isError,
+      ).not.toBe(true);
+    } finally {
+      await client.close();
+    }
+  });
+});
+
 describe("replay value fidelity over MCP", () => {
+  it("serves strict matching and advertises its scope to MCP clients", async () => {
+    const entry = await serveEnvironment({
+      source,
+      host: "127.0.0.1",
+      port: 0,
+      replayMode: "strict",
+    });
+    served.push(entry);
+    const client = new Client({ name: "strict-replay", version: "1" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(entry.url)));
+    try {
+      const result = await client.callTool({
+        name: "get_users_by_id",
+        arguments: { id: "999" },
+      });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toMatch(/unmodeled request/iu);
+      const { tools } = await client.listTools();
+      expect(tools[0]?.description).toContain("strict");
+    } finally {
+      await client.close();
+    }
+  });
   it("preserves unsafe numeric text and prototype-named fields through the SDK", async () => {
     const users = source.manifest.tools.find(
       (tool) => tool.name === "get_users_by_id",

@@ -4,6 +4,7 @@ import { ENVIRONMENT_SERVE_OPERATION } from "./environmentSource.js";
 import type {
   EnvironmentManifest,
   EnvironmentManifestTool,
+  ReplayMode,
 } from "./environmentSource.js";
 
 /** Methods whose tools accept an optional request body object. */
@@ -15,7 +16,10 @@ export const REPLAY_CATALOG_INSTRUCTIONS =
 
 /** JSON Schema advertised for one tool argument. */
 export interface EnvironmentToolProperty {
-  readonly type: "string" | "object";
+  readonly type:
+    | "string"
+    | "object"
+    | readonly ["object", "array", "string", "number", "boolean", "null"];
   readonly description: string;
 }
 
@@ -155,6 +159,7 @@ export const environmentToolArguments = (
 function* environmentToolProperties(
   tool: EnvironmentManifestTool,
   args: EnvironmentToolArguments,
+  replayMode: ReplayMode,
 ): IterableIterator<readonly [string, EnvironmentToolProperty, boolean]> {
   for (const param of tool.params)
     yield [
@@ -177,13 +182,26 @@ function* environmentToolProperties(
   if (args.body !== undefined)
     yield [
       args.body,
-      { type: "object", description: bodyDescription(tool) },
+      {
+        type: replayMode === "strict" ? STRICT_BODY_TYPES : "object",
+        description: bodyDescription(tool),
+      },
       false,
     ];
 }
 
 /** Serialization reservation calibrated with 1500 fields and eight concurrent SDK discovery requests. */
 export const ENVIRONMENT_CATALOG_LIMIT_BYTES = 1024 * 1024;
+const STRICT_BODY_TYPES = [
+  "object",
+  "array",
+  "string",
+  "number",
+  "boolean",
+  "null",
+] as const;
+const STRICT_BODY_TYPE_BYTES =
+  JSON.stringify(STRICT_BODY_TYPES).length - JSON.stringify("object").length;
 const EMPTY_PROPERTY_BYTES =
   JSON.stringify({ type: "string", description: "" }).length + 4;
 const EMPTY_TOOL_BYTES = JSON.stringify({
@@ -203,6 +221,7 @@ export const environmentToolDefinitions = (
   evidenceId: string,
   name: string = manifest.name,
   operation: string = ENVIRONMENT_SERVE_OPERATION,
+  replayMode: ReplayMode = "archive",
 ): Result<
   readonly EnvironmentToolDefinition[],
   AnalysisResourceConstraintError
@@ -243,7 +262,17 @@ export const environmentToolDefinitions = (
       (WRITE_METHODS.has(tool.method) ? 1 : 0);
     // A lower bound rejects enormous argument lists before constructing their alias map.
     if (!reserve(count * EMPTY_PROPERTY_BYTES)) return refused();
-    const description = `${REPLAY_CATALOG_INSTRUCTIONS} ${describeText(tool.method, "method")} ${describeText(tool.path_template, "path")}; replays retained records [${describeList(tool.record_ordinals, tool.record_ordinals.length)}]; evidence ${evidenceId}`;
+    if (
+      replayMode === "strict" &&
+      WRITE_METHODS.has(tool.method) &&
+      !reserve(STRICT_BODY_TYPE_BYTES)
+    )
+      return refused();
+    const matching =
+      replayMode === "strict"
+        ? "strict: full path/query and JSON body; unmodeled requests fail; actor, headers and state are unmodeled"
+        : "archive: supplied path/query only; body ignored";
+    const description = `${REPLAY_CATALOG_INSTRUCTIONS} ${describeText(tool.method, "method")} ${describeText(tool.path_template, "path")}; replays retained records [${describeList(tool.record_ordinals, tool.record_ordinals.length)}]; evidence ${evidenceId}; ${matching}`;
     if (!text(description)) return refused();
     const args = environmentToolArguments(tool);
     const properties = new Map<string, EnvironmentToolProperty>();
@@ -251,6 +280,7 @@ export const environmentToolDefinitions = (
     for (const [argument, property, mandatory] of environmentToolProperties(
       tool,
       args,
+      replayMode,
     )) {
       if (
         !text(argument) ||

@@ -14,7 +14,7 @@ import {
 const USAGE = [
   "Usage:",
   "  node scripts/saas-api-contract.mjs infer MANIFEST.json --out DIR",
-  "  node scripts/saas-api-contract.mjs verify CONTRACT_DIR CAPTURE.json [--origin-map REF=REP]...",
+  "  node scripts/saas-api-contract.mjs verify CONTRACT_DIR CAPTURE.json [--origin-map REF=REP]... [--coverage-policy FILE.json]",
 ].join("\n");
 const emit = (report) =>
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -48,7 +48,33 @@ try {
     if (rest.length < 2) throw new Error(USAGE);
     const [contractDirectory, capturePath, ...flags] = rest;
     const originPairs = [];
+    let requiredOperations;
     for (let index = 0; index < flags.length; index += 2) {
+      if (
+        flags[index] === "--coverage-policy" &&
+        flags[index + 1] &&
+        requiredOperations === undefined
+      ) {
+        const policyPath = resolve(flags[index + 1]);
+        const source = await readBoundedExport(
+          dirname(policyPath),
+          basename(policyPath),
+          1024 * 1024,
+        );
+        const policy = parseExportJson(decodeExportText(source));
+        if (
+          policy === null ||
+          typeof policy !== "object" ||
+          Array.isArray(policy) ||
+          Object.keys(policy).length !== 1 ||
+          !Object.hasOwn(policy, "required_operations")
+        )
+          throw new Error(
+            "coverage policy: expected { required_operations: [...] }",
+          );
+        requiredOperations = policy.required_operations;
+        continue;
+      }
       const separator = flags[index + 1]?.indexOf("=") ?? -1;
       if (flags[index] !== "--origin-map" || separator < 1)
         throw new Error(USAGE);
@@ -62,11 +88,16 @@ try {
       resolve(contractDirectory),
       dirname(capture),
       basename(capture),
-      { originPairs },
+      { originPairs, requiredOperations },
     );
     emit(report);
     process.exitCode =
-      report.status === "pass" ? 0 : report.status === "fail" ? 1 : 2;
+      report.status === "fail"
+        ? 1
+        : report.status === "pass" &&
+            report.conclusions.required_coverage.status !== "incomplete"
+          ? 0
+          : 2;
   } else throw new Error(USAGE);
 } catch (error) {
   fail(

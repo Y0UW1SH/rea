@@ -1,3 +1,4 @@
+import { graphqlDocumentIdentity } from "./saas-graphql.mjs";
 import { classifyBody } from "./saas-api-contract-admission.mjs";
 import { compareCodePoints, sortCodePoints } from "./saas-ordering.mjs";
 import { recordedPath, routeTemplate } from "./saas-route-templates.mjs";
@@ -70,7 +71,12 @@ function graphqlOperations(buffer) {
               "u",
             ).exec(query);
     const name = declared ?? named?.[2] ?? null;
-    if (name !== null) operations.push({ type: named?.[1] ?? null, name });
+    if (name !== null)
+      operations.push({
+        type: named?.[1] ?? null,
+        name,
+        ...graphqlDocumentIdentity(item),
+      });
   }
   return operations;
 }
@@ -239,6 +245,7 @@ function captureObserved(capture, at) {
         method: transaction.method,
         origin: line.origin,
         path_template: template,
+        endpoint_path: line.path,
         transaction_id: transaction.transaction_id,
         step_id: transaction.step_id,
         status: transaction.status,

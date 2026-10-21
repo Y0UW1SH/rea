@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { graphqlRequestIdentity, isGraphqlRequest } from "./saas-graphql.mjs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { admitReport } from "./saas-export-budget.mjs";
@@ -32,11 +33,6 @@ export { verifyContract } from "./saas-api-contract-verify.mjs";
 // never read and secrets never emitted; everything inferred carries sample counts.
 
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
-const plainObject = (value) =>
-  value !== null &&
-  typeof value === "object" &&
-  !Array.isArray(value) &&
-  Object.getPrototypeOf(value) === Object.prototype;
 
 /** Completeness facts a capture carries about itself; recorded, never inferred away. */
 export const captureCompleteness = (capture) => ({
@@ -96,6 +92,7 @@ const newOperation = (transaction, admission, path) => ({
   failures: 0,
   failureReasons: new Set(),
   graphql: new Map(),
+  unidentifiedGraphql: 0,
   samples: 0,
   captureIndices: new Set(),
   evidence: [],
@@ -146,27 +143,50 @@ function recordBody(side, schemas, coverage, accumulator) {
   return { value: undefined, kind: side.kind };
 }
 
-function recordGraphql(operation, admission, request, response, accumulator) {
-  if (!plainObject(request) || typeof request.query !== "string") return;
-  const name =
-    typeof request.operationName === "string" && request.operationName !== ""
-      ? request.operationName
-      : `sha256:${sha256(request.query).slice(0, 12)}`;
-  const entry = operation.graphql.get(name) ?? {
-    samples: 0,
-    variables: accumulator(),
-    data: accumulator(),
-  };
-  entry.samples += 1;
-  if (Object.hasOwn(request, "variables"))
-    entry.variables.add(request.variables, {
-      redacted: admission.request.body.redacted,
-    });
-  if (plainObject(response) && Object.hasOwn(response, "data"))
-    entry.data.add(response.data, {
-      redacted: admission.response.body.redacted,
-    });
-  operation.graphql.set(name, entry);
+function recordGraphql(
+  operation,
+  admission,
+  request,
+  response,
+  status,
+  accumulator,
+) {
+  if (admission.request.kind !== "json") return;
+  const requests = Array.isArray(request) ? request : [request];
+  const responses = Array.isArray(request)
+    ? Array.isArray(response) && response.length === request.length
+      ? response
+      : []
+    : [response];
+  for (const [index, value] of requests.entries()) {
+    if (!isGraphqlRequest(value)) continue;
+    const identity = graphqlRequestIdentity(value, admission.path);
+    if (identity === null || admission.request.body.redacted) {
+      operation.unidentifiedGraphql += 1;
+      continue;
+    }
+    const entry = operation.graphql.get(identity.key) ?? {
+      identity,
+      samples: 0,
+      request: accumulator(),
+      responses: new Map(),
+    };
+    entry.samples += 1;
+    entry.request.add(value, { redacted: false });
+    const reply = entry.responses.get(status) ?? {
+      schema: accumulator(),
+      unverified: 0,
+    };
+    if (
+      responses[index] !== undefined &&
+      admission.response.kind === "json" &&
+      !admission.response.body.redacted
+    )
+      reply.schema.add(responses[index], { redacted: false });
+    else reply.unverified += 1;
+    entry.responses.set(status, reply);
+    operation.graphql.set(identity.key, entry);
+  }
 }
 
 function recordTransaction(operation, record, manifest, coverage) {
@@ -210,6 +230,7 @@ function recordTransaction(operation, record, manifest, coverage) {
       admission,
       request.value,
       reply.value,
+      statusKey,
       accumulator,
     );
 }

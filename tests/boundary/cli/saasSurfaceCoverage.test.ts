@@ -126,12 +126,12 @@ it("plans schema-conformant experiments from the committed fixtures through the 
     graphql: 2,
     route: 3,
   });
-  expect(report.gaps).toBe(7);
-  expect(report.experiments).toHaveLength(7);
+  expect(report.gaps).toBe(8);
+  expect(report.experiments).toHaveLength(8);
   expect(report.experimentPriorities.map(({ rank }) => rank)).toEqual([
-    1, 2, 3, 4, 5, 6, 7,
+    1, 2, 3, 4, 5, 6, 7, 8,
   ]);
-  expect(report.profileUpdate.added).toHaveLength(7);
+  expect(report.profileUpdate.added).toHaveLength(8);
   const schema = JSON.parse(
     readFileSync(
       join(root, "scripts/fixtures/saas-profiles/profile.schema.json"),

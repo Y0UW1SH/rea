@@ -378,13 +378,16 @@ entry keep stdio.
 ## Serve an environment manifest
 
 `rea environment-serve <manifest.json> --evidence <capture.json> [--host H]
-[--port N]` serves an environment manifest projected by `inspect-analysis-view`
+[--port N] [--replay-mode archive|strict]` serves an environment manifest projected by `inspect-analysis-view`
 as an agent environment: an MCP server at `/mcp` with one tool per manifest
 tool, each replaying the retained capture records it cites, the environment
 card at `/.well-known/agent-env.json`, and a `/agentenv` data plane that
 answers every method with JSON-RPC `-32601`. The manifest's
 `parent_evidence_id` must equal the evidence file's `evidence_id`; otherwise
 the command refuses with `invalid_request` before binding.
+`archive` is the default path/query selection. `strict` requires complete
+path/query/JSON-body evidence and refuses unmodeled or conflicting responses;
+actor, header and mutable-state behavior remain unmodeled.
 
 ```sh
 rea environment-serve manifest.json --evidence capture.json --port 8765

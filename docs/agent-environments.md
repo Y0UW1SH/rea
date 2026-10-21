@@ -147,7 +147,7 @@ a smaller capture or manifest. Fields and tools are never silently omitted.
 
 ## What replay means and does not mean
 
-Each MCP tool call selects one of the records its manifest tool cites and
+In the default `archive` mode, each MCP tool call selects one of the records its manifest tool cites and
 returns that record's recorded response. Selection compares the supplied path
 parameters against the record's path segments at the parameter indexes, then
 the supplied query values against the record's query string, and keeps the
@@ -163,6 +163,8 @@ where the answer came from:
     "record_ordinal": 5,
     "evidence_id": "ev_…",
     "exact_match": true,
+    "mode": "archive",
+    "match_scope": "path-query",
     "recorded_path": "/api/users/2",
     "recorded_query": null,
     "recorded_line_truncated": false,
@@ -195,7 +197,33 @@ is not a recorded JSON `null`. `body_encoding` is `base64` when the capture
 retained response bytes that are not valid UTF-8; `body` is then exactly those
 bytes in base64, never a lossy decoding. A retained base64 body is decoded only as far as the 256 KiB a reply can carry, and a leading byte-order mark is kept. For a `base64` body the limit applies to the recorded bytes, not their longer base64 spelling, and a cut keeps whole base64 groups. Request bodies passed to `POST`, `PUT` and `PATCH`
 tools are accepted and ignored: nothing is written, and no call changes what a
-later call returns. Arguments the tool's input schema does not name are
+later call returns. Select `--replay-mode strict` when a tool should refuse requests unsupported by
+the capture:
+
+```bash
+rea environment-serve manifest.json --evidence capture.json --replay-mode strict
+```
+
+Strict mode requires every path argument, the complete recorded query (including
+omissions), and an equal retained JSON request body. Object key order may differ;
+array order and GraphQL operation/document/variable values must match. Duplicate
+query keys cannot be represented by these tools and are refused. An omitted body
+only matches a recorded empty body, never an unknown body or `{}`. Missing,
+redacted, oversized (over 256 KiB), non-JSON or numerically inexact request bodies
+cannot establish a match. Browser-scenario request bytes are retained within the
+same bound. Strict MCP input accepts objects, arrays and JSON scalars; it refuses
+raw numbers that native parsing would round or underflow before selecting a
+response. A missing or cut response, or several different recorded responses
+for the same represented request, yields an `invalid_request` error containing
+`Unmodeled request`, with no fallback response. Results identify
+`mode: strict` and `match_scope: path-query-json-body`.
+
+This mode checks recorded request evidence only. Actor/workspace identity beyond
+explicit arguments, selected headers, version tokens, sequence and mutable state
+remain unmodeled. Writes do not change later responses. Stateful SaaS emulation
+requires an additional model and evidence for those transitions.
+
+Arguments the tool's input schema does not name are
 refused by the MCP server as invalid arguments, so a misspelled parameter never
 degrades into an omitted one.
 

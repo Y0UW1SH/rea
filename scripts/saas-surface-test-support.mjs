@@ -141,7 +141,6 @@ export const EXERCISED_VALUES = new Set([
   "https://app.example.test/api/customers/42",
   "https://app.example.test/api/invoices/archive",
   "/api/reports/stream",
-  "ListCustomers",
   "/trpc",
   "user.byId",
   "/invoices",
@@ -205,7 +204,7 @@ export function expectedBundleStatuses(report) {
     [nodeKeyed("candidate-endpoint")]: "unknown:candidate-endpoint",
     "trpc query user.byId": "exact",
     "trpc mutate user.rename": "unmatched",
-    "graphql query ListCustomers": "exact",
+    "graphql query ListCustomers": "unknown:graphql-transport-unresolved",
     // The api-surface view carries POST groups without bodies, so absence is unknown.
     "graphql mutation RenameCustomer": "unknown:rpc-bodies-not-retained",
     "route /invoices": "exact",

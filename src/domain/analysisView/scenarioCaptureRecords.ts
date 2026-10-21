@@ -16,6 +16,7 @@ import { analysisViewInputError } from "./analysisViewErrors.js";
 import type { AnalysisViewParent } from "./analysisView.js";
 import type { WebNetworkProjectionAccumulator } from "./WebNetworkProjectionAccumulator.js";
 import { textBytes } from "./webNetworkRouteTemplates.js";
+import { RECORDED_REQUEST_BODY_LIMIT_BYTES } from "./recordedRequestBody.js";
 
 type RequestEvent = Extract<BrowserScenarioEvent, { kind: "request" }>;
 type ResponseEvent = Extract<BrowserScenarioEvent, { kind: "response" }>;
@@ -126,12 +127,20 @@ const reportedRequest = (
   content: ContentEvent | undefined,
   purpose: "manifest" | "replay",
 ): { readonly [key: string]: JsonValue } => {
-  const body = purpose === "manifest" ? captured(content) : undefined;
+  const retained = captured(content);
+  const body =
+    purpose === "manifest"
+      ? retained
+      : retained?.redacted === false &&
+          retained.bytes <= RECORDED_REQUEST_BODY_LIMIT_BYTES
+        ? retained
+        : undefined;
   const text = body === undefined ? undefined : utf8Text(body);
   const mimeType = mediaType(content);
   return {
     method: request.method,
     url: request.url.redacted ? null : request.url.url,
+    ...(purpose === "replay" ? { bodySize: body?.bytes ?? -1 } : {}),
     ...(text === undefined || mimeType === undefined
       ? {}
       : { postData: { mimeType, text } }),

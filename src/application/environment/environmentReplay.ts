@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { isJsonLike } from "../../domain/analysisView/EnvironmentManifestAccumulator.js";
 import { mediaTypeEssence } from "../../domain/analysisView/webNetworkRouteTemplates.js";
 import type { AnalysisError } from "../../domain/analysisErrorBase.js";
@@ -16,6 +17,7 @@ import {
   type EnvironmentManifestTool,
   type EnvironmentSource,
   type RecordedExchange,
+  type ReplayMode,
 } from "./environmentSource.js";
 
 export { REPLAY_BODY_LIMIT_BYTES } from "./environmentSource.js";
@@ -32,6 +34,8 @@ export interface ReplayResult {
     readonly record_ordinal: number;
     readonly evidence_id: string;
     readonly exact_match: boolean;
+    readonly mode: ReplayMode;
+    readonly match_scope: "path-query" | "path-query-json-body";
     readonly recorded_path: string;
     readonly recorded_query: string | null;
     /** Set when the recorded path or query was cut to REPLAY_METADATA_LIMIT_BYTES; the Evidence record keeps it whole. */
@@ -150,6 +154,91 @@ export const selectReplayExchange = (
     : { exchange: best.exchange, exact: best.score.exact };
 };
 
+/** A strict call represents every path/query argument and a known request body. */
+const strictRequestMatches = (
+  tool: EnvironmentManifestTool,
+  exchange: RecordedExchange,
+  args: ReplayArguments,
+  mapping: ReturnType<typeof environmentToolArguments>,
+): boolean => {
+  const allowed = new Set([
+    ...mapping.path.values(),
+    ...mapping.query.values(),
+    ...(mapping.body === undefined ? [] : [mapping.body]),
+  ]);
+  if (Object.keys(args).some((key) => !allowed.has(key))) return false;
+  for (const argument of mapping.path.values())
+    if (typeof args[argument] !== "string") return false;
+  if (!scoreExchange(tool, mapping.path, mapping.query, exchange, args).exact)
+    return false;
+  const recorded = new Set<string>();
+  for (const [name, value] of iterateUrlQueryParameters(exchange.query ?? "")) {
+    const argument = mapping.query.get(name);
+    if (
+      recorded.has(name) ||
+      argument === undefined ||
+      args[argument] !== value
+    )
+      return false;
+    recorded.add(name);
+  }
+  for (const [name, argument] of mapping.query)
+    if (
+      Object.hasOwn(args, argument) &&
+      (!recorded.has(name) || typeof args[argument] !== "string")
+    )
+      return false;
+  const supplied = mapping.body === undefined ? undefined : args[mapping.body];
+  const body = exchange.requestBody;
+  if (body?.state === "empty") return supplied === undefined;
+  return (
+    body?.state === "json" &&
+    supplied !== undefined &&
+    isDeepStrictEqual(supplied, body.value)
+  );
+};
+
+/** Refuse absent evidence or several different outcomes for the same represented request. */
+const selectStrictReplayExchange = (
+  tool: EnvironmentManifestTool,
+  exchanges: ReadonlyMap<number, RecordedExchange>,
+  args: ReplayArguments,
+) => {
+  const mapping = environmentToolArguments(tool);
+  let selected: RecordedExchange | undefined;
+  for (const ordinal of tool.record_ordinals) {
+    const exchange = exchanges.get(ordinal);
+    if (
+      exchange === undefined ||
+      !strictRequestMatches(tool, exchange, args, mapping)
+    )
+      continue;
+    if (
+      exchange.status === null ||
+      exchange.bodyText === null ||
+      exchange.bodyCut === true ||
+      (exchange.bodyEncoding === "base64"
+        ? decodedBase64Bytes(exchange.bodyText) > REPLAY_BODY_LIMIT_BYTES
+        : exchange.bodyText.length > REPLAY_BODY_LIMIT_BYTES ||
+          Buffer.byteLength(exchange.bodyText, "utf8") >
+            REPLAY_BODY_LIMIT_BYTES)
+    )
+      return undefined;
+    if (
+      selected !== undefined &&
+      (selected.status !== exchange.status ||
+        selected.contentType !== exchange.contentType ||
+        selected.bodyEncoding !== exchange.bodyEncoding ||
+        selected.bodyText !== exchange.bodyText)
+    )
+      return undefined;
+    selected ??= exchange;
+  }
+  return selected === undefined
+    ? undefined
+    : { exchange: selected, exact: true };
+};
+
 /** The longest prefix of text whose UTF-8 encoding fits the byte limit, encoding only that prefix. */
 const utf8Prefix = (text: string, maxBytes: number): string => {
   // encodeInto stops before the first character that does not fit, so `read` ends on a boundary.
@@ -203,14 +292,21 @@ export const replayEnvironmentTool = (
   source: EnvironmentSource,
   tool: EnvironmentManifestTool,
   args: ReplayArguments,
+  mode: ReplayMode = "archive",
 ): Result<ReplayResult, AnalysisError> => {
-  const selected = selectReplayExchange(tool, source.exchanges, args);
+  const selected =
+    mode === "strict"
+      ? selectStrictReplayExchange(tool, source.exchanges, args)
+      : selectReplayExchange(tool, source.exchanges, args);
   if (selected === undefined)
     return err(
       new AnalysisInputError(
         ENVIRONMENT_SERVE_OPERATION,
         {
-          userMessage: `Tool ${tool.name} cites no retained record to replay.`,
+          userMessage:
+            mode === "strict"
+              ? `Unmodeled request: tool ${tool.name} has no complete, unambiguous recorded response for these path, query and body arguments.`
+              : `Tool ${tool.name} cites no retained record to replay.`,
         },
         [{ path: ["tool"], reason: "invalid_value", expected: tool.name }],
       ),
@@ -234,6 +330,8 @@ export const replayEnvironmentTool = (
       record_ordinal: exchange.ordinal,
       evidence_id: source.evidenceId,
       exact_match: exact,
+      mode,
+      match_scope: mode === "strict" ? "path-query-json-body" : "path-query",
       recorded_path: recordedPath,
       recorded_query: recordedQuery,
       recorded_line_truncated:

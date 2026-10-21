@@ -219,7 +219,7 @@ it("reserves request text even when another event's body was not captured", () =
   }
 });
 
-it("does not decode request text when projecting replay records", () => {
+it("retains request text for replay within the request identity bound", () => {
   const capture = scenarioCaptureFixture();
   const decoder = vi.spyOn(TextDecoder.prototype, "decode");
   try {
@@ -227,10 +227,11 @@ it("does not decode request text when projecting replay records", () => {
     expect(projected.records[4]?.reported).toMatchObject({
       request: { method: "POST", url: "http://127.0.0.1:3101/api/folders" },
     });
-    expect(projected.records[4]?.reported).not.toHaveProperty(
-      "request.postData",
+    expect(projected.records[4]?.reported).toHaveProperty(
+      "request.postData.text",
+      '{"title":"Lighthouse Rota"}',
     );
-    expect(decoder).not.toHaveBeenCalled();
+    expect(decoder).toHaveBeenCalled();
     expect(projected.records[4]?.binary_fields).toHaveLength(1);
   } finally {
     decoder.mockRestore();

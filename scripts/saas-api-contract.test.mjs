@@ -170,12 +170,12 @@ test("inference yields an evidence-cited OpenAPI contract and a coverage report"
   assert.ok(invoices.post.responses["201"]);
   assert.equal(Object.hasOwn(invoices.post, "x-rea-graphql-operations"), false);
   const graphql = openapi.paths["/graphql"].post;
-  assert.deepEqual(Object.keys(graphql["x-rea-graphql-operations"]), [
-    "ListCustomers",
-  ]);
+  const operations = Object.values(graphql["x-rea-graphql-operations"]);
+  assert.equal(operations.length, 1);
+  assert.equal(operations[0].identity.operation_name, "ListCustomers");
+  assert.equal(operations[0].identity.endpoint_path, "/graphql");
   assert.equal(
-    graphql["x-rea-graphql-operations"].ListCustomers.variables.properties.first
-      .type,
+    operations[0].request.properties.variables.properties.first.type,
     "integer",
   );
   assert.equal(
@@ -342,6 +342,43 @@ test("CLI writes contract files and maps exit codes for infer and verify", async
   ]);
   assert.equal(pass.status, 0, pass.stderr);
   assert.equal(JSON.parse(pass.stdout).status, "pass");
+  assert.equal(
+    JSON.parse(pass.stdout).conclusions.required_coverage.status,
+    "not-requested",
+  );
+  const sparse = buildContractFixture("replacement");
+  sparse.events.items = sparse.events.items.filter(
+    (event) => event.transaction_id === "t1",
+  );
+  sparse.events.retained = sparse.events.items.length;
+  await writeFile(join(dir, "sparse.json"), serializeFixture(sparse));
+  const graphqlKey = Object.keys(
+    openapi.paths["/graphql"].post["x-rea-graphql-operations"],
+  )[0];
+  await writeFile(
+    join(dir, "policy.json"),
+    JSON.stringify({
+      required_operations: [
+        { method: "POST", path: "/graphql", graphql_operation: graphqlKey },
+      ],
+    }),
+  );
+  const verifyPolicy = (file) =>
+    run([
+      "verify",
+      out,
+      join(dir, file),
+      "--origin-map",
+      map,
+      "--coverage-policy",
+      join(dir, "policy.json"),
+    ]);
+  const incomplete = verifyPolicy("sparse.json");
+  assert.equal(incomplete.status, 2, incomplete.stderr);
+  const coverage = JSON.parse(incomplete.stdout);
+  assert.equal(coverage.status, "pass");
+  assert.equal(coverage.conclusions.required_coverage.status, "incomplete");
+  assert.equal(verifyPolicy("replacement.json").status, 0);
   const fail = run([
     "verify",
     out,

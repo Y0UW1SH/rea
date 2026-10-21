@@ -1,5 +1,6 @@
 import { absoluteCallerPath } from "../filesystem/callerPath.js";
 import type { EnvironmentExportResult } from "../application/environment/environmentExport.js";
+import type { ReplayMode } from "../application/environment/environmentSource.js";
 import { z } from "incur";
 import type { Logger } from "pino";
 
@@ -101,6 +102,7 @@ interface ServeArguments {
   readonly evidence: string;
   readonly host?: string | undefined;
   readonly port?: number | undefined;
+  readonly replayMode?: ReplayMode | undefined;
 }
 
 /** Load both Evidence files, bind the listener and run until a signal ends it. */
@@ -156,6 +158,7 @@ const serveEnvironmentCommand = async (
   try {
     const started = await serveEnvironment({
       source: source.value,
+      replayMode: input.replayMode ?? "archive",
       signal,
       ...endpoint.value,
       ...(environmentName.value === undefined
@@ -314,6 +317,12 @@ export const registerEnvironmentCommands = (
         .min(1)
         .optional()
         .describe("Listener address; default MCP_HOST, else 127.0.0.1"),
+      replayMode: z
+        .enum(["archive", "strict"])
+        .optional()
+        .describe(
+          "Replay matching mode: archive (default) or strict path/query/JSON body matching with unmodeled-request refusals",
+        ),
       port: z
         .number()
         .int()
@@ -333,6 +342,7 @@ export const registerEnvironmentCommands = (
               evidence: options.evidence,
               host: options.host,
               port: options.port,
+              replayMode: options.replayMode,
             },
             environment,
             logger,

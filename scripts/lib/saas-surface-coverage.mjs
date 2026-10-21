@@ -44,6 +44,7 @@ export const SURFACE_UNKNOWN_REASONS = Object.freeze([
   "rpc-bodies-not-retained",
   "rpc-link-base-undeclared",
   "route-pattern-unsupported",
+  "graphql-transport-unresolved",
 ]);
 const STATUS_RANK = {
   exact: 0,

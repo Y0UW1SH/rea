@@ -17,6 +17,29 @@ import { loadEnvironmentSource } from "./environmentSource.js";
 const fixture = scenarioServeFixture();
 
 describe("environment manifests from capture_browser_scenario parents", () => {
+  it("retains request bodies for strict scenario replay", () => {
+    const source = loadEnvironmentSource(fixture.manifest, fixture.capture);
+    if (!source.ok) throw source.error;
+    const tool = source.value.manifest.tools.find(
+      (entry) => entry.name === "post_folders",
+    );
+    if (tool === undefined) throw new Error("Missing folders tool");
+    const matched = replayEnvironmentTool(
+      source.value,
+      tool,
+      { body: { title: "Lighthouse Rota" } },
+      "strict",
+    );
+    expect(matched.ok).toBe(true);
+    expect(
+      replayEnvironmentTool(
+        source.value,
+        tool,
+        { body: { title: "Different folder" } },
+        "strict",
+      ).ok,
+    ).toBe(false);
+  });
   it("projects the scenario's transactions into tools, citing them by request order", () => {
     const manifest = fixture.manifest.normalized_result as {
       parent_operation: string;

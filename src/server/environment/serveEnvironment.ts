@@ -11,7 +11,11 @@ import {
   replayEnvironmentTool,
   type ReplayArguments,
 } from "../../application/environment/environmentReplay.js";
-import type { EnvironmentSource } from "../../application/environment/environmentSource.js";
+import {
+  ENVIRONMENT_SERVE_OPERATION,
+  type EnvironmentSource,
+  type ReplayMode,
+} from "../../application/environment/environmentSource.js";
 import {
   environmentCard,
   environmentToolDefinitions,
@@ -82,6 +86,7 @@ export const createEnvironmentMcpServer = (
   name: string,
   source: EnvironmentSource,
   tools: readonly EnvironmentToolDefinition[],
+  replayMode: ReplayMode = "archive",
 ): RequestTrackingMcpServer => {
   // Tool names, descriptions and replies all come from the captured application, so the
   // server carries REA's untrusted-content instructions plus a warning about its own catalog.
@@ -99,7 +104,12 @@ export const createEnvironmentMcpServer = (
         inputSchema: fromJsonSchema<ReplayArguments>(definition.inputSchema),
       },
       (args): CallToolResult => {
-        const replayed = replayEnvironmentTool(source, definition.tool, args);
+        const replayed = replayEnvironmentTool(
+          source,
+          definition.tool,
+          args,
+          replayMode,
+        );
         if (!replayed.ok)
           return {
             isError: true,
@@ -208,6 +218,7 @@ export interface ServeEnvironmentOptions {
   readonly source: EnvironmentSource;
   readonly host: string;
   readonly port: number;
+  readonly replayMode?: ReplayMode;
   readonly signal?: AbortSignal;
   /** Served name; defaults to the manifest's environment name. */
   readonly environmentName?: string;
@@ -231,6 +242,8 @@ export const serveEnvironment = async (
     source.manifest,
     source.evidenceId,
     name,
+    ENVIRONMENT_SERVE_OPERATION,
+    options.replayMode,
   );
   if (!prepared.ok) return prepared;
   const tools = prepared.value;
@@ -239,7 +252,9 @@ export const serveEnvironment = async (
     host,
     port,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
-    createMcpServer: () => createEnvironmentMcpServer(name, source, tools),
+    createMcpServer: () =>
+      createEnvironmentMcpServer(name, source, tools, options.replayMode),
+    requireExactJsonNumbers: options.replayMode === "strict",
     routes: environmentRoutes(card),
     ...(logger === undefined ? {} : { logger }),
     onerror: (error) => {

@@ -17,6 +17,303 @@ import {
   setResponseBody,
   stage,
 } from "./saas-api-contract-test-support.mjs";
+import { setRequestBody } from "./saas-surface-test-support.mjs";
+
+test("hash-only APQ references retain identity and refuse a different hash", async (t) => {
+  const dir = await stage(t);
+  const capture = buildContractFixture("reference-a");
+  const apq = (hash) =>
+    JSON.stringify({
+      operationName: "ListCustomers",
+      extensions: {
+        persistedQuery: { version: 1, sha256Hash: hash.repeat(64) },
+      },
+    });
+  setRequestBody(capture, "t8", apq("a"));
+  await persist(dir, "hash-reference", capture);
+  const inferred = await inferContract(
+    { ...manifest(), captures: [{ file: "hash-reference.json" }] },
+    dir,
+  );
+  assert.equal(inferred.status, "produced", inferred.report.reason);
+  const out = join(dir, "hash-contract");
+  await writeContract(out, inferred);
+  const same = await verifyContract(out, dir, "hash-reference.json");
+  assert.equal(same.status, "pass");
+  setRequestBody(
+    capture,
+    "t8",
+    apq("a").replace('"version":1', '"version":1.0000000000000001'),
+  );
+  await persist(dir, "rounded-version", capture);
+  const rounded = await verifyContract(out, dir, "rounded-version.json");
+  assert.equal(rounded.status, "unknown");
+  assert.equal(rounded.unverified_graphql_transactions, 1);
+  setRequestBody(capture, "t8", apq("b"));
+  await persist(dir, "other-hash", capture);
+  const different = await verifyContract(out, dir, "other-hash.json");
+  assert.equal(different.status, "fail");
+  assert.ok(
+    different.findings.some((f) => f.kind === "unmatched_graphql_operation"),
+  );
+});
+
+test("unidentified GraphQL reference envelopes preserve uncertainty", async (t) => {
+  const dir = await stage(t);
+  for (const [name, request, redacted] of [
+    [
+      "inconsistent-hash",
+      {
+        query: "query ListCustomers { id }",
+        extensions: {
+          persistedQuery: { version: 1, sha256Hash: "a".repeat(64) },
+        },
+      },
+      false,
+    ],
+    ["missing-hash", { extensions: { persistedQuery: { version: 1 } } }, false],
+    ["redacted-request", { query: "query ListCustomers { id }" }, true],
+  ]) {
+    const capture = buildContractFixture("reference-a");
+    setRequestBody(capture, "t8", JSON.stringify(request));
+    capture.events.items.find(
+      (e) =>
+        e.transaction_id === "t8" &&
+        e.kind === "network-content" &&
+        e.phase === "request",
+    ).body.redacted = redacted;
+    await persist(dir, name, capture);
+    const inferred = await inferContract(
+      { ...manifest(), captures: [{ file: `${name}.json` }] },
+      dir,
+    );
+    assert.equal(inferred.status, "produced", inferred.report.reason);
+    const out = join(dir, `${name}-contract`);
+    await writeContract(out, inferred);
+    const report = await verifyContract(out, dir, `${name}.json`);
+    assert.equal(report.status, "unknown", name);
+    assert.equal(report.unverified_graphql_transactions, 1, name);
+  }
+});
+
+test("redacted GraphQL reference responses cannot establish complete conformance", async (t) => {
+  const dir = await stage(t);
+  const capture = buildContractFixture("reference-a");
+  capture.events.items.find(
+    (e) =>
+      e.transaction_id === "t8" &&
+      e.kind === "network-content" &&
+      e.phase === "response",
+  ).body.redacted = true;
+  await persist(dir, "redacted-reference", capture);
+  const inferred = await inferContract(
+    {
+      ...manifest(),
+      captures: [
+        { file: "redacted-reference.json" },
+        { file: "reference-a.json" },
+      ],
+    },
+    dir,
+  );
+  assert.equal(inferred.status, "produced", inferred.report.reason);
+  const out = join(dir, "redacted-contract");
+  await writeContract(out, inferred);
+  const report = await verifyContract(out, dir, "reference-a.json");
+  assert.equal(report.status, "unknown");
+  assert.equal(report.unverified_graphql_transactions, 1);
+});
+
+test("required coverage is independent of sparse-capture conformance and business compatibility", async (t) => {
+  const { dir, out } = await contractFor(t);
+  const sparse = buildContractFixture("replacement");
+  sparse.events.items = sparse.events.items.filter(
+    (event) => event.transaction_id === "t1",
+  );
+  sparse.events.retained = sparse.events.items.length;
+  await persist(dir, "sparse-policy", sparse);
+  const report = await verifyContract(out, dir, "sparse-policy.json", {
+    originPairs: pairs,
+    requiredOperations: [
+      { method: "GET", path: "/api/invoices" },
+      { method: "POST", path: "/graphql" },
+    ],
+  });
+  assert.equal(report.status, "pass");
+  assert.ok(report.conclusions);
+  assert.equal(report.conclusions.conformance.status, "pass");
+  assert.equal(report.conclusions.required_coverage.status, "incomplete");
+  assert.deepEqual(report.conclusions.required_coverage.missing, [
+    { method: "POST", path: "/graphql" },
+  ]);
+  assert.equal(report.conclusions.business_compatibility.status, "unknown");
+  const invalid = await verifyContract(out, dir, "sparse-policy.json", {
+    originPairs: pairs,
+    requiredOperations: [{ method: "GET", path: "/not-in-contract" }],
+  });
+  assert.equal(invalid.status, "invalid");
+});
+
+test("GraphQL verification distinguishes same-name documents and validates each response schema", async (t) => {
+  const dir = await stage(t);
+  const reference = buildContractFixture("reference-b");
+  setRequestBody(
+    reference,
+    "t8",
+    JSON.stringify({
+      operationName: "ListCustomers",
+      query: "query ListCustomers { balance }",
+      variables: { first: "ten" },
+    }),
+  );
+  setResponseBody(reference, "t8", JSON.stringify({ data: { balance: 10 } }));
+  await persist(dir, "second-graphql", reference);
+  const inferred = await inferContract(
+    {
+      ...manifest(),
+      options: { ...manifest().options, required_min_samples: 1 },
+      captures: [{ file: "reference-a.json" }, { file: "second-graphql.json" }],
+    },
+    dir,
+  );
+  assert.equal(inferred.status, "produced", inferred.report.reason);
+  const out = join(dir, "graphql-contract");
+  await writeContract(out, inferred);
+  const replacement = buildContractFixture("replacement");
+  setResponseBody(replacement, "t8", JSON.stringify({ data: { balance: 10 } }));
+  await persist(dir, "swapped-graphql", replacement);
+  const report = await verifyContract(out, dir, "swapped-graphql.json", {
+    originPairs: pairs,
+  });
+  assert.equal(report.status, "fail");
+  assert.ok(
+    report.findings.some(
+      (f) =>
+        f.graphql_operation &&
+        f.side === "response" &&
+        f.keyword === "required",
+    ),
+  );
+  assert.equal(report.unexercised_graphql_operations.length, 1);
+  setResponseBody(
+    replacement,
+    "t8",
+    JSON.stringify({ data: { customers: [{ id: "1", name: "Customer" }] } }),
+  );
+  setRequestBody(
+    replacement,
+    "t8",
+    JSON.stringify({
+      operationName: "ListCustomers",
+      query:
+        "query ListCustomers($first: Int) { customers(first: $first) { id name } }",
+      variables: { first: "ten" },
+    }),
+  );
+  await persist(dir, "wrong-variables", replacement);
+  const variables = await verifyContract(out, dir, "wrong-variables.json", {
+    originPairs: pairs,
+  });
+  assert.equal(variables.status, "fail");
+  assert.ok(
+    variables.findings.some(
+      (f) =>
+        f.graphql_operation &&
+        f.side === "request" &&
+        f.instance_path === "/variables/first",
+    ),
+  );
+});
+
+test("GraphQL identity cannot be established by a response or operation name alone", async (t) => {
+  const { dir, out } = await contractFor(t);
+  const capture = buildContractFixture("replacement");
+  capture.events.items = capture.events.items.filter(
+    (event) =>
+      !(
+        event.transaction_id === "t8" &&
+        event.kind === "network-content" &&
+        event.phase === "request"
+      ),
+  );
+  capture.events.retained = capture.events.items.length;
+  await persist(dir, "no-graphql-request", capture);
+  const missing = await verifyContract(out, dir, "no-graphql-request.json", {
+    originPairs: pairs,
+  });
+  assert.equal(missing.status, "unknown");
+  assert.equal(missing.unverified_graphql_transactions, 1);
+  const changed = buildContractFixture("replacement");
+  setRequestBody(
+    changed,
+    "t8",
+    JSON.stringify({
+      operationName: "ListCustomers",
+      query: "query ListCustomers { differentService }",
+    }),
+  );
+  await persist(dir, "unknown-document", changed);
+  const unknown = await verifyContract(out, dir, "unknown-document.json", {
+    originPairs: pairs,
+  });
+  assert.equal(unknown.status, "fail");
+  assert.ok(
+    unknown.findings.some((f) => f.kind === "unmatched_graphql_operation"),
+  );
+});
+
+test("GraphQL response omissions stay unknown and APQ retains operation identity", async (t) => {
+  const dir = await stage(t);
+  const reference = buildContractFixture("reference-a");
+  const requestEvent = reference.events.items.find(
+    (e) =>
+      e.transaction_id === "t8" &&
+      e.kind === "network-content" &&
+      e.phase === "request",
+  );
+  const request = JSON.parse(
+    Buffer.from(requestEvent.body.content, "base64").toString(),
+  );
+  const { createHash } = await import("node:crypto");
+  const hash = createHash("sha256").update(request.query).digest("hex");
+  setRequestBody(
+    reference,
+    "t8",
+    JSON.stringify({
+      ...request,
+      extensions: { persistedQuery: { version: 1, sha256Hash: hash } },
+    }),
+  );
+  const response = reference.events.items.find(
+    (e) =>
+      e.transaction_id === "t8" &&
+      e.kind === "network-content" &&
+      e.phase === "response",
+  );
+  response.body = { state: "not_requested" };
+  await persist(dir, "apq-reference", reference);
+  const inferred = await inferContract(
+    { ...manifest(), captures: [{ file: "apq-reference.json" }] },
+    dir,
+  );
+  assert.equal(inferred.status, "produced", inferred.report.reason);
+  const out = join(dir, "apq-contract");
+  await writeContract(out, inferred);
+  setRequestBody(
+    reference,
+    "t8",
+    JSON.stringify({
+      operationName: request.operationName,
+      variables: request.variables,
+      extensions: { persistedQuery: { version: 1, sha256Hash: hash } },
+    }),
+  );
+  await persist(dir, "apq-only", reference);
+  const report = await verifyContract(out, dir, "apq-only.json");
+  assert.equal(report.status, "unknown");
+  assert.equal(report.unexercised_graphql_operations.length, 0);
+  assert.equal(report.unverified_graphql_transactions, 1);
+});
 
 // Behaviours found by the independent review of the first increment: every case here
 // describes a replacement or capture shape that used to pass, crash or round-trip badly.

@@ -1,4 +1,40 @@
-# SaaS fork validation — 2026-10-20
+# SaaS fork validation
+
+## Evidence correctness repairs — 2026-10-21
+
+Validated on Linux with pinned Node **24.18.0** and npm **11.16.0**, starting
+from feature commit `6ace48d0679399f92ab04a2f6ddd7e02a3261fc2`.
+
+- `npm run test:saas`: **148 passed**. Regressions cover foreign-origin and
+  ambiguous GraphQL candidates, same-name documents, operation-specific variables
+  and responses, sparse required coverage, APQ-only identities, numeric conversion
+  loss, unidentified reference requests and redacted reference responses.
+- Environment application/source/server suites, scenario-capture record suite,
+  and HTTP server/bridge suites via `npm run test:local`: **183 passed, 1 skipped**
+  across 17 files. The existing directory-permission test skips when run as root.
+  Strict replay cases exercise complete path/query/body matching, conflicting
+  outcomes, body bounds, request omissions, scenario evidence and real MCP clients.
+  Raw HTTP cases reject rounded numbers and preserve session usability; strict
+  parsing also passes oversized-upload, session-termination and shutdown cases.
+- `npm run test:focused` for the SaaS contract/surface CLI, environment serve/export
+  CLI, environment MCP and surface filesystem boundaries: **27 passed** across
+  6 files, with runtime/skill artifacts built for the selected tests.
+- `npm run check`: passed typecheck, build, lint (**0 errors**, repository-wide
+  warnings remain), formatting, knip, metadata and architecture guards.
+- `npm run docs:check`: passed, including **5 README consistency tests**.
+  Final formatting and `git diff --check` also passed.
+- One fresh independent review found four issues in the first implementation:
+  APQ numeric representation, raw MCP number rounding, batch/scalar discovery
+  schemas and lost reference-response uncertainty. Each received a regression
+  and correction; targeted failures were observed before the fixes passed.
+
+No live QuickBooks, Lightspeed or other SaaS account was accessed. Hosted CI,
+the complete repository test suite, cross-platform behavior and performance
+comparisons were not run for this repair. The tests establish synthetic evidence
+handling and local CLI/MCP behavior. Static GraphQL transport linkage, GET GraphQL
+operation verification, actor/header matching and mutable replay state remain
+unimplemented and explicitly uncertain. Strict mode adds bounded request parsing
+and candidate matching; no CPU, memory, latency or token-efficiency claim is made.
 
 ## Surface coverage increment
 

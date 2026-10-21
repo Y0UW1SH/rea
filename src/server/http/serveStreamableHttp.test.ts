@@ -630,35 +630,39 @@ it("runs the instance's shutdown hook exactly once when the slot closes without 
   expect(shutdownHooks()).toBe(1);
 });
 
-it("answers an oversized sessionless POST promptly instead of stalling on the probe", async () => {
-  const { served } = await start();
-  const { client } = await connect(served.url);
-  const url = new URL(served.url);
-  // The SDK refuses the body as soon as it exceeds the bound, so the upload may end in a broken pipe.
-  await rawHttpRequest(url, {
-    method: "POST",
-    headers: {
-      host: `127.0.0.1:${url.port}`,
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-    },
-    body: `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"pad":"${"x".repeat(4_500_000)}"}}`,
-  }).then(
-    (refused) => {
-      expect(refused.status).toBeGreaterThanOrEqual(400);
-      expect(refused.status).toBeLessThan(500);
-    },
-    (cause: unknown) => {
-      expect(["EPIPE", "ECONNRESET"]).toContain(
-        (cause as { code?: string }).code,
-      );
-    },
-  );
-  expect(await echo(client, "still served")).toEqual([
-    { type: "text", text: "still served" },
-  ]);
-  await client.close();
-}, 20_000);
+it.each([false, true])(
+  "answers an oversized sessionless POST promptly (exact numbers: %s)",
+  async (requireExactJsonNumbers) => {
+    const { served } = await start({ requireExactJsonNumbers });
+    const { client } = await connect(served.url);
+    const url = new URL(served.url);
+    // The SDK refuses the body as soon as it exceeds the bound, so the upload may end in a broken pipe.
+    await rawHttpRequest(url, {
+      method: "POST",
+      headers: {
+        host: `127.0.0.1:${url.port}`,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"pad":"${"x".repeat(4_500_000)}"}}`,
+    }).then(
+      (refused) => {
+        expect(refused.status).toBeGreaterThanOrEqual(400);
+        expect(refused.status).toBeLessThan(500);
+      },
+      (cause: unknown) => {
+        expect(["EPIPE", "ECONNRESET"]).toContain(
+          (cause as { code?: string }).code,
+        );
+      },
+    );
+    expect(await echo(client, "still served")).toEqual([
+      { type: "text", text: "still served" },
+    ]);
+    await client.close();
+  },
+  20_000,
+);
 
 it("closes the connection after a reply sent before the request body was read, on a keep-alive client", async () => {
   const { served } = await start();
@@ -1643,15 +1647,17 @@ it.each([
   },
 );
 
-it.each(["DELETE", "shutdown"])(
-  "ends a real HTTP request with an unfinished upload during %s",
-  async (ending) => {
-    const { served, shutdownHooks } = await start();
+it.each([
+  ["DELETE", false],
+  ["shutdown", false],
+  ["DELETE", true],
+  ["shutdown", true],
+] as const)(
+  "ends a real HTTP request with an unfinished upload during %s (exact numbers: %s)",
+  async (ending, requireExactJsonNumbers) => {
+    const { served, shutdownHooks } = await start({ requireExactJsonNumbers });
     const first = await connect(served.url);
-    const entered = vi.spyOn(
-      WebStandardStreamableHTTPServerTransport.prototype,
-      "handleRequest",
-    );
+    const entered = vi.spyOn(RequestTrackingMcpServer.prototype, "runRequest");
     let next: Awaited<ReturnType<typeof connect>> | undefined;
     let upload!: ReturnType<typeof httpRequest>;
     const response = new Promise<number | undefined>((resolve, reject) => {
@@ -1679,14 +1685,7 @@ it.each(["DELETE", "shutdown"])(
     });
     try {
       await vi.waitFor(() => {
-        expect(
-          entered.mock.calls.some(
-            ([request]) =>
-              request.method === "POST" &&
-              request.headers.get("mcp-session-id") ===
-                first.transport.sessionId,
-          ),
-        ).toBe(true);
+        expect(entered).toHaveBeenCalled();
       });
       if (ending === "DELETE") {
         await first.transport.terminateSession();

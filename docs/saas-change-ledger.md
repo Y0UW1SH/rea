@@ -29,6 +29,25 @@ backup outside the working machine. Do not assume a local checkpoint was pushed;
 verify the remote reference and resolved commit. This ledger does not assert that
 any tag has been published or that the feature branch has been merged into `main`.
 
+## Evidence correctness repairs (2026-10-21)
+
+- GraphQL surface reconciliation treats names as candidates until static transport
+  linkage is known. Observed endpoint/document identities remain visible even when
+  a declaration has the same name.
+- Contract verification reports captured-sample conformance, explicit required
+  coverage and unknown business compatibility separately. GraphQL schemas are
+  selected by endpoint, operation name and document/APQ identity.
+- `environment-serve --replay-mode strict` requires complete path/query/JSON-body
+  evidence and refuses absent or contradictory responses. Archive mode remains
+  the default; actor, header, sequence and mutable-state modeling remain future work.
+- Regression owners: surface and contract companion suites, environment replay
+  and scenario source suites, and CLI/MCP environment boundaries.
+- Independent-review corrections retain hash-only APQ identities and unidentified
+  reference envelopes, preserve incomplete response evidence per GraphQL status,
+  advertise JSON batch/scalar bodies in strict discovery, and reject numeric
+  conversion loss before MCP dispatch. The HTTP parser stays within the existing
+  request byte bound and session cancellation lifetime.
+
 ## Feature inventory
 
 ### Explicit deployment-origin correspondence

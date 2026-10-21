@@ -44,7 +44,7 @@ describe("environmentToolDefinitions", () => {
     const users = tool("get_users_by_id");
     const definition = definitions.find(({ name }) => name === users.name);
     expect(definition?.description).toBe(
-      `${REPLAY_CATALOG_INSTRUCTIONS} GET ${users.path_template}; replays retained records [${users.record_ordinals.join(", ")}]; evidence ${source.evidenceId}`,
+      `${REPLAY_CATALOG_INSTRUCTIONS} GET ${users.path_template}; replays retained records [${users.record_ordinals.join(", ")}]; evidence ${source.evidenceId}; archive: supplied path/query only; body ignored`,
     );
     expect(definition?.tool).toBe(users);
   });

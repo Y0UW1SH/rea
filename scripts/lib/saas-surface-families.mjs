@@ -58,13 +58,16 @@ export function groupEvidence(group, basis) {
 function operationEvidence(operations) {
   const entries = new Map();
   for (const operation of operations) {
-    const key = `${operation.input}\u0000${groupIdentity(operation)}`;
+    const key = `${operation.input}\u0000${graphqlIdentity(operation)}`;
     const entry = entries.get(key) ?? {
       input: operation.input,
       kind: "scenario-capture",
       method: operation.method,
       origin: operation.origin,
       path_template: operation.path_template,
+      endpoint_path: operation.endpoint_path,
+      document_sha256: operation.document_sha256,
+      persisted_query_sha256: operation.persisted_query_sha256,
       transactions: [],
     };
     entry.transactions.push({
@@ -156,11 +159,9 @@ export function graphqlItem(endpoint, detected, context) {
     value.startsWith("graphql:"),
   );
   const type = mechanism.slice("graphql:".length);
+  const declared = context.origins.declared_origins;
   const matches = context.operations.filter(
-    ({ name }) => name === detected.value,
-  );
-  const agreeing = matches.filter(
-    (operation) => operation.type === null || operation.type === type,
+    ({ name, origin }) => name === detected.value && declared.includes(origin),
   );
   const extra = {
     family: "graphql",
@@ -168,31 +169,43 @@ export function graphqlItem(endpoint, detected, context) {
     operation: { type, name: detected.value },
     inferences: [],
     mechanisms: detected.mechanisms,
-    observed: operationEvidence(agreeing.length > 0 ? agreeing : matches),
+    observed: operationEvidence(matches),
   };
-  if (agreeing.length > 0) return item(endpoint, "exact", extra);
-  if (matches.length > 0)
+  // The static producer records operation names, not a document-to-transport
+  // association. Even a unique name on a declared origin is only a candidate.
+  // Do not infer its endpoint from the traffic we are trying to measure.
+  if (new Set(matches.map(graphqlIdentity)).size > 1)
     return item(endpoint, "ambiguous", {
-      reason: "operation-type-disagrees",
+      reason: "graphql-operation-ambiguous",
       ...extra,
     });
-  const declared = context.origins.declared_origins;
   const reason =
-    !context.bodiesRetained || context.bodiesTruncated
-      ? "rpc-bodies-not-retained"
-      : context.coverageIncomplete
-        ? "observed-coverage-incomplete"
-        : declared.length === 0
-          ? "origin-undeclared"
-          : declared.some((origin) =>
-                context.index.exercisedOrigins.has(origin),
-              )
-            ? null
-            : "origin-not-exercised";
-  return reason === null
-    ? item(endpoint, "unmatched", extra)
-    : item(endpoint, "unknown", { reason, ...extra });
+    matches.length > 0
+      ? "graphql-transport-unresolved"
+      : !context.bodiesRetained || context.bodiesTruncated
+        ? "rpc-bodies-not-retained"
+        : context.coverageIncomplete
+          ? "observed-coverage-incomplete"
+          : declared.length === 0
+            ? "origin-undeclared"
+            : declared.some((origin) =>
+                  context.index.exercisedOrigins.has(origin),
+                )
+              ? "graphql-transport-unresolved"
+              : "origin-not-exercised";
+  return item(endpoint, "unknown", { reason, ...extra });
 }
+
+const graphqlIdentity = (operation) =>
+  JSON.stringify([
+    operation.origin,
+    operation.method,
+    operation.endpoint_path,
+    operation.type,
+    operation.name,
+    operation.document_sha256,
+    operation.persisted_query_sha256,
+  ]);
 
 /** Static route patterns: `:id`, `[id]`, `{id}` and `*` take one segment; `**` and `[...rest]` the rest. */
 function routePattern(value) {
@@ -308,7 +321,14 @@ const entryOrder = (left, right) =>
     SURFACE_FAMILIES.indexOf(right.family) ||
   compareCodePoints(left.origin, right.origin) ||
   compareCodePoints(entryName(left), entryName(right)) ||
-  compareCodePoints(left.method ?? "", right.method ?? "");
+  compareCodePoints(left.method ?? "", right.method ?? "") ||
+  compareCodePoints(left.endpoint_path ?? "", right.endpoint_path ?? "") ||
+  compareCodePoints(left.type ?? "", right.type ?? "") ||
+  compareCodePoints(left.document_sha256 ?? "", right.document_sha256 ?? "") ||
+  compareCodePoints(
+    left.persisted_query_sha256 ?? "",
+    right.persisted_query_sha256 ?? "",
+  );
 
 function comparisonEntries(add, observed) {
   const { comparison } = observed;
@@ -353,7 +373,6 @@ export function undeclaredEntries(context, items, trpc) {
         .map((entry) => name(entry)),
     );
   const procedures = declared("trpc", (entry) => entry.procedure.path);
-  const operations = declared("graphql", (entry) => entry.operation.name);
   const transports = new Set(context.operations.map(groupIdentity));
   const claimed = new Set(trpc.observed.map(({ group }) => group));
   for (const group of context.groups) {
@@ -390,18 +409,23 @@ export function undeclaredEntries(context, items, trpc) {
           { origin: group.origin, procedure },
           [groupEvidence(group)],
         );
+  // No current static GraphQL declaration establishes transport identity.
+  // Keep these observations visible even when a same-name candidate was shown.
   for (const operation of context.operations)
-    if (!operations.has(operation.name))
-      add(
-        "graphql",
-        `${operation.origin}\u0000${operation.name}`,
-        {
-          origin: operation.origin,
-          operation: operation.name,
-          type: operation.type,
-        },
-        operationEvidence([operation]),
-      );
+    add(
+      "graphql",
+      graphqlIdentity(operation),
+      {
+        origin: operation.origin,
+        method: operation.method,
+        endpoint_path: operation.endpoint_path,
+        document_sha256: operation.document_sha256,
+        persisted_query_sha256: operation.persisted_query_sha256,
+        operation: operation.name,
+        type: operation.type,
+      },
+      operationEvidence([operation]),
+    );
   for (const navigation of context.navigations)
     if (
       context.origins.declared_origins.includes(navigation.origin) &&

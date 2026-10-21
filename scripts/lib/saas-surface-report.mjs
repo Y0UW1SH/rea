@@ -134,7 +134,7 @@ export function surfaceLimitations(analysis, context, items, trpc) {
   }
   if (families.has("graphql"))
     lines.push(
-      "GraphQL operations match only retained JSON request bodies (an operationName in the GraphQL name grammar, which persisted queries carry alone, else the first named operation in the query text); absence is claimed only when every input retained request bodies without truncation and a declared origin was exercised.",
+      "GraphQL names in retained JSON bodies identify candidate observations only. Static declarations do not establish transport linkage: a unique candidate stays unknown, multiple endpoint or document identities are ambiguous, and observed operations remain visible under undeclared_observed.",
     );
   if (families.has("trpc") || trpc.bases.length > 0)
     lines.push(

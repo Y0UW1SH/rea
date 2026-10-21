@@ -348,9 +348,17 @@ What the contract states, and how each statement is marked:
   so a contract always accepts the captures it was inferred from; enum
   candidates are observed literal values offered only as
   `x-rea-enum-candidates`, never as `enum`.
-- GraphQL POSTs whose request body has a string `query` are grouped under
-  `x-rea-graphql-operations` by `operationName`, with `variables` and `data`
-  schemas per operation.
+- GraphQL POST objects and ordered batches are grouped under
+  `x-rea-graphql-operations` by a SHA-256 key covering the literal endpoint path,
+  `operationName` and exact document or APQ document digest. Each entry retains
+  `identity`, `samples`, a `request` schema (including variables), and `responses`
+  schemas by status (including data/errors). An observed status with no retained
+  unredacted JSON response has a null schema. `unverified_response_samples`
+  counts incomplete reference responses per status, including mixed complete and
+  redacted samples; those statuses remain unknown during verification.
+  `x-rea-graphql-unidentified-samples` preserves recognized envelopes whose identity
+  is absent, redacted or inconsistent. Different documents sharing a name stay separate.
+  GraphQL over GET and equivalence of differently spelled documents remain unverified.
 - Every operation carries `x-rea-evidence` (the capture files and digests its
   samples came from, transaction entries whose `capture` index refers to
   `x-rea-contract.captures`, step ids, statuses, sample count) and
@@ -385,11 +393,37 @@ only when it carries a JSON body; without body evidence it is counted under
 `excluded.unmatched-without-body`). Each finding carries the instance path,
 keyword, transaction id and step id, never body values. The report also lists
 `unexercised_operations`, the contract operations the replacement never reached,
-and the replacement's completeness. Exit 0 means every matched body conformed on
-a complete capture, 1 means findings, and 2 means invalid input or an unknown
-result: no matched transaction, no response body verified, or an incomplete or
-truncated replacement capture. Conformance of captured bodies is not business
-equivalence; use the workflow evaluator for outcomes.
+and the replacement's completeness. For GraphQL it also reports
+`unexercised_graphql_operations` and `unverified_graphql_transactions`, and
+validates the selected request/response schemas. Unknown documents and statuses
+are findings; absent/redacted identity or response evidence stays unknown. Legacy
+name-only GraphQL extensions cannot establish operation conformance; regenerate
+those contracts to obtain document identities.
+
+Three conclusions are separate: `conclusions.conformance` is the existing narrow
+`status` for captured samples; `conclusions.required_coverage` measures the explicit
+required set; `conclusions.business_compatibility` stays `unknown` because this
+command does not check business outcomes. Without a policy, required coverage is
+`not-requested`. Define a policy file, for example:
+
+```json
+{
+  "required_operations": [
+    { "method": "GET", "path": "/api/invoices" },
+    { "method": "POST", "path": "/graphql" }
+  ]
+}
+```
+
+Pass it with `verify CONTRACT_DIR CAPTURE.json --coverage-policy policy.json` and
+any needed `--origin-map`. A selector may also include `graphql_operation` with
+an exact key from `x-rea-graphql-operations` to require that document/operation,
+instead of any traffic to the HTTP endpoint. Empty, duplicate or nonexistent
+selectors are invalid. Coverage measures exercise, independently of conformance.
+Exit 0 requires passing conformance and, when requested, complete required
+coverage; 1 means conformance findings; 2 means invalid input, unknown conformance
+or incomplete required coverage. An unexercised operation never becomes a
+conformance success for that operation. Use the workflow evaluator for business outcomes.
 
 Limits: bodies above the capture's retained size limit (64 KiB by default) or the
 manifest `maxBodyBytes` contribute no schema and are counted as truncated;
@@ -451,13 +485,15 @@ What the report states, and how each statement is marked:
   case folding or cross-origin guesses. Candidate readings
   (`interpretation: candidate`) and string-built targets (`resolution: partial`)
   stay `unknown` (`candidate-endpoint`, `target-unresolved`).
-- GraphQL operations match only a retained JSON request body whose
-  `operationName` (a name in the GraphQL grammar, which persisted queries carry
-  without query text; else the first named operation in `query`) equals the
-  declared name; names outside the grammar are ignored and never echoed. A name
-  match with a different operation type is `ambiguous`
-  (`operation-type-disagrees`). tRPC procedures match only the comma-split
-  segments after a declared link base on the base's origin. Client routes match
+- GraphQL names in retained JSON request bodies identify candidates on declared
+  origins. The static analyzer does not establish a document-to-transport link,
+  so a single candidate is `unknown` (`graphql-transport-unresolved`), and
+  multiple origin, endpoint, type or document identities are `ambiguous`
+  (`graphql-operation-ambiguous`). An operation name alone never establishes
+  coverage. Observed operations retain endpoint paths and document/persisted-query
+  digests, and remain visible in `undeclared_observed` until linkage is proven.
+  tRPC procedures match only the comma-split segments after a declared link base
+  on the base's origin. Client routes match
   only navigation pathnames on the declared origins: literal equality is `exact`;
   `:id`, `[id]`, `{id}` and `*` segments and `**` or `[...rest]` tails give
   `templated`; regex or optional segments, and literals carrying a query or
@@ -471,10 +507,8 @@ What the report states, and how each statement is marked:
   own not-observed verdict when any other input is incomplete; a declared origin
   nothing reached is `origin-not-exercised`; tRPC without a link base is
   `rpc-link-base-undeclared`; origin-relative paths without declared origins are
-  `origin-undeclared`. GraphQL absence additionally needs every input to have
-  retained request bodies without truncation (api-surface views and comparison
-  results carry none, a truncated body may have carried the operation), else
-  `rpc-bodies-not-retained`. With several comparison results the better-ranked
+  `origin-undeclared`. GraphQL absence remains unknown without transport linkage; missing or
+  truncated request bodies are reported as `rpc-bodies-not-retained`. With several comparison results the better-ranked
   verdict wins whatever the flag order, its paired groups replace the evidence
   of the verdict it displaces, and verdict `method` and `target` fields are
   validated like every other consumed field (a target path with a query or
@@ -501,12 +535,12 @@ What the report states, and how each statement is marked:
 Exit 0 means every declared item is `exact` or `templated`; 1 means gaps were
 found (`gaps` counts them); 2 means an input is invalid, unreadable or of an
 unrecognized shape. On the committed fixtures the exit code is 1 by design: the
-synthetic observations leave seven gaps (`navigator.sendBeacon("/api/metrics")`,
+synthetic observations leave eight gaps (`navigator.sendBeacon("/api/metrics")`,
 `new WebSocket("/live")` on an origin never observed over `wss`, the string-built
 `fetch(API_PREFIX + "/orders")`, the candidate `translate.get(...)`, the
-`RenameCustomer` mutation, the `user.rename` procedure and the `/settings`
+`ListCustomers` query and `RenameCustomer` mutation, the `user.rename` procedure and the `/settings`
 route), and `undeclared_observed` names `/assets/logo.png`, the CDN request, the
-`user.list` procedure and the `/` and `/help` navigations.
+`user.list` procedure, the observed `ListCustomers` operation and the `/` and `/help` navigations.
 
 Limits: static declarations are exact literals, so string-built and
 wrapper-passed URLs, server-driven and file-system routes (#4772) and
