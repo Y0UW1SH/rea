@@ -37,11 +37,41 @@ function observationResults(capture, refs, complete) {
   });
 }
 
+// Declared actions are plan labels for existing capture steps. A capture that lacks
+// one did not exercise the plan; like other incomplete accounting it stays unknown
+// rather than contradicting retained bytes. Only manifest labels are reported.
+function missingActionSteps(capture, scenario) {
+  const present = new Set(capture.steps.map((step) => step.step_id));
+  return scenario.actions
+    .map((action) => action.stepId)
+    .filter((stepId) => !present.has(stepId));
+}
+
+function captureVerdict(complete, missing) {
+  const listed = missing.length > 0 ? { missingActionStepIds: missing } : {};
+  if (!complete)
+    return {
+      status: "unknown",
+      reason: "capture declarations do not establish completeness",
+      ...listed,
+    };
+  if (missing.length > 0)
+    return {
+      status: "unknown",
+      reason: "capture lacks declared action steps",
+      ...listed,
+    };
+  return { status: "verified" };
+}
+
 // Existing normalized_result captures remain the evidence format. A digest proves
 // retained byte identity, never actor identity, authorization or business behavior.
 export async function verifyStudyCaptures(study, root) {
   const captures = [];
   const observations = [];
+  const scenarios = new Map(
+    study.scenarios.map((scenario) => [scenario.scenarioId, scenario]),
+  );
   const byCapture = new Map();
   for (const observation of study.evidence.observations) {
     const entries = byCapture.get(observation.captureId) ?? [];
@@ -76,9 +106,13 @@ export async function verifyStudyCaptures(study, root) {
       });
       const completeness = captureCompleteness(read.capture);
       const complete = captureIsComplete(read.capture);
-      entry.status = complete ? "verified" : "unknown";
-      if (!complete)
-        entry.reason = "capture declarations do not establish completeness";
+      Object.assign(
+        entry,
+        captureVerdict(
+          complete,
+          missingActionSteps(read.capture, scenarios.get(selected.scenarioId)),
+        ),
+      );
       entry.completeness = completeness;
       observations.push(...observationResults(read.capture, refs, complete));
     } catch (error) {

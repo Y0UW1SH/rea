@@ -30,6 +30,12 @@ const captureStudy = async (t) => {
   const capture = structuredClone(buildContractFixture("reference-a"));
   const bytes = Buffer.from(JSON.stringify(capture));
   await writeFile(join(dir, "capture.json"), bytes);
+  // Declared actions name real capture steps so the happy path is reachable.
+  const [, opened, created] = capture.steps.map((step) => step.step_id);
+  const scenario = study.scenarios[0];
+  scenario.actions[0].stepId = opened;
+  scenario.actions[1].stepId = created;
+  scenario.expectedObservations[0].stepId = opened;
   study.evidence.captures.push({
     captureId: "manager-read",
     actorId: "manager",
@@ -224,7 +230,7 @@ test("incomplete and malformed captures cannot establish verified evidence", asy
   assert.equal((await checkStudyEvidence(study, dir)).status, "fail");
 });
 
-test("a rehashed capture missing a declared action remains unknown", async (t) => {
+test("a rehashed capture whose own action count exceeds its steps remains unknown", async (t) => {
   const { dir, study, capture } = await captureStudy(t);
   capture.scenario.action_count += 1;
   const content = JSON.stringify(capture);
@@ -234,6 +240,27 @@ test("a rehashed capture missing a declared action remains unknown", async (t) =
     .update(content)
     .digest("hex");
   assert.equal((await checkStudyEvidence(study, dir)).status, "unknown");
+});
+
+test("a capture lacking a manifest-declared action step remains unknown and names only the missing labels", async (t) => {
+  const { dir, study } = await captureStudy(t);
+  const declared = study.scenarios[0].actions;
+  for (const stepId of ["x1", "x2"])
+    declared.push({
+      stepId,
+      actorId: "manager",
+      operationId: "invoice.update",
+    });
+  const result = await checkStudyEvidence(study, dir);
+  assert.equal(result.status, "unknown", JSON.stringify(result));
+  assert.equal(result.captures[0].status, "unknown");
+  assert.deepEqual(result.captures[0].missingActionStepIds, ["x1", "x2"]);
+  assert.equal(
+    result.captures[0].reason,
+    "capture lacks declared action steps",
+  );
+  // Observation coordinates are still checked independently of the plan.
+  assert.equal(result.observations[0].status, "verified");
 });
 
 test("rehashed content with missing, wrong-phase, late or wrong-transaction source provenance fails", async (t) => {
@@ -363,4 +390,43 @@ test("CLI validates without executing actions and makes missing evidence nonzero
     ]).status,
     2,
   );
+});
+
+test("CLI exits nonzero when a bound capture lacks a declared action step", async (t) => {
+  const { dir, study } = await captureStudy(t);
+  const script = fileURLToPath(new URL("./saas-study.mjs", import.meta.url));
+  const run = async (manifest) => {
+    await writeFile(join(dir, "study.json"), JSON.stringify(manifest));
+    return spawnSync(
+      process.execPath,
+      [script, "validate", join(dir, "study.json"), "--check-evidence"],
+      { encoding: "utf8" },
+    );
+  };
+  const verified = await run(study);
+  assert.equal(verified.status, 0, verified.stdout);
+  assert.equal(JSON.parse(verified.stdout).evidence.status, "verified");
+  // The reviewed failure: the original plan labels plus extras none of which were captured.
+  const original = await fixture();
+  study.scenarios[0].actions = [
+    ...original.scenarios[0].actions,
+    ...["x1", "x2", "x3"].map((stepId) => ({
+      stepId,
+      actorId: "manager",
+      operationId: "invoice.update",
+    })),
+  ];
+  study.scenarios[0].expectedObservations =
+    original.scenarios[0].expectedObservations;
+  const missing = await run(study);
+  assert.equal(missing.status, 2, missing.stdout);
+  const evidence = JSON.parse(missing.stdout).evidence;
+  assert.equal(evidence.status, "unknown");
+  assert.deepEqual(evidence.captures[0].missingActionStepIds, [
+    "manager-update",
+    "clerk-update",
+    "x1",
+    "x2",
+    "x3",
+  ]);
 });

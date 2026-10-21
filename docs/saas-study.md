@@ -41,8 +41,11 @@ Capture path spellings are unique, and authority origins must be contained in ta
 origins. Coverage obligations may refer to work not yet exercised. They remain
 requirements, not derived claims of success. IDs are labels, not secret values.
 
-Actions reference existing scenario steps; this is not a second browser action
-language. `initialState.evidenceIds` must refer to observations in that scenario.
+Actions name step IDs of the existing scenario capture format; this is not a
+second browser action language. Manifest validation alone cannot see captures, so
+`--check-evidence` requires every capture bound to a scenario to contain each
+action step ID that scenario declares. `initialState.evidenceIds` must refer to
+observations in that scenario.
 Capture and revision attribution are caller-declared. Hashes and coordinates
 alone cannot authenticate actors, establish a version, or prove business rules.
 Resolved filesystem aliases are not deduplicated: separate paths may name the
@@ -54,8 +57,10 @@ Without `--check-evidence`, exit 0 means the manifest is valid. With that flag,
 exit 0 additionally means the selected retained captures and observation
 coordinates verified, exit 1 means an integrity/reference contradiction, and
 exit 2 means invalid input or unknown evidence. Missing files and incomplete
-captures stay unknown. `coverageStatus` stays unknown even when byte checks
-succeed; role, state and workflow verification belong to later increments.
+captures stay unknown, as does a capture lacking a declared action step; it
+lists the absent manifest labels in `missingActionStepIds`. `coverageStatus`
+stays unknown even when byte checks succeed; role, state and workflow
+verification belong to later increments.
 
 The reader uses REA's existing bounded local-file and scenario-capture readers.
 Manifests are limited to 1 MiB, individual captures to 16 MiB, and the declared
