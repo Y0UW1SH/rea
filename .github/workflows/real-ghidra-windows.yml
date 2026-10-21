@@ -53,7 +53,7 @@ jobs:
 
   verify:
     name: Real Ghidra 12.1.4 Windows x64 PE proof
-    if: ${{ github.repository != 'Y0UW1SH/rea' && (github.ref == 'refs/heads/main') }}
+    if: github.ref == 'refs/heads/main'
     needs: native-artifact
     environment: real-ghidra-windows
     runs-on: [self-hosted, Windows, x64, ghidra-12-1-2]

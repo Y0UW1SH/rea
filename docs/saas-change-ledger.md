@@ -50,17 +50,24 @@ any tag has been published or that the feature branch has been merged into `main
 
 ## Fork workflow job guards (2026-10-21)
 
-- Every inherited workflow job excludes `Y0UW1SH/rea` through a dominating
-  `github.repository != 'Y0UW1SH/rea'` condition. Existing predicates remain
-  parenthesized and unchanged, including status functions, reusable callers,
-  release publishers and aggregate jobs. Other repositories, including
-  `morluto/rea`, retain their original conditions and implicit status behavior.
+- Every inherited workflow job is skipped in `Y0UW1SH/rea`. Entry jobs (no
+  `needs`) and jobs whose condition uses a status function (`always()`,
+  `cancelled()`, `failure()`, `success()`) carry a dominating
+  `github.repository != 'Y0UW1SH/rea'` condition; their existing predicates
+  remain parenthesized and unchanged. Every other job is left byte-identical to
+  upstream: it needs only fork-skipped jobs and has no status function, so
+  GitHub skips it with its dependencies. This keeps guard edits away from
+  dependent jobs (for example the CI provider callers that upstream extends),
+  so upstream merges do not conflict on guard lines. Other repositories,
+  including `morluto/rea`, retain their original conditions and implicit status
+  behavior.
 - Only the exact `saas-compatibility` job in `saas-compatibility.yml` and
   `combined-candidate` job in `saas-upstream-integration.yml` are exempt.
   `tests/boundary/filesystem/workflowForkSafety.test.ts` discovers every workflow
-  and job, rejects missing or escapable guards, and keeps those two jobs enabled.
-  Both SaaS check lanes execute this inventory regression. Existing workflow
-  tests still assert the original upstream predicates inside the fork guard.
+  and job, follows `needs` to find skipped dependents, rejects missing,
+  escapable or redundant guards, and keeps those two jobs enabled. Both SaaS
+  check lanes execute this inventory regression. Existing workflow tests assert
+  the original upstream predicates, inside the fork guard where one is present.
 - These conditions skip jobs; they do not suppress workflow triggers or run
   records. They apply only to revisions containing them. The fork's observed
   default branch is `feat/saas-behavior-compatibility`; default-branch events gain

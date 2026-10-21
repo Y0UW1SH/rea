@@ -52,7 +52,9 @@ it("refreshes title validation on edits without checking out PR code or cancelli
   const jobs = Object.values(title.jobs);
   expect(jobs).toHaveLength(1);
   expect(jobs[0]?.name).toBe("Conventional PR title");
-  expect(jobs[0]?.if).toBe(inheritedJobCondition()); // A skipped check must not green-light an invalid title on body edits.
+  // Only the fork exclusion may condition this job. Upstream must never skip
+  // it: a skipped check would green-light an invalid title on body edits.
+  expect(jobs[0]?.if).toBe(inheritedJobCondition());
   const steps = jobs[0]?.steps ?? [];
   expect(steps).toHaveLength(1);
   expect(steps[0]?.uses).toBeUndefined();

@@ -671,9 +671,7 @@ it("routes website verification through the central PR policy", async () => {
       ),
     );
   expect(ci.jobs.website.uses).toBe("./.github/workflows/website-check.yml");
-  expect(ci.jobs.website.if).toBe(
-    inheritedJobCondition("needs.changes.outputs.website == 'true'"),
-  );
+  expect(ci.jobs.website.if).toBe("needs.changes.outputs.website == 'true'");
 });
 
 // The rehearsal executes the retained archive on a new read-only runner; the

@@ -87,7 +87,6 @@ jobs:
         run: npm run mcp-registry:check
 
   publish-mcp:
-    if: github.repository != 'Y0UW1SH/rea'
     name: Finish MCP Registry publication
     needs: verify
     runs-on: ubuntu-latest

@@ -38,7 +38,7 @@ const scopeFlags = async () =>
 
 it("binds SQLite compatibility jobs to the build's prepared runtime artifact and root layout", async () => {
   expect((await workflow()).jobs["sqlite-runtime"]?.if).toBe(
-    inheritedJobCondition("needs.changes.outputs.sqlite == 'true'"),
+    "needs.changes.outputs.sqlite == 'true'",
   );
   const steps = z.array(
     z.object({
@@ -222,18 +222,21 @@ it("binds provider build reuse to the current run while keeping standalone dispa
     "web_source_map",
     "agentenv",
   ];
-  // Provider workflow edits select their lane without code=true. Retain every
-  // original OR term under the one dominating fork guard.
-  expect(jobs.build?.if).toBe(
-    inheritedJobCondition(
-      ["code", ...consumers]
-        .map((scope) => `needs.changes.outputs.${scope} == 'true'`)
-        .join(" || "),
+  const buildTerms = z
+    .string()
+    .parse(jobs.build?.if)
+    .split("||")
+    .map((term) => term.trim());
+  // Provider workflow edits select their lane without code=true. The build
+  // producer must still run, without selecting the portable test shards.
+  expect(new Set(buildTerms)).toEqual(
+    new Set(
+      ["code", ...consumers].map(
+        (scope) => `needs.changes.outputs.${scope} == 'true'`,
+      ),
     ),
   );
-  expect(jobs["test-shard"]?.if).toBe(
-    inheritedJobCondition("needs.changes.outputs.code == 'true'"),
-  );
+  expect(jobs["test-shard"]?.if).toBe("needs.changes.outputs.code == 'true'");
   for (const name of consumers) {
     const caller = jobs[name];
     expect(caller?.needs).toContain("build");

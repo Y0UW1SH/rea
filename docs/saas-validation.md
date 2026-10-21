@@ -1,5 +1,24 @@
 # SaaS fork validation
 
+## Fork guard placement — 2026-10-21
+
+The earlier guards edited every inherited job, including the CI provider
+callers whose `if:` lines sit next to upstream's new `secrets:` mappings. A
+local `git merge-tree --write-tree` of the guarded head with upstream
+`01788bac863ac786bfbb648cad69b11e23b40a89` conflicted in
+`.github/workflows/ci.yml` and `tests/boundary/filesystem/ciRequiredLanes.test.ts`,
+while the feature base alone merged cleanly, so the conflict came from the
+guard edits rather than from upstream's CI redesign.
+
+Guards now sit only on entry jobs and status-function jobs (41 jobs in 31
+files); the 28 dependents that GitHub already skips with their fork-skipped
+dependencies are restored to their upstream text. The inventory regression
+first failed on exactly those 28 redundant guards, then passed after the
+restoration. The same `merge-tree` probe of the change now exits 0. Applied
+to the merged workflows, the regression accepts upstream's new `static-deep`
+job unchanged and reports only upstream's new `cache-retention.yml` entry
+job, which needs a guard when that merge is resolved.
+
 ## Cancellation, study inventory and signed-zero repairs — 2026-10-21, 15:45 UTC
 
 These repairs start from published PR #4 head

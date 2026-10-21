@@ -81,7 +81,6 @@ jobs:
           path: website/_site
 
   deploy:
-    if: github.repository != 'Y0UW1SH/rea'
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 15
