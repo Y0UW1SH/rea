@@ -25,11 +25,32 @@ regression gates and the safe upstream-sync procedure.
 - Infer an OpenAPI 3.1 contract with evidence-cited, sample-counted JSON Schemas
   from scenario captures that retained network bodies, and verify a replacement's
   captured bodies against it.
+- Report captured-sample conformance and explicit required operation coverage
+  separately from business compatibility, which schema verification cannot establish.
+- Reconcile frontend declarations with observed traffic and identify surface
+  gaps that need further collection.
+- Serve retained responses through the existing environment tools, with optional
+  strict path/query/JSON-body matching that refuses unsupported requests.
 
-This is an offline evaluation foundation. It does not log into a vendor, discover
-hidden server rules, generate a replacement application, reset a SaaS tenant, or
-assert that Lightspeed/QuickBooks has been reproduced. The synthetic fixtures test
-our checker; they do not establish either vendor's actual behavior.
+These additions analyse retained evidence from cloud applications locally.
+**Live collection uses REA's existing browser tools; offline evaluation uses the
+saved results.** Once the required evidence is retained, evaluation can be repeated
+without contacting or changing the vendor account.
+
+| Stage                         | Current capability                                                                                                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Live browser collection       | `capture_browser_scenario` / `capture-browser-scenario` executes caller-defined actions against a selected application and retains the requested browser artifacts and accessible network content. |
+| Historical network inspection | `inspect_web_network_capture` / `inspect-web-network-capture` reads an existing capture file. It does not contact recorded URLs or start a recorder.                                               |
+| Local SaaS evaluation         | The companion scripts inspect retained captures, infer API schemas, compare selected workflow outcomes and exports, and report observed coverage and uncertainty.                                  |
+| Local response replay         | `environment-serve` serves recorded responses. Strict mode refuses requests without matching evidence; writes do not change later responses.                                                       |
+
+The investigation remains operator-directed: supply authorized account access,
+choose the workflow and inputs, collect the relevant evidence, and define the
+outcomes to check. These additions do not automatically log into a vendor, choose
+and execute experiments to discover hidden server rules, generate a replacement
+application, or reset a SaaS tenant. The synthetic fixtures test our checker;
+actual Lightspeed/QuickBooks behavior needs evidence collected from those products.
+Passing the fixtures does not establish that either vendor has been reproduced.
 
 ## Start with one workflow
 
@@ -55,10 +76,20 @@ rules separately.
 
 ### Capture through existing REA tools
 
-Use [browser scenarios](browser-scenario-contract.md) and
-[network captures](web-network-captures.md), rather than building a second browser
-recorder. Both existing CLI and MCP routes remain available. Retain complete REA
-Evidence with collection dates and immutable references next to the case.
+Use [browser scenarios](browser-scenario-contract.md) for live collection through
+the existing CLI or MCP route. Select the browser and target explicitly, and
+provide the necessary authorized session or authentication inputs. REA executes
+the supplied scenario; this guide does not provide a vendor-specific login adapter.
+Use [network capture inspection](web-network-captures.md) when a capture file has
+already been recorded. Retain complete REA Evidence with collection dates and
+immutable references next to the case.
+
+For API contract inference, enable the required request and response bodies
+through the scenario's `capture.network` options; selecting content also enables
+network metadata observation. The default
+URL-only capture does not retain enough information to infer those contracts.
+Supply the saved `normalized_result` to the companion as described in
+[API contract inference](#infer-and-verify-api-contracts-from-captures).
 
 For each action retain before state, action and inputs, visible result, relevant
 requests/responses where accessible, and a fresh read of the saved result. Run
@@ -622,5 +653,8 @@ Related upstream discussions provide extension points, not implemented guarantee
 [UI states and transitions #4069](https://github.com/morluto/rea/issues/4069),
 [retained scenario views #4163](https://github.com/morluto/rea/pull/4163), and
 [capture-derived environments #4933](https://github.com/morluto/rea/issues/4933).
-The companion does not add an HTTP server, replay engine, autonomous SaaS executor,
-or duplicate retained-view ownership.
+The companion scripts operate on local files. Serving recorded responses and
+strict request matching use REA's existing [agent environments](agent-environments.md).
+An autonomous SaaS investigation loop and mutable business-state emulation remain
+future work; existing capture, serving and retained-view ownership stay with their
+respective REA components.
