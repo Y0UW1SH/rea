@@ -542,6 +542,9 @@ behavior was verified.
 
 ## Safe upstream-sync procedure
 
+The [upstream sync guide](saas-upstream-sync.md) includes a reusable prompt for
+preparing, validating and reviewing future updates to the customized fork.
+
 1. Start with a clean working tree. Commit or otherwise preserve local work
    before integrating. Verify the feature head and a recoverable checkpoint on
    the intended remote; do not rely only on this file or a local tag. Do not
