@@ -1,5 +1,46 @@
 # SaaS fork validation
 
+## Draft bug review follow-up: 2026-10-21
+
+Reviewed feature head `f9fcd4305d3a7bccebf822a68c0294cbf2d0afd5` and
+corrected six reproduced issues, using pinned Node **24.18.0** and npm
+**11.16.0** on Linux:
+
+- Strict MCP HTTP requests could bypass exact JSON admission through malformed
+  `Accept` ranges. Invalid UTF-8 could also become a matching replacement character,
+  and a rejected initialization request could evict the active session. A shared
+  bounded UTF-8/number reader now owns strict dispatch and initialization probing;
+  invalid headers receive a refusal rather than falling back to SDK parsing.
+- Missing, truncated, unparseable and opaque redacted reference requests now retain
+  uncertainty on observed GraphQL routes, including failed requests and either
+  capture order. They no longer establish a false document-absence finding.
+- Required-coverage selectors are copied before asynchronous reads. Caller changes
+  cannot change the policy being evaluated or mutate the completed report.
+- HTTP and GraphQL verification share loss-aware JSON decoding. Unsupported numbers
+  stay unverified instead of producing false schema drift. The correction review
+  caught an initial REST false-pass case; `unverified_numeric_bodies` now keeps
+  conformance unknown when other responses validate, unless findings establish failure.
+
+The new regressions were observed failing before their corrections. Final focused
+verification:
+
+- `npm run test:saas`: **156 passed**.
+- `npm run test:local` for `strictReplayTransport.test.ts`,
+  `serveEnvironment.test.ts` and `serveStreamableHttp.test.ts`: **85 passed**.
+  These use real local HTTP/MCP clients and retain size, cancellation and session
+  lifecycle coverage.
+- `npm run test:focused` for the SaaS contract/surface CLI, environment serve/export
+  CLI, environment MCP and surface filesystem boundaries: **27 passed**, 6 files.
+- `npm run check`: passed build, typecheck, lint (**0 errors**, repository-wide
+  warnings remain), formatting, knip, metadata and architecture guards.
+- `npm run docs:check`: passed, including **5 README consistency tests**.
+
+This was a focused review of the SaaS evidence and replay changes, with an
+independent contract review. The complete repository suite, hosted CI, live SaaS
+accounts, other operating systems and performance comparisons were not run.
+No live QuickBooks or Lightspeed behavior is established by these synthetic tests.
+The product limitations documented below still apply.
+
 ## Evidence correctness repairs — 2026-10-21
 
 Validated on Linux with pinned Node **24.18.0** and npm **11.16.0**, starting

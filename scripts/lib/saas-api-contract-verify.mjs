@@ -28,7 +28,7 @@ import { captureCompleteness } from "./saas-api-contract.mjs";
 
 export const VERIFY_LIMITATIONS = [
   "Conformance of the captured request and response bodies to the inferred schemas is checked; business equivalence, authorization and ordering are not.",
-  "Transactions whose bodies were truncated, empty or absent where the contract recorded a body are matched by request line and status only and counted as unverified bodies.",
+  "Transactions whose bodies were truncated, empty, absent or outside supported numeric fidelity where the contract recorded a body are matched by request line and status only and counted as unverified bodies.",
   "GraphQL verification requires a retained document or persisted-query identity and validates the selected operation schema. Missing, redacted or legacy name-only identity stays unknown. GraphQL over GET is not verified at operation level.",
   "Origin pairs are directional (contract origin to replacement origin); undeclared origins are excluded, never guessed.",
   "A request line the contract lacks is an unmatched_operation finding only when it carries a JSON body; without body evidence it is counted under excluded.unmatched-without-body.",
@@ -124,6 +124,27 @@ function createChecker() {
   });
   addFormats(ajv);
   const compiled = new Map();
+  const decodedBodies = new WeakMap();
+  const decodeJson = (side) => {
+    let decoded = decodedBodies.get(side);
+    if (decoded !== undefined) return decoded;
+    try {
+      let exact = true;
+      const value = JSON.parse(
+        new TextDecoder("utf-8", { fatal: true }).decode(side.body.buffer),
+        (_key, value, context) => {
+          if (typeof value === "number" && !isSafeNumber(context.source))
+            exact = false;
+          return value;
+        },
+      );
+      decoded = exact ? { kind: "json", value } : { kind: "inexact" };
+    } catch {
+      decoded = { kind: "invalid" };
+    }
+    decodedBodies.set(side, decoded);
+    return decoded;
+  };
   const state = {
     findings: [],
     excluded: {},
@@ -134,6 +155,7 @@ function createChecker() {
     verifiedBodies: 0,
     verifiedResponseBodies: 0,
     unverifiedBodies: 0,
+    unverifiedNumericBodies: 0,
   };
   const validatorFor = (schema) => {
     let validator = compiled.get(schema);
@@ -156,12 +178,13 @@ function createChecker() {
       });
   };
   const validateJson = (side, schema, where) => {
-    let value;
-    try {
-      value = JSON.parse(
-        new TextDecoder("utf-8", { fatal: true }).decode(side.body.buffer),
-      );
-    } catch {
+    const decoded = decodeJson(side);
+    if (decoded.kind === "inexact") {
+      state.unverifiedBodies += 1;
+      state.unverifiedNumericBodies += 1;
+      return;
+    }
+    if (decoded.kind === "invalid") {
       state.findings.push({
         ...where,
         kind: "structural",
@@ -173,7 +196,7 @@ function createChecker() {
     }
     state.verifiedBodies += 1;
     if (where.side === "response") state.verifiedResponseBodies += 1;
-    validateValue(value, schema, where);
+    validateValue(decoded.value, schema, where);
   };
   /** `content` is the contract's media-type map for this side and status, if any. */
   const checkBody = (side, content, where) => {
@@ -205,30 +228,25 @@ function createChecker() {
     }
     if (expected) state.unverifiedBodies += 1;
   };
-  return { state, checkBody, validateValue, legacyGraphql: new WeakMap() };
+  const jsonBody = (side) => {
+    if (side.kind !== "json" || side.body.redacted) return undefined;
+    const decoded = decodeJson(side);
+    return decoded.kind === "json" ? decoded.value : undefined;
+  };
+  return {
+    state,
+    checkBody,
+    validateValue,
+    jsonBody,
+    legacyGraphql: new WeakMap(),
+  };
 }
-
-const jsonBody = (side) => {
-  if (side.kind !== "json" || side.body.redacted) return undefined;
-  try {
-    return JSON.parse(
-      new TextDecoder("utf-8", { fatal: true }).decode(side.body.buffer),
-      (_key, value, context) => {
-        if (typeof value === "number" && !isSafeNumber(context.source))
-          throw new Error("GraphQL numeric conversion would lose evidence");
-        return value;
-      },
-    );
-  } catch {
-    return undefined;
-  }
-};
 
 function verifyGraphql(operation, admission, where, checker) {
   const entries = operation["x-rea-graphql-operations"];
   if (entries === undefined) return;
   object(entries, "x-rea-graphql-operations");
-  const { state, validateValue } = checker;
+  const { state, validateValue, jsonBody } = checker;
   let legacy = checker.legacyGraphql.get(entries);
   if (legacy === undefined) {
     legacy = Object.values(entries).some((entry) => !entry?.identity);
@@ -376,9 +394,9 @@ const graphqlOperations = (openapi) =>
 const coverageKey = ({ method, path, graphql_operation }) =>
   `${method}\u0000${path}${graphql_operation === undefined ? "" : `\u0000${graphql_operation}`}`;
 
-function requiredCoverage(required, openapi, state) {
-  if (required === undefined)
-    return { status: "not-requested", required: [], missing: [] };
+/** Own caller selectors before any asynchronous I/O can expose mutable aliases. */
+function parseRequiredOperations(required) {
+  if (required === undefined) return undefined;
   if (
     !Array.isArray(required) ||
     required.length === 0 ||
@@ -388,17 +406,42 @@ function requiredCoverage(required, openapi, state) {
       "required_operations: expected 1 to 100000 operation selectors",
     );
   const seen = new Set();
-  for (const entry of required) {
+  const owned = required.map((entry) => {
     object(entry, "required_operations entry");
+    const { method, path, graphql_operation } = entry;
     if (
       Object.keys(entry).some(
         (key) => !["method", "path", "graphql_operation"].includes(key),
       ) ||
-      typeof entry.method !== "string" ||
-      !/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE)$/u.test(entry.method) ||
-      typeof entry.path !== "string" ||
-      !Object.hasOwn(openapi.paths, entry.path)
+      typeof method !== "string" ||
+      !/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE)$/u.test(method) ||
+      typeof path !== "string" ||
+      (graphql_operation !== undefined && typeof graphql_operation !== "string")
     )
+      throw new Error(
+        "required_operations: expected an HTTP method and path in the contract",
+      );
+    const selector = {
+      method,
+      path,
+      ...(graphql_operation === undefined ? {} : { graphql_operation }),
+    };
+    const key = coverageKey(selector);
+    if (seen.has(key))
+      throw new Error("required_operations: duplicate operation selector");
+    seen.add(key);
+    return selector;
+  });
+  return owned.sort((a, b) =>
+    compareCodePoints(coverageKey(a), coverageKey(b)),
+  );
+}
+
+function requiredCoverage(required, openapi, state) {
+  if (required === undefined)
+    return { status: "not-requested", required: [], missing: [] };
+  for (const entry of required) {
+    if (!Object.hasOwn(openapi.paths, entry.path))
       throw new Error(
         "required_operations: expected an HTTP method and path in the contract",
       );
@@ -406,22 +449,14 @@ function requiredCoverage(required, openapi, state) {
     if (
       operation === undefined ||
       (entry.graphql_operation !== undefined &&
-        (typeof entry.graphql_operation !== "string" ||
-          !Object.hasOwn(
-            operation["x-rea-graphql-operations"] ?? {},
-            entry.graphql_operation,
-          )))
+        !Object.hasOwn(
+          operation["x-rea-graphql-operations"] ?? {},
+          entry.graphql_operation,
+        ))
     )
       throw new Error("required_operations: operation is not in the contract");
-    const key = coverageKey(entry);
-    if (seen.has(key))
-      throw new Error("required_operations: duplicate operation selector");
-    seen.add(key);
   }
-  const ordered = [...required].sort((a, b) =>
-    compareCodePoints(coverageKey(a), coverageKey(b)),
-  );
-  const missing = ordered.filter(
+  const missing = required.filter(
     (entry) =>
       !(
         entry.graphql_operation === undefined
@@ -431,7 +466,7 @@ function requiredCoverage(required, openapi, state) {
   );
   return {
     status: missing.length === 0 ? "complete" : "incomplete",
-    required: ordered,
+    required,
     missing,
   };
 }
@@ -446,6 +481,7 @@ export async function verifyContract(
   let contract = null;
   let capture = null;
   try {
+    const required = parseRequiredOperations(requiredOperations);
     const pairs = sortOriginPairs(
       parseOriginPairs(originPairs, "origin_pairs"),
     );
@@ -480,6 +516,7 @@ export async function verifyContract(
         ? "fail"
         : state.matched === 0 ||
             state.verifiedResponseBodies === 0 ||
+            state.unverifiedNumericBodies > 0 ||
             state.unverifiedGraphql > 0 ||
             !complete
           ? "unknown"
@@ -489,11 +526,7 @@ export async function verifyContract(
       status,
       conclusions: {
         conformance: { status, scope: "captured-samples" },
-        required_coverage: requiredCoverage(
-          requiredOperations,
-          loaded.openapi,
-          state,
-        ),
+        required_coverage: requiredCoverage(required, loaded.openapi, state),
         business_compatibility: {
           status: "unknown",
           reason:
@@ -513,6 +546,7 @@ export async function verifyContract(
       verified_bodies: state.verifiedBodies,
       verified_response_bodies: state.verifiedResponseBodies,
       unverified_bodies: state.unverifiedBodies,
+      unverified_numeric_bodies: state.unverifiedNumericBodies,
       unverified_graphql_transactions: state.unverifiedGraphql,
       unexercised_graphql_operations: graphqlOperations(loaded.openapi).filter(
         (entry) => !state.exercisedGraphql.has(coverageKey(entry)),

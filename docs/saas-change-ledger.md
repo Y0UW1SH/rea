@@ -47,6 +47,11 @@ any tag has been published or that the feature branch has been merged into `main
   advertise JSON batch/scalar bodies in strict discovery, and reject numeric
   conversion loss before MCP dispatch. The HTTP parser stays within the existing
   request byte bound and session cancellation lifetime.
+- Follow-up draft review corrected strict HTTP header bypass, lossy UTF-8 decoding
+  and session eviction by rejected initialization. It also preserves omitted
+  reference requests as GraphQL uncertainty, snapshots required-coverage selectors
+  before asynchronous reads, and keeps unsupported JSON numbers unverified in
+  the shared HTTP/GraphQL decoder.
 
 ## Feature inventory
 

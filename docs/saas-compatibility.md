@@ -345,7 +345,7 @@ What the contract states, and how each statement is marked:
   `x-rea-basis: inferred` and `x-rea-presence` counts; `format` (`uuid`,
   `date-time`, `date`, checked against real calendar dates) and the
   decimal-string `pattern` need every sample, including empty strings, to agree,
-  so a contract always accepts the captures it was inferred from; enum
+  so inferred formats do not reject their own samples; enum
   candidates are observed literal values offered only as
   `x-rea-enum-candidates`, never as `enum`.
 - GraphQL POST objects and ordered batches are grouped under
@@ -357,7 +357,10 @@ What the contract states, and how each statement is marked:
   counts incomplete reference responses per status, including mixed complete and
   redacted samples; those statuses remain unknown during verification.
   `x-rea-graphql-unidentified-samples` preserves recognized envelopes whose identity
-  is absent, redacted or inconsistent. Different documents sharing a name stay separate.
+  is absent, redacted or inconsistent, plus missing, truncated, unparseable or
+  opaque redacted requests on an HTTP operation with GraphQL evidence. These gaps
+  remain unknown regardless of capture order or request success. Different
+  documents sharing a name stay separate.
   GraphQL over GET and equivalence of differently spelled documents remain unverified.
 - Every operation carries `x-rea-evidence` (the capture files and digests its
   samples came from, transaction entries whose `capture` index refers to
@@ -399,6 +402,12 @@ validates the selected request/response schemas. Unknown documents and statuses
 are findings; absent/redacted identity or response evidence stays unknown. Legacy
 name-only GraphQL extensions cannot establish operation conformance; regenerate
 those contracts to obtain document identities.
+
+Verification decodes each retained body once for both HTTP and GraphQL checks.
+Valid JSON numbers that cannot be represented without conversion loss count under
+`unverified_numeric_bodies` and keep conformance `unknown` unless other findings
+establish a failure. They are never validated as rounded values or reported as
+schema drift solely because conversion overflowed or underflowed.
 
 Three conclusions are separate: `conclusions.conformance` is the existing narrow
 `status` for captured samples; `conclusions.required_coverage` measures the explicit

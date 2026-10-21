@@ -92,6 +92,7 @@ const newOperation = (transaction, admission, path) => ({
   failures: 0,
   failureReasons: new Set(),
   graphql: new Map(),
+  graphqlObserved: false,
   unidentifiedGraphql: 0,
   samples: 0,
   captureIndices: new Set(),
@@ -160,8 +161,11 @@ function recordGraphql(
     : [response];
   for (const [index, value] of requests.entries()) {
     if (!isGraphqlRequest(value)) continue;
+    operation.graphqlObserved = true;
+    // Redaction is counted once at the request boundary, including opaque envelopes.
+    if (admission.request.body.redacted) continue;
     const identity = graphqlRequestIdentity(value, admission.path);
-    if (identity === null || admission.request.body.redacted) {
+    if (identity === null) {
       operation.unidentifiedGraphql += 1;
       continue;
     }
@@ -201,6 +205,14 @@ function recordTransaction(operation, record, manifest, coverage) {
     accumulator,
   );
   if (request.kind === "truncated") operation.requestTruncated += 1;
+  // Keep unavailable identity independently of capture order and response success.
+  // Render it as GraphQL uncertainty only when this HTTP operation has GraphQL evidence.
+  if (
+    transaction.method === "POST" &&
+    (["absent", "truncated", "unparseable"].includes(request.kind) ||
+      (request.kind === "json" && admission.request.body.redacted))
+  )
+    operation.unidentifiedGraphql += 1;
   if (transaction.status === null) {
     // A failed or unfinished request observed no response; never model it as one.
     operation.failures += 1;

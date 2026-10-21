@@ -213,7 +213,9 @@ redacted, oversized (over 256 KiB), non-JSON or numerically inexact request bodi
 cannot establish a match. Browser-scenario request bytes are retained within the
 same bound. Strict MCP input accepts objects, arrays and JSON scalars; it refuses
 raw numbers that native parsing would round or underflow before selecting a
-response. A missing or cut response, or several different recorded responses
+response. Strict HTTP admission also refuses malformed UTF-8 and unacceptable
+`Accept` media ranges before dispatch. An initialization request rejected by this
+admission cannot replace the active session. A missing or cut response, or several different recorded responses
 for the same represented request, yields an `invalid_request` error containing
 `Unmodeled request`, with no fallback response. Results identify
 `mode: strict` and `match_scope: path-query-json-body`.

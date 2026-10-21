@@ -157,7 +157,7 @@ function renderOperation(operation, manifest, inputs) {
     "x-rea-response-header-names": sortCodePoints(
       operation.responseHeaderNames,
     ),
-    ...(operation.graphql.size > 0 || operation.unidentifiedGraphql > 0
+    ...(operation.graphqlObserved
       ? {
           "x-rea-graphql-operations": renderGraphql(operation, options),
           "x-rea-graphql-unidentified-samples": operation.unidentifiedGraphql,

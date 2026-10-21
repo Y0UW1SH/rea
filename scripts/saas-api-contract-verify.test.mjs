@@ -96,6 +96,127 @@ test("unidentified GraphQL reference envelopes preserve uncertainty", async (t) 
   }
 });
 
+for (const omission of [
+  "not-requested",
+  "truncated",
+  "unparseable",
+  "redacted-envelope",
+  "failed-request",
+]) {
+  test(`missing GraphQL reference identity stays unknown: ${omission}`, async (t) => {
+    const dir = await stage(t);
+    const reference = buildContractFixture("reference-b");
+    const event = reference.events.items.find(
+      (e) =>
+        e.transaction_id === "t8" &&
+        e.kind === "network-content" &&
+        e.phase === "request",
+    );
+    if (omission === "truncated")
+      event.body = { state: "unavailable", reason: "body-size-limit" };
+    else if (omission === "unparseable") setRequestBody(reference, "t8", "{");
+    else if (omission === "redacted-envelope") {
+      setRequestBody(reference, "t8", '"[REDACTED]"');
+      event.body.redacted = true;
+    } else event.body = { state: "not_requested" };
+    if (omission === "failed-request")
+      failTransaction(reference, "t8", "net::ERR_FAILED");
+    await persist(dir, "missing-reference", reference);
+    const replacement = buildContractFixture("reference-a");
+    setRequestBody(
+      replacement,
+      "t8",
+      JSON.stringify({
+        operationName: "ListCustomers",
+        query:
+          "query ListCustomers($first: Int) { otherCustomers(first: $first) { id name } }",
+        variables: { first: 10 },
+      }),
+    );
+    await persist(dir, "other-document", replacement);
+    // Missing evidence must survive either capture ordering, without classifying REST as GraphQL.
+    for (const files of [
+      ["reference-a.json", "missing-reference.json"],
+      ["missing-reference.json", "reference-a.json"],
+    ]) {
+      const inferred = await inferContract(
+        { ...manifest(), captures: files.map((file) => ({ file })) },
+        dir,
+      );
+      assert.equal(inferred.status, "produced", inferred.report.reason);
+      const out = join(dir, `missing-contract-${files[0]}`);
+      await writeContract(out, inferred);
+      const report = await verifyContract(out, dir, "other-document.json");
+      assert.equal(
+        report.status,
+        "unknown",
+        JSON.stringify(report.findings ?? report.reason),
+      );
+      assert.equal(report.unverified_graphql_transactions, 1);
+      assert.equal(
+        inferred.openapi.paths["/graphql"].post[
+          "x-rea-graphql-unidentified-samples"
+        ],
+        1,
+      );
+      assert.equal(
+        Object.hasOwn(
+          inferred.openapi.paths["/api/invoices"].post,
+          "x-rea-graphql-operations",
+        ),
+        false,
+      );
+    }
+  });
+}
+
+test("verification does not turn unsupported JSON numbers into schema drift", async (t) => {
+  const dir = await stage(t);
+  for (const number of ["1e999", "1e-999", "1.0000000000000001"]) {
+    const reference = buildContractFixture("reference-a");
+    setResponseBody(reference, "t8", `{"data":{"value":${number}}}`);
+    await persist(dir, "numeric-reference", reference);
+    const inferred = await inferContract(
+      { ...manifest(), captures: [{ file: "numeric-reference.json" }] },
+      dir,
+    );
+    assert.equal(inferred.status, "produced", inferred.report.reason);
+    const out = join(dir, `numeric-contract-${number}`);
+    await writeContract(out, inferred);
+    const report = await verifyContract(out, dir, "numeric-reference.json");
+    assert.equal(
+      report.status,
+      "unknown",
+      `${number}: ${JSON.stringify(report.findings ?? report.reason)}`,
+    );
+    assert.deepEqual(report.findings, []);
+    assert.ok(report.unverified_bodies > 0);
+    assert.equal(report.unverified_graphql_transactions, 1);
+  }
+});
+
+test("unsupported numbers keep REST conformance unknown despite other verified responses", async (t) => {
+  const { dir, out } = await contractFor(t);
+  const replacement = buildContractFixture("replacement");
+  setResponseBody(replacement, "t2", '{"id":1,"name":false}');
+  await persist(dir, "rest-drift", replacement);
+  const drift = await verifyContract(out, dir, "rest-drift.json", {
+    originPairs: pairs,
+  });
+  assert.equal(drift.status, "fail");
+  assert.ok(
+    drift.findings.some((finding) => finding.instance_path === "/name"),
+  );
+  setResponseBody(replacement, "t2", '{"id":1e999,"name":false}');
+  await persist(dir, "inexact-rest", replacement);
+  const inexact = await verifyContract(out, dir, "inexact-rest.json", {
+    originPairs: pairs,
+  });
+  assert.equal(inexact.status, "unknown");
+  assert.equal(inexact.unverified_numeric_bodies, 1);
+  assert.ok(inexact.verified_response_bodies > 0);
+});
+
 test("redacted GraphQL reference responses cannot establish complete conformance", async (t) => {
   const dir = await stage(t);
   const capture = buildContractFixture("reference-a");
@@ -152,6 +273,40 @@ test("required coverage is independent of sparse-capture conformance and busines
     requiredOperations: [{ method: "GET", path: "/not-in-contract" }],
   });
   assert.equal(invalid.status, "invalid");
+});
+
+test("required coverage owns selectors before asynchronous reads and after returning", async (t) => {
+  const { dir, out } = await contractFor(t);
+  const sparse = buildContractFixture("replacement");
+  sparse.events.items = sparse.events.items.filter(
+    (event) => event.transaction_id === "t1",
+  );
+  sparse.events.retained = sparse.events.items.length;
+  await persist(dir, "mutable-policy", sparse);
+  const requiredOperations = [{ method: "POST", path: "/graphql" }];
+  const pending = verifyContract(out, dir, "mutable-policy.json", {
+    originPairs: pairs,
+    requiredOperations,
+  });
+  Object.assign(requiredOperations[0], {
+    method: "GET",
+    path: "/api/invoices",
+  });
+  const report = await pending;
+  assert.equal(report.conclusions.required_coverage.status, "incomplete");
+  assert.deepEqual(report.conclusions.required_coverage.required, [
+    { method: "POST", path: "/graphql" },
+  ]);
+  const settled = await verifyContract(out, dir, "mutable-policy.json", {
+    originPairs: pairs,
+    requiredOperations,
+  });
+  Object.assign(requiredOperations[0], { method: "POST", path: "/graphql" });
+  assert.deepEqual(settled.conclusions.required_coverage, {
+    status: "complete",
+    required: [{ method: "GET", path: "/api/invoices" }],
+    missing: [],
+  });
 });
 
 test("GraphQL verification distinguishes same-name documents and validates each response schema", async (t) => {

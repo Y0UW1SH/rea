@@ -34,7 +34,7 @@ import {
 } from "./NodeHttpRequestOwner.js";
 import { RequestTrackingMcpServer } from "../RequestTrackingMcpServer.js";
 import { AnalysisResourceConstraintError } from "../../domain/analysisErrorCore.js";
-import { parseExactJson } from "../../domain/exactJsonNumber.js";
+import { readStrictJsonBody } from "./readStrictJsonBody.js";
 
 /** MCP endpoint path shared by `rea mcp --http` and agent environment servers. */
 export const MCP_HTTP_PATH = "/mcp";
@@ -202,7 +202,10 @@ const hasStreamablePostHeaders = (request: Request): boolean => {
 };
 
 /** Only a new client's initialize travels without a session id; peek within the SDK body bound. */
-const isInitializePost = async (request: Request): Promise<boolean> => {
+const isInitializePost = async (
+  request: Request,
+  strict: boolean,
+): Promise<boolean> => {
   if (
     request.method !== "POST" ||
     request.headers.has("mcp-session-id") ||
@@ -211,9 +214,16 @@ const isInitializePost = async (request: Request): Promise<boolean> => {
     return false;
   const probe = request.clone();
   try {
-    const read = await readRequestBody(probe);
-    if (read.tooLarge) return false;
-    const body: unknown = JSON.parse(read.text);
+    let body: unknown;
+    if (strict) {
+      const read = await readStrictJsonBody(probe);
+      if (read.kind !== "json") return false;
+      body = read.value;
+    } else {
+      const read = await readRequestBody(probe);
+      if (read.tooLarge) return false;
+      body = JSON.parse(read.text);
+    }
     // The transport accepts only a lone initialize, so only that may evict a session.
     return Array.isArray(body)
       ? body.length === 1 && isInitializeRequest(body[0])
@@ -290,36 +300,31 @@ class LiveSession {
 
   /** Parse within this session's abortable dispatch and the SDK's byte bound. */
   async #handleRequest(request: Request): Promise<Response> {
-    if (
-      !this.requireExactJsonNumbers ||
-      request.method !== "POST" ||
-      !hasStreamablePostHeaders(request)
-    )
+    if (!this.requireExactJsonNumbers || request.method !== "POST")
       return this.transport.handleRequest(request);
-    let read;
-    try {
-      read = await readRequestBody(request, DEFAULT_MAX_REQUEST_BODY_SIZE);
-    } catch {
+    if (!isJsonContentType(request.headers.get("content-type")))
+      return this.transport.handleRequest(request);
+    // A header refusal must never become a route around strict body admission.
+    if (!hasStreamablePostHeaders(request))
       return jsonRpcErrorResponse(
-        400,
-        -32700,
-        "Could not read JSON request body",
+        406,
+        -32000,
+        "Not Acceptable: Client must accept application/json and text/event-stream",
       );
-    }
-    if (read.tooLarge)
+    const read = await readStrictJsonBody(request);
+    if (read.kind === "too-large")
       return jsonRpcErrorResponse(
         413,
         -32000,
         `Request body must not exceed ${String(DEFAULT_MAX_REQUEST_BODY_SIZE)} bytes`,
       );
-    const parsedBody = parseExactJson(read.text);
-    if (parsedBody === undefined)
+    if (read.kind === "invalid")
       return jsonRpcErrorResponse(
         400,
         -32600,
-        "Strict replay requires valid JSON with exact numeric fidelity",
+        "Strict replay requires valid UTF-8 JSON with exact numeric fidelity",
       );
-    return this.transport.handleRequest(request, { parsedBody });
+    return this.transport.handleRequest(request, { parsedBody: read.value });
   }
 
   shutdown(): Promise<void> {
@@ -381,7 +386,7 @@ export class McpSessionSlot {
     const open = this.#live;
     if (
       open?.transport.sessionId !== undefined &&
-      (await isInitializePost(request)) &&
+      (await isInitializePost(request, this.requireExactJsonNumbers)) &&
       // A client that left while its initialize was probed would evict the session for nobody.
       !request.signal.aborted
     ) {
