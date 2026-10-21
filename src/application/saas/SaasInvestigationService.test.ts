@@ -194,16 +194,18 @@ describe.skipIf(process.platform === "win32")(
       const provider = new StatefulProvider();
       expect((await runSaasInvestigation(provider, input)).ok).toBe(false);
       expect(provider.captures).toBe(0);
+      // A valid request, so only the caller's cancellation can refuse it.
+      const runnable = await request();
       const cancelled = new AbortController();
       cancelled.abort();
-      expect(
-        (
-          await runSaasInvestigation(provider, input, {
-            signal: cancelled.signal,
-          })
-        ).ok,
-      ).toBe(false);
+      const refused = await runSaasInvestigation(provider, runnable, {
+        signal: cancelled.signal,
+      });
+      expect(!refused.ok && refused.error._tag).toBe("AnalysisCancelledError");
       expect(provider.captures).toBe(0);
+      await expect(readFile(runnable.journal_path)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     });
   },
 );

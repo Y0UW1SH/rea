@@ -201,10 +201,7 @@ class InvestigationRun {
       );
     }
     while (survivors.length > 1) {
-      if (this.signal.aborted) {
-        this.#reason = "Investigation cancelled or invocation deadline reached";
-        return this.#report("paused", survivors);
-      }
+      if (this.#cancelled()) return this.#report("paused", survivors);
       const experiment = selectSaasExperiment(
         this.journal.plan,
         survivors,
@@ -241,21 +238,8 @@ class InvestigationRun {
         this.#reason = observed.reason;
         return this.#report("paused", survivors);
       }
-      const attempt: SaasAttempt = {
-        experiment_id: experiment.id,
-        before_evidence_id: before.evidence_id,
-        action_evidence_id: null,
-        after_evidence_id: null,
-        recovered: false,
-      };
-      this.journal.attempts.push(attempt);
-      // Intent reaches disk before any action can reach the target.
-      await this.journal.save();
-      const action = await this.#capture(experiment.action);
-      if (action === undefined) return this.#report("paused", survivors);
-      attempt.action_evidence_id = action.evidence_id;
-      await this.journal.save();
-      if (!(await this.#readback(experiment, attempt)))
+      const attempt = await this.#act(experiment, before.evidence_id);
+      if (attempt === undefined || !(await this.#readback(experiment, attempt)))
         return this.#report("paused", survivors);
       survivors = survivingSaasHypotheses(
         experiment,
@@ -273,6 +257,44 @@ class InvestigationRun {
     );
   }
 
+  /** Reserve before intent: a pending attempt means the action may have run. */
+  async #act(experiment: SaasExperiment, before: string) {
+    if (!(await this.#reserve(experiment.action))) return undefined;
+    const attempt: SaasAttempt = {
+      experiment_id: experiment.id,
+      before_evidence_id: before,
+      action_evidence_id: null,
+      after_evidence_id: null,
+      recovered: false,
+    };
+    this.journal.attempts.push(attempt);
+    // Intent reaches disk before any action can reach the target.
+    try {
+      await this.journal.save();
+    } catch (cause) {
+      // Nothing was dispatched. A failed withdrawal stays pending (no rerun).
+      this.journal.attempts.pop();
+      await this.journal.save().catch((withdrawal: unknown) => {
+        throw composeCleanup(
+          journalFailure(cause, this.journal.path),
+          journalFailure(withdrawal, this.journal.path),
+        );
+      });
+      throw cause;
+    }
+    // Checked synchronously before dispatch; a pass may reach the target.
+    if (this.#cancelled()) {
+      this.journal.attempts.pop();
+      await this.journal.save();
+      return undefined;
+    }
+    const action = await this.#dispatch(experiment.action);
+    if (action === undefined) return undefined;
+    attempt.action_evidence_id = action.evidence_id;
+    await this.journal.save();
+    return attempt;
+  }
+
   #experiment(attempt: SaasAttempt): SaasExperiment {
     return this.journal.plan.experiments.find(
       ({ id }) => id === attempt.experiment_id,
@@ -280,25 +302,33 @@ class InvestigationRun {
   }
 
   async #capture(scenario: BrowserScenario): Promise<Evidence | undefined> {
-    if (this.signal.aborted) {
+    return (await this.#reserve(scenario))
+      ? this.#dispatch(scenario)
+      : undefined;
+  }
+
+  #cancelled(): boolean {
+    if (this.signal.aborted)
       this.#reason = "Investigation cancelled or invocation deadline reached";
-      return undefined;
-    }
-    const cost = scenario.actions.length + 1;
-    if (
-      this.journal.actionsReserved + cost >
-      this.journal.plan.limits.max_actions
-    ) {
+    return this.signal.aborted;
+  }
+
+  /** Durably reserve a scenario's cost; false means nothing was dispatched. */
+  async #reserve(scenario: BrowserScenario): Promise<boolean> {
+    if (this.#cancelled()) return false;
+    const reserved = this.journal.actionsReserved + scenario.actions.length + 1;
+    if (reserved > this.journal.plan.limits.max_actions) {
       this.#reason =
         "Cumulative action budget reached; pending actions will not be repeated";
-      return undefined;
+      return false;
     }
-    this.journal.actionsReserved += cost;
+    this.journal.actionsReserved = reserved;
     await this.journal.save();
-    if (this.signal.aborted) {
-      this.#reason = "Investigation cancelled or invocation deadline reached";
-      return undefined;
-    }
+    return !this.#cancelled();
+  }
+
+  /** Starts capture without yielding; #act checks cancellation right before. */
+  async #dispatch(scenario: BrowserScenario): Promise<Evidence | undefined> {
     const result = await captureBrowserScenario(this.provider, scenario, {
       signal: this.signal,
     });

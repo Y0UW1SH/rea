@@ -9,7 +9,11 @@ const fault = vi.hoisted(() => ({
   journal: "",
   unlinkFailures: 0,
   unlinkCalls: 0,
-  failSync: "" as "" | "initial" | "intent",
+  failSync: "" as "" | "initial" | "intent" | "withdrawal",
+  // Abort once the before-probe Evidence or the action intent is published.
+  abortAt: "" as "" | "probe" | "intent",
+  abort: new AbortController(),
+  withdrawing: false,
   directorySyncs: 0,
   lock: undefined as FileHandle | undefined,
 }));
@@ -38,9 +42,19 @@ vi.mock("node:fs/promises", async (importOriginal) => {
             .readFile(fault.journal, "utf8")
             .catch(() => "null");
           const state = JSON.parse(saved);
+          const intent = state?.attempts.length > 0;
+          if (
+            (fault.abortAt === "probe" &&
+              !intent &&
+              state?.evidence.records.length === 1) ||
+            (fault.abortAt === "intent" && intent)
+          )
+            fault.abort.abort();
+          fault.withdrawing ||= intent;
           if (
             fault.failSync === "initial" ||
-            (fault.failSync === "intent" && state?.attempts.length > 0)
+            (fault.failSync === "intent" && intent) ||
+            (fault.failSync === "withdrawal" && (intent || fault.withdrawing))
           )
             throw Object.assign(
               new Error("Controlled directory sync failure"),
@@ -69,6 +83,9 @@ import { ok } from "../../src/domain/result.js";
 afterEach(async () => {
   fault.unlinkFailures = 0;
   fault.failSync = "";
+  fault.abortAt = "";
+  fault.withdrawing = false;
+  fault.abort = new AbortController();
   if (fault.lock !== undefined && fault.lock.fd >= 0) await fault.lock.close();
   fault.lock = undefined;
 });
@@ -78,15 +95,21 @@ const fixture = async (actor = "different-actor") => {
   fault.journal = join(root, "journal.json");
   fault.unlinkCalls = 0;
   fault.directorySyncs = 0;
-  let writes = 0;
+  const writes: string[] = [];
+  const records = new Map<string, { record: string; value: number }>();
   const captureScenario = vi.fn(async (scenario: BrowserScenario) => {
-    if (new URL(scenario.start_url.url).pathname.startsWith("/act/"))
-      writes += 1;
+    const path = new URL(scenario.start_url.url).pathname;
+    const id = path.split("/")[2]!;
+    if (path.startsWith("/act/")) {
+      writes.push(id);
+      records.set(id, { record: `run-1-${id}`, value: id === "first" ? 1 : 0 });
+    }
     return ok(
       investigationCapture(scenario, {
         actor,
         workspace: "test-workspace",
         record: null,
+        ...records.get(id),
       }),
     );
   }) satisfies BrowserScenarioCapturePort["captureScenario"];
@@ -96,7 +119,8 @@ const fixture = async (actor = "different-actor") => {
       identity: () => ({ id: "fixture", name: "fixture", version: "1" }),
       captureScenario,
     },
-    writes: () => writes,
+    writes: () => writes.length,
+    writtenIds: () => writes,
   };
 };
 
@@ -179,22 +203,60 @@ test.each(["capacity", "plan"])(
   },
 );
 
-test.each(["initial", "intent"] as const)(
-  "directory synchronization failure at %s prevents uncheckpointed execution",
-  async (stage) => {
-    const { input, provider, writes } = await fixture("operator");
-    fault.failSync = stage;
-    const result = await runSaasInvestigation(provider, input);
-    expect(result.ok).toBe(false);
+test("directory synchronization failure at initialization prevents execution", async () => {
+  const { input, provider, writes } = await fixture("operator");
+  fault.failSync = "initial";
+  expect((await runSaasInvestigation(provider, input)).ok).toBe(false);
+  expect(writes()).toBe(0);
+  expect(provider.captureScenario).not.toHaveBeenCalled();
+  expect(fault.directorySyncs).toBeGreaterThan(0);
+});
+
+// A persisted pending attempt must mean the action may have reached the target;
+// otherwise resume can only read back a write that never happened.
+test.each([
+  ["intent synchronization failure", "fail"],
+  ["cancellation before the action reservation", "probe"],
+  ["cancellation while the intent is saved", "intent"],
+] as const)(
+  "%s withdraws the undispatched action and resume runs it once",
+  async (_, stage) => {
+    const { input, provider, writes, writtenIds } = await fixture("operator");
+    if (stage === "fail") fault.failSync = "intent";
+    else fault.abortAt = stage;
+    const result = await runSaasInvestigation(provider, input, {
+      signal: fault.abort.signal,
+    });
+    if (stage === "fail") expect(result.ok).toBe(false);
+    else
+      expect(result.ok && result.value.normalized_result).toMatchObject({
+        status: "paused",
+        attempts: [],
+      });
     expect(writes()).toBe(0);
-    if (stage === "initial")
-      expect(provider.captureScenario).not.toHaveBeenCalled();
-    else {
-      expect(provider.captureScenario).toHaveBeenCalledTimes(1);
-      const saved = JSON.parse(await readFile(fault.journal, "utf8"));
-      expect(saved.attempts).toHaveLength(1);
-      expect(saved.attempts[0].action_evidence_id).toBeNull();
-    }
     expect(fault.directorySyncs).toBeGreaterThan(0);
+    const saved = JSON.parse(await readFile(fault.journal, "utf8"));
+    expect(saved.attempts).toEqual([]);
+    fault.failSync = "";
+    fault.abortAt = "";
+    const resumed = await runSaasInvestigation(provider, input);
+    expect(resumed.ok && resumed.value.normalized_result).toMatchObject({
+      status: "distinguished",
+      surviving_hypotheses: ["a"],
+    });
+    expect(writtenIds()).toEqual(["first", "second"]);
   },
 );
+
+test("a failed withdrawal reports both failures without dispatching", async () => {
+  const { input, provider, writes } = await fixture("operator");
+  fault.failSync = "withdrawal";
+  const result = await runSaasInvestigation(provider, input);
+  if (result.ok) throw new Error("Expected intent and withdrawal failures");
+  expect(result.error.cleanupPrimary).toBeDefined();
+  expect(result.error.diagnostics).toMatchObject({
+    primary_error: { code: expect.any(String) },
+    cleanup_error: { code: expect.any(String) },
+  });
+  expect(writes()).toBe(0);
+});

@@ -108,11 +108,15 @@ promoted to business compatibility by this loop.
 
 ## Interruption and limits
 
-The controller saves an action intent before execution. If execution or its reply
-is interrupted, resuming performs only the after probe. It never repeats that
-action automatically. If readback cannot establish completion, the attempt stays
-pending, even if the initial state seems unchanged: a delayed write might still
-complete. Investigate that pending operation before starting a new journal.
+The controller commits the action's budget reservation and then its intent before
+execution, so a pending attempt always means the action may have reached the
+target. If cancellation or a journal failure stops the run before dispatch, the
+intent is withdrawn and resuming runs that experiment again from its initial-state
+probe. If execution or its reply is interrupted, resuming performs only the after
+probe. It never repeats that action automatically. If readback cannot establish
+completion, the attempt stays pending, even if the initial state seems unchanged:
+a delayed write might still complete. Investigate that pending operation before
+starting a new journal.
 
 Journal updates synchronize file contents, publish atomically, and synchronize
 the parent directory before admitting the next action. A synchronization failure
@@ -133,7 +137,9 @@ after cost before it begins. Recovery probes also consume the remaining budget.
 not reset on resume. `max_run_ms` restarts for each invocation, uses cancellation
 at the browser boundary, and does not impose a hard deadline on final cleanup.
 `max_journal_bytes` bounds the serialized checkpoint; browser capture limits still
-govern individual capture retention. Disk failures can leave an action pending.
+govern individual capture retention. A disk failure that also prevents withdrawing
+an undispatched intent can leave it pending; resume then reads back rather than
+repeating the action.
 
 The origin list constrains **explicit navigation and storage**, not every
 background request, redirect or WebSocket made by an authorized page. Page code
