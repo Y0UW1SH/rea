@@ -211,7 +211,10 @@ query keys cannot be represented by these tools and are refused. An omitted body
 only matches a recorded empty body, never an unknown body or `{}`. Missing,
 redacted, oversized (over 256 KiB), non-JSON or numerically inexact request bodies
 cannot establish a match. Browser-scenario request bytes are retained within the
-same bound. Strict MCP input accepts objects, arrays and JSON scalars; it refuses
+same bound. A browser-scenario request without retained bytes counts as empty only
+when it could not carry a body: a `GET` or `HEAD`, or a request whose one retained
+`content-length` header value is `0`. Otherwise bytes Playwright did not expose stay
+unknown, so strict mode refuses, for example, a recorded `DELETE`. Strict MCP input accepts objects, arrays and JSON scalars; it refuses
 raw numbers that native parsing would round or underflow before selecting a
 response. Strict HTTP admission also refuses malformed UTF-8 and unacceptable
 `Accept` media ranges before dispatch. An initialization request rejected by this

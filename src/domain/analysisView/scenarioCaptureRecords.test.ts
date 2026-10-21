@@ -5,12 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   SCENARIO_EXCHANGES,
   scenarioCaptureFixture,
+  type ScenarioExchange,
 } from "../../../tests/fixtures/browserScenarioCapture.js";
 import {
   admitScenarioCaptureParent,
   scenarioCaptureRecords,
 } from "./scenarioCaptureRecords.js";
 import { EnvironmentManifestAccumulator } from "./EnvironmentManifestAccumulator.js";
+import { readRecordedRequestBody } from "./recordedRequestBody.js";
 
 describe("scenarioCaptureRecords", () => {
   it("projects each transaction, in request order, as a HAR-shaped record with its retained bytes", () => {
@@ -236,4 +238,59 @@ it("retains request text for replay within the request identity bound", () => {
   } finally {
     decoder.mockRestore();
   }
+});
+
+it("reads a request no browser could send a body with as empty, and an unexposed body as unknown", () => {
+  const exchange = (
+    method: string,
+    extra: Partial<ScenarioExchange> = {},
+  ): ScenarioExchange => ({
+    method,
+    url: "/api/users/2",
+    status: 200,
+    mediaType: "application/json",
+    body: "{}",
+    requestBodyNotExposed: true,
+    ...extra,
+  });
+  const capture = scenarioCaptureFixture(
+    [
+      // Playwright exposes no bytes for a GET or HEAD; the Fetch standard forbids them a body.
+      exchange("GET"),
+      exchange("HEAD"),
+      exchange("GET", { requestBodyNotExposed: false }),
+      // Unexposed bytes on a method that may carry a body establish nothing, even without
+      // a content-length among the retained header values.
+      exchange("DELETE"),
+      exchange("DELETE", {
+        requestHeaders: [{ name: "accept", value: "*/*" }],
+      }),
+      exchange("POST", {
+        requestHeaders: [{ name: "Content-Length", value: "0" }],
+      }),
+      exchange("POST", {
+        requestHeaders: [{ name: "content-length", value: "12" }],
+      }),
+      exchange("PUT", {
+        requestHeaders: [
+          { name: "content-length", value: "0" },
+          { name: "content-length", value: "0" },
+        ],
+      }),
+    ],
+    { request_body: true, response_body: true, header_values: true },
+  );
+  const states = scenarioCaptureRecords(capture, "replay").records.map(
+    (record) => readRecordedRequestBody(record).state,
+  );
+  expect(states).toEqual([
+    "empty",
+    "empty",
+    "empty",
+    "unknown",
+    "unknown",
+    "empty",
+    "unknown",
+    "unknown",
+  ]);
 });

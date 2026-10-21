@@ -121,6 +121,29 @@ const mediaType = (content: ContentEvent | undefined): string | undefined =>
   captured(content)?.media_type ??
   headerValue(content?.headers, "content-type");
 
+/**
+ * Playwright returns no request bytes both for a request without a body and for one whose body it
+ * did not expose, so `not_exposed` alone proves nothing. A browser request carried none only when the
+ * Fetch standard forbids its method one (GET and HEAD, which every browser normalizes to upper case)
+ * or the one retained, unredacted content-length header says 0. A missing content-length is not
+ * evidence: retained headers may be the browser's provisional ones, which omit it even for a body.
+ */
+const bodyless = (
+  request: RequestEvent,
+  content: ContentEvent | undefined,
+): boolean => {
+  if (request.method === "GET" || request.method === "HEAD") return true;
+  if (content?.headers.state !== "captured") return false;
+  const lengths = content.headers.items.filter(
+    ({ name }) => name.toLowerCase() === "content-length",
+  );
+  return (
+    lengths.length === 1 &&
+    lengths[0]?.redacted === false &&
+    lengths[0].value?.trim() === "0"
+  );
+};
+
 /** The request object HAR readers expect; a redacted URL is withheld so no path is templated from it. */
 const reportedRequest = (
   request: RequestEvent,
@@ -140,7 +163,14 @@ const reportedRequest = (
   return {
     method: request.method,
     url: request.url.redacted ? null : request.url.url,
-    ...(purpose === "replay" ? { bodySize: body?.bytes ?? -1 } : {}),
+    // Withheld retained bytes stay unknown (-1); only a body never captured may be known absent.
+    ...(purpose === "replay"
+      ? {
+          bodySize:
+            body?.bytes ??
+            (retained === undefined && bodyless(request, content) ? 0 : -1),
+        }
+      : {}),
     ...(text === undefined || mimeType === undefined
       ? {}
       : { postData: { mimeType, text } }),

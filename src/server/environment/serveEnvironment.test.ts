@@ -7,6 +7,12 @@ import { once } from "node:events";
 import { connect } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  SCENARIO_EXCHANGES,
+  scenarioCaptureEvidence,
+  scenarioCaptureFixture,
+  scenarioServeFixture,
+} from "../../../tests/fixtures/browserScenarioCapture.js";
 import { environmentServeSource } from "../../../tests/fixtures/environmentServe.js";
 import {
   analysisViewCaptureEvidence,
@@ -205,6 +211,45 @@ describe("replay value fidelity over MCP", () => {
       expect(JSON.stringify(result.content)).toMatch(/unmodeled request/iu);
       const { tools } = await client.listTools();
       expect(tools[0]?.description).toContain("strict");
+    } finally {
+      await client.close();
+    }
+  });
+  it("replays a recorded body-less scenario GET in strict mode with its recorded arguments", async () => {
+    // As Playwright records them: a request without exposed bytes has a not_exposed body.
+    const capture = scenarioCaptureFixture(
+      SCENARIO_EXCHANGES.map((exchange) =>
+        exchange.requestBody === undefined
+          ? { ...exchange, requestBodyNotExposed: true }
+          : exchange,
+      ),
+    );
+    const entry = await serveEnvironment({
+      source: environmentServeSource(
+        scenarioServeFixture(scenarioCaptureEvidence(capture)),
+      ),
+      host: "127.0.0.1",
+      port: 0,
+      replayMode: "strict",
+    });
+    served.push(entry);
+    const client = new Client({ name: "strict-scenario-replay", version: "1" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(entry.url)));
+    try {
+      const replayed = await client.callTool({
+        name: "get_users_by_id",
+        arguments: { id: "3" },
+      });
+      expect(replayed.isError).not.toBe(true);
+      expect(JSON.stringify(replayed.content)).toContain(
+        JSON.stringify('{"id":3,"login":"viewer"}').slice(1, -1),
+      );
+      const refused = await client.callTool({
+        name: "get_users_by_id",
+        arguments: { id: "999" },
+      });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused.content)).toMatch(/unmodeled request/iu);
     } finally {
       await client.close();
     }

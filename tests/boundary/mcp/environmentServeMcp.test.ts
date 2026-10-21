@@ -6,8 +6,15 @@ import { describe, expect } from "vitest";
 
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 import {
+  SCENARIO_EXCHANGES,
+  scenarioCaptureEvidence,
+  scenarioCaptureFixture,
+  scenarioServeFixture,
+} from "../../fixtures/browserScenarioCapture.js";
+import {
   environmentServeSource,
   writeEnvironmentServeFiles,
+  type EnvironmentServeFixture,
 } from "../../fixtures/environmentServe.js";
 import { startListeningProcess } from "../../support/mcp/streamableHttpProcess.js";
 import {
@@ -23,9 +30,10 @@ const serveFixture = async (
   processes: TestProcesses,
   environment: Readonly<Record<string, string>> = {},
   flags: readonly string[] = [],
+  fixture?: EnvironmentServeFixture,
 ) => {
   const root = await createTestTempDirectory("rea-environment-serve-mcp-");
-  const files = await writeEnvironmentServeFiles(root);
+  const files = await writeEnvironmentServeFiles(root, fixture);
   const started = await startListeningProcess(
     processes,
     [
@@ -162,6 +170,50 @@ describe("rea environment-serve", () => {
         error: { code: -32601, message: "method not found: data/reset" },
       });
       expect(started.stderr()).toContain('"transport":"streamable-http"');
+    },
+    HTTP_BOUNDARY_TIMEOUT_MS,
+  );
+});
+
+describe("rea environment-serve strict scenario replay", () => {
+  processTest(
+    "replays a recorded body-less scenario GET in strict mode through the CLI",
+    async ({ processes }) => {
+      // As Playwright records them: a request without exposed bytes has a not_exposed body.
+      const capture = scenarioCaptureFixture(
+        SCENARIO_EXCHANGES.map((exchange) =>
+          exchange.requestBody === undefined
+            ? { ...exchange, requestBodyNotExposed: true }
+            : exchange,
+        ),
+      );
+      const started = await serveFixture(
+        processes,
+        {},
+        ["--replay-mode", "strict"],
+        scenarioServeFixture(scenarioCaptureEvidence(capture)),
+      );
+      const client = await connect(started.url);
+      try {
+        const replayed = await client.callTool({
+          name: "get_users_by_id",
+          arguments: { id: "3" },
+        });
+        expect(replayed.isError).toBeFalsy();
+        expect(replayed.structuredContent).toMatchObject({
+          status: 200,
+          body: { id: 3, login: "viewer" },
+          replay: { exact_match: true, recorded_path: "/api/users/3" },
+        });
+        const refused = await client.callTool({
+          name: "get_users_by_id",
+          arguments: { id: "999" },
+        });
+        expect(refused.isError).toBe(true);
+        expect(JSON.stringify(refused.content)).toMatch(/unmodeled request/iu);
+      } finally {
+        await client.close();
+      }
     },
     HTTP_BOUNDARY_TIMEOUT_MS,
   );

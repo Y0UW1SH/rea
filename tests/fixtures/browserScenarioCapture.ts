@@ -26,6 +26,10 @@ export interface ScenarioExchange {
   readonly body?: string | Buffer;
   readonly requestMediaType?: string;
   readonly requestBody?: string;
+  /** Without `requestBody`, emit the `not_exposed` request body Playwright yields when it returns no bytes. */
+  readonly requestBodyNotExposed?: boolean;
+  /** Request header values retained with the request content event. */
+  readonly requestHeaders?: readonly { name: string; value: string }[];
 }
 
 export const SCENARIO_ORIGIN = "http://127.0.0.1:3101";
@@ -130,7 +134,7 @@ const exchangeEvents = (
     sequence: number,
     source: number,
     phase: "request" | "response",
-    body: ReturnType<typeof capturedBody>,
+    body: ReturnType<typeof capturedBody> | { state: "not_exposed" },
   ) => ({
     sequence,
     step_index: 1,
@@ -138,7 +142,16 @@ const exchangeEvents = (
     transaction_id: transaction,
     source_event_sequence: source,
     phase,
-    headers: { state: "not_requested" as const },
+    headers:
+      phase === "request" && exchange.requestHeaders !== undefined
+        ? {
+            state: "captured" as const,
+            items: exchange.requestHeaders.map((header) => ({
+              ...header,
+              redacted: false,
+            })),
+          }
+        : { state: "not_requested" as const },
     body,
   });
   const events: unknown[] = [
@@ -164,6 +177,9 @@ const exchangeEvents = (
         ),
       ),
     );
+    next += 1;
+  } else if (exchange.requestBodyNotExposed === true) {
+    events.push(content(next, first, "request", { state: "not_exposed" }));
     next += 1;
   }
   if (exchange.status === undefined) {
