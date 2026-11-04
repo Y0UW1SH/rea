@@ -24,8 +24,7 @@ export const LIMIT_CEILINGS = {
   maxSchemaNodes: 1_000_000,
   maxEvidencePerOperation: 10_000,
 };
-export const serializeContract = (value) =>
-  `${JSON.stringify(value, null, 2)}\n`;
+export { serializeReport as serializeContract } from "./saas-report-json.mjs";
 
 function object(value, keys, at) {
   if (

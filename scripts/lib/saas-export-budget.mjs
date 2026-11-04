@@ -37,7 +37,7 @@ function admitJson(value, maximum, label, pretty = false) {
     if (typeof item === "string") return reserve(stringBytes(item));
     if (item === null) return reserve(4);
     if (typeof item === "number" || typeof item === "boolean")
-      return reserve(String(item).length);
+      return reserve(Object.is(item, -0) ? 2 : String(item).length);
     const array = Array.isArray(item);
     const keys = array ? null : Object.keys(item);
     const length = array ? item.length : keys.length;
@@ -54,7 +54,7 @@ function admitJson(value, maximum, label, pretty = false) {
 }
 
 export function admitReport(report) {
-  // Match the CLI's JSON.stringify(report, null, 2) plus its final newline.
+  // Match serializeReport's signed-zero tokens, indentation and final newline.
   admitJson(report, MAX_REPORT_BYTES, "report", true);
   return report;
 }

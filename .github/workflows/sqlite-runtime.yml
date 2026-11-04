@@ -11,6 +11,7 @@ env:
 
 jobs:
   sqlite:
+    if: github.repository != 'Y0UW1SH/rea'
     name: SQLite runtime compatibility (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15

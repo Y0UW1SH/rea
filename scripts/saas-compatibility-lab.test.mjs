@@ -1,11 +1,24 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runLabCase, runLab } from "./lib/saas-compatibility-lab.mjs";
+
+import {
+  referenceApp,
+  replacementApp,
+  readReference,
+  readReplacement,
+} from "./lib/saas-compatibility-lab-apps.mjs";
 
 const cli = fileURLToPath(
   new URL("./saas-compatibility-lab.mjs", import.meta.url),
@@ -190,4 +203,46 @@ test("reports identify the actual implementation source revision", () => {
     result.case.replacement.revision,
     result.report.runs.replacement.revision,
   );
+});
+
+test("persisted readers reject malformed UTF-8 without normalizing valid Unicode", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rea-lab-utf8-"));
+  const file = join(directory, "state.json");
+  const label = "客户 café 😀 \ufffd \ufeff";
+  try {
+    for (const workflow of ["accounting", "retail"]) {
+      for (const [write, read] of [
+        [referenceApp, readReference],
+        [replacementApp, readReplacement],
+      ]) {
+        write(file, workflow, {
+          customer: label,
+          total: 100,
+          payment: 40,
+          product: label,
+          stock: 10,
+          quantity: 4,
+          returned: 1,
+          unitPrice: 20,
+        });
+        const bytes = readFileSync(file);
+        assert.equal(read(file, workflow).state.label, label);
+        const offset = bytes.indexOf(Buffer.from(label));
+        assert.ok(offset >= 0);
+        writeFileSync(
+          file,
+          Buffer.concat([
+            bytes.subarray(0, offset),
+            Buffer.from([0x80]),
+            bytes.subarray(offset + Buffer.byteLength(label)),
+          ]),
+        );
+        assert.throws(() => read(file, workflow), /utf-8/i);
+        writeFileSync(file, Buffer.concat([Buffer.from("\ufeff"), bytes]));
+        assert.throws(() => read(file, workflow), SyntaxError);
+      }
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../support/workflowForkGuard.js";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -59,7 +60,7 @@ it("runs both complete canonical sweeps independently of PR and release gates", 
   ]);
   const job = workflow.jobs.mutation;
   expect(job["continue-on-error"]).toBeUndefined();
-  expect(job.if).toBeUndefined();
+  expect(job.if).toBe(inheritedJobCondition());
   expect(job.strategy.matrix.include).toEqual([
     { suite: "reverse-tools", config: "stryker.config.mjs" },
     {

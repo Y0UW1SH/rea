@@ -12,6 +12,7 @@ env:
 
 jobs:
   ghidra-bridge-sources:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Compile packaged Ghidra bridge sources
     runs-on: ubuntu-24.04
     timeout-minutes: 15

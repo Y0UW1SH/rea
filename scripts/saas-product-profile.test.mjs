@@ -1,7 +1,11 @@
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { inspectProductProfile } from "./lib/saas-product-profile.mjs";
 const read = (name) =>
   JSON.parse(
@@ -113,4 +117,71 @@ test("published schema enforces resolved-experiment evidence on its own", () => 
   assert.equal(validate(input), false);
   input.experiments[0].evidence = ["local:verified-observation"];
   assert.equal(validate(input), true);
+});
+
+test("CLI rejects malformed UTF-8 workflow identities before linking experiments", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rea-profile-utf8-"));
+  const file = join(directory, "profile.json");
+  const cli = fileURLToPath(
+    new URL("./saas-product-profile.mjs", import.meta.url),
+  );
+  const input = read("generic");
+  input.workflows[0].id = "WORKFLOW_ID";
+  input.experiments[0].workflowId = "WORKFLOW_LINK";
+  const [start, rest] = JSON.stringify(input).split("WORKFLOW_ID");
+  const [middle, end] = rest.split("WORKFLOW_LINK");
+  try {
+    for (const [id, link] of [
+      [Buffer.from([0x80]), Buffer.from([0x81])],
+      [Buffer.from([0x80]), Buffer.from("\ufffd")],
+      [Buffer.from("valid"), Buffer.from([0xe2, 0x82])],
+    ]) {
+      writeFileSync(
+        file,
+        Buffer.concat([
+          Buffer.from(start),
+          id,
+          Buffer.from(middle),
+          link,
+          Buffer.from(end),
+        ]),
+      );
+      const result = spawnSync(process.execPath, [cli, file], {
+        encoding: "utf8",
+      });
+      assert.equal(result.status, 2, result.stdout);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /utf-8/i);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI preserves valid Unicode identities and its leading-BOM rejection", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rea-profile-unicode-"));
+  const file = join(directory, "profile.json");
+  const cli = fileURLToPath(
+    new URL("./saas-product-profile.mjs", import.meta.url),
+  );
+  const input = read("generic");
+  input.workflows[0].id = "客户 café 😀 \ufffd \ufeff";
+  input.experiments[0].workflowId = input.workflows[0].id;
+  try {
+    writeFileSync(file, JSON.stringify(input));
+    let result = spawnSync(process.execPath, [cli, file], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).status, "valid_plan");
+    input.experiments[0].workflowId += "different";
+    writeFileSync(file, JSON.stringify(input));
+    result = spawnSync(process.execPath, [cli, file], { encoding: "utf8" });
+    assert.equal(result.status, 2);
+    assert.equal(JSON.parse(result.stdout).status, "invalid");
+    writeFileSync(file, `\ufeff${JSON.stringify(read("generic"))}`);
+    result = spawnSync(process.execPath, [cli, file], { encoding: "utf8" });
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

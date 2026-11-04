@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { reconcileSurface } from "./lib/saas-surface-coverage.mjs";
 import { exitCodeFor, readSurfaceFile } from "./lib/saas-surface-report.mjs";
+import { serializeReport } from "./lib/saas-report-json.mjs";
 
 const USAGE = [
   "Usage:",
@@ -9,8 +10,7 @@ const USAGE = [
   "Exit 0 when every declared endpoint, operation, procedure and route was exercised,",
   "1 when gaps were found, 2 when an input is invalid or unreadable.",
 ].join("\n");
-const emit = (report) =>
-  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+const emit = (report) => process.stdout.write(serializeReport(report));
 
 function parseArguments(argv) {
   const options = { observed: [] };
