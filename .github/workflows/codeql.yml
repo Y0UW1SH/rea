@@ -20,7 +20,7 @@ jobs:
   analyze:
     # A repository administrator must disable default setup before enabling
     # this workflow; default setup rejects advanced CodeQL result uploads.
-    if: vars.REA_CODEQL_ADVANCED == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (vars.REA_CODEQL_ADVANCED == 'true') }}
     name: Analyze production (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 45

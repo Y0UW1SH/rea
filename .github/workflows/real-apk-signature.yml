@@ -39,6 +39,7 @@ env:
 
 jobs:
   real-apk-signature:
+    if: github.repository != 'Y0UW1SH/rea'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

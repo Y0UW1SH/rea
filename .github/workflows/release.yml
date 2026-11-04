@@ -431,8 +431,7 @@ jobs:
   verify-npm:
     name: Verify published npm package
     needs: [merged-release, release-please, publish]
-    if: >-
-      always() && !cancelled() && needs.publish.result == 'success'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (always() && !cancelled() && needs.publish.result == 'success') }}
     runs-on: ubuntu-latest
     env:
       TURBO_TOKEN: ""

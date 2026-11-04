@@ -274,7 +274,7 @@ jobs:
   python:
     name: Python producer tests
     needs: changes
-    if: needs.changes.outputs.python == 'true' && needs.changes.outputs.tier == 'fast'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.python == 'true' && needs.changes.outputs.tier == 'fast') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1050,7 +1050,7 @@ jobs:
 
   apk_signature:
     needs: [changes, static, build]
-    if: needs.changes.outputs.apk_signature == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.apk_signature == 'true') }}
     secrets:
       TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
     uses: ./.github/workflows/real-apk-signature.yml
@@ -1120,7 +1120,7 @@ jobs:
 
   packet_capture:
     needs: [changes, static, build]
-    if: needs.changes.outputs.packet_capture == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.packet_capture == 'true') }}
     secrets:
       TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
     uses: ./.github/workflows/real-packet-capture.yml
@@ -1130,7 +1130,7 @@ jobs:
 
   signal_recording:
     needs: [changes, static, build]
-    if: needs.changes.outputs.signal_recording == 'true'
+    if: ${{ github.repository != 'Y0UW1SH/rea' && (needs.changes.outputs.signal_recording == 'true') }}
     secrets:
       TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
     uses: ./.github/workflows/real-signal-recording.yml

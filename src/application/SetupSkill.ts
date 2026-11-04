@@ -28,13 +28,13 @@ import {
 export const MANAGED_SKILL_FILES = [
   "SKILL.md",
   "references/connection-and-recovery.md",
-  "references/cloud-compatibility.md",
   "references/native-and-artifacts.md",
   "references/javascript-applications.md",
   "references/android-applications.md",
   "references/runtime-observation.md",
   "references/evidence-workflows.md",
   "references/environments.md",
+  "references/cloud-compatibility.md",
 ] as const;
 
 export const isManagedSkillManifest = (content: string): boolean =>
