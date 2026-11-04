@@ -65,6 +65,7 @@ import { registerWebNetworkCaptureCommands } from "./cli/webNetworkCaptureComman
 import { registerJavaScriptRecoveryCommands } from "./cli/javascriptRecoveryCommands.js";
 import { registerAdvancedBrowserCommands } from "./cli/browserAdvancedCommands.js";
 import { registerBrowserScenarioCommands } from "./cliBrowserScenarioCommands.js";
+import { registerSaasInvestigationCommands } from "./cliSaasInvestigationCommands.js";
 import { registerElectronCommands } from "./cli/electronCommands.js";
 import { registerJavaScriptRuntimeObservationCommands } from "./cli/javascriptRuntimeCommands.js";
 import { registerApplicationCommands } from "./cli/applicationCommands.js";
@@ -223,6 +224,7 @@ export const createCli = (
       registerWebNetworkCaptureCommands(cli, logger, environment);
       registerAdvancedBrowserCommands(cli, logger);
       registerBrowserScenarioCommands(cli, logger, environment);
+      registerSaasInvestigationCommands(cli, logger, environment);
     },
     electron: () => registerElectronCommands(cli, logger, environment),
     "javascript-runtime": () =>

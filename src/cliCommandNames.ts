@@ -163,6 +163,7 @@ export const CLI_COMMANDS = Object.freeze({
   compareWebScreenshots: "compare-web-screenshots",
   captureBrowserScenario: "capture-browser-scenario",
   validateBrowserScenario: "validate-browser-scenario",
+  runSaasInvestigation: "run-saas-investigation",
   listElectronTargets: "list-electron-targets",
   inspectElectronPage: "inspect-electron-page",
   inspectElectronFuses: "inspect-electron-fuses",

@@ -34,6 +34,7 @@ import { MANAGED_WORKFLOW_TOOL_CONTRACTS } from "./managed/managedWorkflowToolCo
 import { BROWSER_PROVIDER_TOOL_CONTRACTS } from "./browserProviderToolContracts.js";
 import { BROWSER_TOOL_CONTRACTS } from "./browserToolContracts.js";
 import { BROWSER_SCENARIO_TOOL_CONTRACTS } from "./browserScenarioToolContracts.js";
+import { SAAS_INVESTIGATION_TOOL_CONTRACTS } from "./saasInvestigationToolContracts.js";
 import { ELECTRON_TOOL_CONTRACTS } from "./javascript/electronToolContracts.js";
 import { JAVASCRIPT_RUNTIME_OBSERVATION_TOOL_CONTRACTS } from "./javascript/javascriptRuntimeObservationToolContracts.js";
 import { APPLICATION_TOOL_CONTRACTS } from "./applicationToolContracts.js";
@@ -90,6 +91,7 @@ export const TOOL_CONTRACT_GROUPS = {
   REVERSE_ENGINEERING_TOOL_CONTRACTS,
   RIZIN_DEBUG_TOOL_CONTRACTS,
   RUST_TOOL_CONTRACTS,
+  SAAS_INVESTIGATION_TOOL_CONTRACTS,
   SESSION_TOOL_CONTRACTS,
   SIGNAL_TOOL_CONTRACTS,
   SQLITE_TOOL_CONTRACTS,

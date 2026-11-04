@@ -193,29 +193,6 @@ describe("scenarioCaptureRecords", () => {
     ]);
   });
 
-  it("leaves a transaction that cannot be attributed to one request and response unrepresented", () => {
-    const capture = scenarioCaptureFixture(SCENARIO_EXCHANGES.slice(1, 2));
-    const response = capture.events.items.find(
-      (event) => event.kind === "response",
-    );
-    if (response === undefined) throw new Error("Fixture lacks a response");
-    const duplicated = {
-      ...capture,
-      events: {
-        ...capture.events,
-        items: [...capture.events.items, { ...response, sequence: 99 }],
-      },
-    };
-    const projected = scenarioCaptureRecords(duplicated, "manifest");
-    expect(projected.records[0]?.reported).toEqual({});
-    // The shared request-line owner rejects this ambiguous transaction before body counting.
-    expect(
-      manifestLimitations(projected).some((limitation) =>
-        limitation.includes("scenario transactions with a usable request line"),
-      ),
-    ).toBe(false);
-  });
-
   it("replays a redacted body's markers, counts it, and treats a body redaction emptied as not retained", () => {
     const capture = scenarioCaptureFixture(SCENARIO_EXCHANGES.slice(1, 3));
     const redacted =
@@ -265,6 +242,37 @@ describe("scenarioCaptureRecords", () => {
         "1 of 2 scenario transactions with a usable request line retained a response body with declared secret values replaced by redaction markers; tools citing them replay the redacted bytes.",
       ]),
     );
+  });
+});
+
+describe("ambiguous scenario transactions", () => {
+  it("retains observed request identity while withholding an ambiguous response", () => {
+    const capture = scenarioCaptureFixture(SCENARIO_EXCHANGES.slice(1, 2));
+    const response = capture.events.items.find(
+      (event) => event.kind === "response",
+    );
+    if (response === undefined) throw new Error("Fixture lacks a response");
+    const duplicated = {
+      ...capture,
+      events: {
+        ...capture.events,
+        items: [...capture.events.items, { ...response, sequence: 99 }],
+      },
+    };
+    const projected = scenarioCaptureRecords(duplicated, "manifest");
+    expect(projected.records[0]?.reported).toEqual({
+      request: {
+        method: "GET",
+        url: "http://127.0.0.1:3101/api/users/2",
+        bodySize: -1,
+      },
+    });
+    expect(projected.records[0]?.binary_fields).toEqual([]);
+    expect(
+      manifestLimitations(projected).some((limitation) =>
+        limitation.includes("scenario transactions with a usable request line"),
+      ),
+    ).toBe(true);
   });
 });
 

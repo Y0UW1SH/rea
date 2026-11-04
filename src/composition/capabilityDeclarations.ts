@@ -205,6 +205,10 @@ export const CAPABILITY_DECLARATIONS = {
       providerBinding(PLAYWRIGHT_BROWSER_SCENARIO_PROVIDER_IDENTITY, {
         group: "BROWSER_SCENARIO_TOOL_CONTRACTS",
       }),
+      // The live SaaS investigation drives the same scenario provider.
+      providerBinding(PLAYWRIGHT_BROWSER_SCENARIO_PROVIDER_IDENTITY, {
+        group: "SAAS_INVESTIGATION_TOOL_CONTRACTS",
+      }),
     ],
   },
   byteEntropy: {
