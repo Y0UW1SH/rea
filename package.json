@@ -154,7 +154,7 @@
     "test:with-build": "npm run test:prepare && vitest run",
     "test:run": "vitest run",
     "test:python": "python3 scripts/run-python-tests.py",
-    "test:saas": "node --test scripts/saas-report-json.test.mjs scripts/saas-compatibility.test.mjs scripts/saas-compatibility-lab.test.mjs scripts/saas-product-profile.test.mjs scripts/saas-export-compare.test.mjs scripts/saas-api-contract-helpers.test.mjs scripts/saas-api-contract.test.mjs scripts/saas-api-contract-verify.test.mjs scripts/saas-surface-matching.test.mjs scripts/saas-surface-coverage.test.mjs scripts/saas-surface-comparison.test.mjs scripts/saas-surface-planning.test.mjs",
+    "test:saas": "node --test scripts/saas-report-json.test.mjs scripts/saas-compatibility.test.mjs scripts/saas-compatibility-lab.test.mjs scripts/saas-product-profile.test.mjs scripts/saas-export-compare.test.mjs scripts/saas-api-contract-helpers.test.mjs scripts/saas-api-contract.test.mjs scripts/saas-api-contract-verify.test.mjs scripts/saas-surface-matching.test.mjs scripts/saas-surface-coverage.test.mjs scripts/saas-surface-comparison.test.mjs scripts/saas-surface-planning.test.mjs scripts/saas-study.test.mjs",
     "test:local": "node scripts/run-development-tests.mjs local",
     "test:fast": "node scripts/ci/test-group.mjs source",
     "test:built": "node scripts/ci/test-group.mjs built",

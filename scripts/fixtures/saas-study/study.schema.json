@@ -1,0 +1,476 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rea.local/schemas/saas-study/v1",
+  "title": "REA SaaS study v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "studyId",
+    "target",
+    "revision",
+    "workspace",
+    "actors",
+    "scenarios",
+    "authority",
+    "limits",
+    "evidence",
+    "coveragePolicy"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "studyId": {
+      "$ref": "#/$defs/id"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product", "edition", "region", "origins"],
+      "properties": {
+        "product": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "edition": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "region": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "origins": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "saas-origin",
+            "maxLength": 2048
+          },
+          "minItems": 1,
+          "maxItems": 10000,
+          "uniqueItems": true
+        }
+      }
+    },
+    "revision": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": {
+              "const": "unknown"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "value", "evidenceIds"],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "evidenceIds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "minItems": 1,
+              "maxItems": 10000,
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspaceId", "kind"],
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": ["organization", "tenant", "company", "store", "synthetic"]
+        }
+      }
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actorId", "role", "sessionId"],
+        "properties": {
+          "actorId": {
+            "$ref": "#/$defs/id"
+          },
+          "role": {
+            "$ref": "#/$defs/id"
+          },
+          "sessionId": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 10000
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenarioId",
+          "workflowId",
+          "actorIds",
+          "initialState",
+          "actions",
+          "expectedObservations"
+        ],
+        "properties": {
+          "scenarioId": {
+            "$ref": "#/$defs/id"
+          },
+          "workflowId": {
+            "$ref": "#/$defs/id"
+          },
+          "actorIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/id"
+            },
+            "minItems": 1,
+            "maxItems": 10000,
+            "uniqueItems": true
+          },
+          "initialState": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["status", "reason"],
+                "properties": {
+                  "status": {
+                    "const": "unknown"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["status", "evidenceIds"],
+                "properties": {
+                  "status": {
+                    "const": "observed"
+                  },
+                  "evidenceIds": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/id"
+                    },
+                    "minItems": 1,
+                    "maxItems": 10000,
+                    "uniqueItems": true
+                  }
+                }
+              }
+            ]
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["stepId", "actorId", "operationId"],
+              "properties": {
+                "stepId": {
+                  "$ref": "#/$defs/id"
+                },
+                "actorId": {
+                  "$ref": "#/$defs/id"
+                },
+                "operationId": {
+                  "$ref": "#/$defs/id"
+                }
+              }
+            },
+            "minItems": 0,
+            "maxItems": 10000
+          },
+          "expectedObservations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["expectationId", "stepId", "kind"],
+              "properties": {
+                "expectationId": {
+                  "$ref": "#/$defs/id"
+                },
+                "stepId": {
+                  "$ref": "#/$defs/id"
+                },
+                "kind": {
+                  "enum": [
+                    "request",
+                    "response",
+                    "persisted-read",
+                    "event",
+                    "screenshot",
+                    "state"
+                  ]
+                }
+              }
+            },
+            "minItems": 0,
+            "maxItems": 10000
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 10000
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origins", "mutations", "externalEffects"],
+      "properties": {
+        "origins": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "saas-origin",
+            "maxLength": 2048
+          },
+          "minItems": 1,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "mutations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "externalEffects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deadlineMs",
+        "maxConcurrency",
+        "maxRequests",
+        "requestsPerSecond",
+        "maxEvidenceBytes"
+      ],
+      "properties": {
+        "deadlineMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000
+        },
+        "maxConcurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "maxRequests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "requestsPerSecond": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "maxEvidenceBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["captures", "observations"],
+      "properties": {
+        "captures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "captureId",
+              "actorId",
+              "contextId",
+              "scenarioId",
+              "file",
+              "sha256",
+              "bytes"
+            ],
+            "properties": {
+              "captureId": {
+                "$ref": "#/$defs/id"
+              },
+              "actorId": {
+                "$ref": "#/$defs/id"
+              },
+              "contextId": {
+                "$ref": "#/$defs/id"
+              },
+              "scenarioId": {
+                "$ref": "#/$defs/id"
+              },
+              "file": {
+                "type": "string",
+                "format": "saas-relative-file",
+                "maxLength": 4096
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16777216
+              }
+            }
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["observationId", "captureId", "stepId"],
+            "properties": {
+              "observationId": {
+                "$ref": "#/$defs/id"
+              },
+              "captureId": {
+                "$ref": "#/$defs/id"
+              },
+              "stepId": {
+                "$ref": "#/$defs/id"
+              },
+              "eventSequence": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        }
+      }
+    },
+    "coveragePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requiredOperations",
+        "requiredRoles",
+        "requiredStates",
+        "requiredWorkflows",
+        "unsupportedOperations"
+      ],
+      "properties": {
+        "requiredOperations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "requiredRoles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "requiredStates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "requiredWorkflows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "unsupportedOperations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    }
+  }
+}

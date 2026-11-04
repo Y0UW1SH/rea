@@ -671,3 +671,9 @@ strict request matching use REA's existing [agent environments](agent-environmen
 An autonomous SaaS investigation loop and mutable business-state emulation remain
 future work; existing capture, serving and retained-view ownership stay with their
 respective REA components.
+
+## Versioned study manifests
+
+See [the SaaS study guide](saas-study.md) for investigation identities, authority
+declarations and bounded local evidence checks. The source-checkout inspector
+executes no scenario and makes no behavioral compatibility claim.
