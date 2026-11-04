@@ -20,8 +20,8 @@ import {
   segmentRule,
 } from "../../../scripts/lib/saas-route-templates.mjs";
 import { mediaTypeEssence } from "../../../scripts/lib/saas-api-contract-admission.mjs";
+import { mediaTypeEssence as ownerMediaTypeEssence } from "../../../src/domain/analysisView/recordedMediaType.js";
 import {
-  mediaTypeEssence as ownerMediaTypeEssence,
   scanRouteTemplate,
   segmentRule as ownerSegmentRule,
 } from "../../../src/domain/analysisView/webNetworkRouteTemplates.js";

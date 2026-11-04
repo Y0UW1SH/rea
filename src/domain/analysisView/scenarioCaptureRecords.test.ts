@@ -10,9 +10,110 @@ import {
 import {
   admitScenarioCaptureParent,
   scenarioCaptureRecords,
+  scenarioContentMediaType,
 } from "./scenarioCaptureRecords.js";
 import { EnvironmentManifestAccumulator } from "./EnvironmentManifestAccumulator.js";
-import { readRecordedRequestBody } from "./recordedRequestBody.js";
+import { readReplayRequestBody } from "./replayRequestBody.js";
+
+const manifestLimitations = (
+  projected: ReturnType<typeof scenarioCaptureRecords>,
+) => {
+  const accumulator = new EnvironmentManifestAccumulator();
+  for (const record of projected.records) {
+    const added = accumulator.add(
+      record,
+      projected.responseBodies.get(record.ordinal),
+    );
+    if (!added.ok) throw added.error;
+  }
+  const result = accumulator.finish();
+  if (!result.ok) throw result.error;
+  return result.value.limitations;
+};
+
+describe("scenario Content-Type evidence", () => {
+  it.each(
+    [
+      ["application/json", "application/octet-stream"],
+      ["application/octet-stream", "application/json"],
+      ["application/json", null],
+      [null, "application/json"],
+      ["application/json", "application/octet-stream", "application/json"],
+    ].map((values) => ({ values })),
+  )(
+    "keeps conflicting or excluded Content-Type declarations unknown: $values",
+    ({ values }) => {
+      const capture = scenarioCaptureFixture([
+        {
+          method: "GET",
+          url: "/download",
+          status: 200,
+          responseHeaders: values.map((value, index) => ({
+            name: index % 2 === 0 ? "Content-Type" : "content-type",
+            value,
+          })),
+        },
+      ]);
+      const original = JSON.stringify(capture);
+      const content = capture.events.items.find(
+        (event) =>
+          event.kind === "network-content" && event.phase === "response",
+      );
+      if (content?.kind !== "network-content")
+        throw new Error("Missing content");
+      expect(scenarioContentMediaType(content)).toBeUndefined();
+      for (const purpose of ["manifest", "replay"] as const) {
+        const projected = scenarioCaptureRecords(capture, purpose);
+        expect(projected.records[0]?.reported).toMatchObject({
+          response: { status: 200, content: { mimeType: "" } },
+        });
+        const accumulator = new EnvironmentManifestAccumulator();
+        for (const record of projected.records) {
+          const added = accumulator.add(
+            record,
+            projected.responseBodies.get(record.ordinal),
+          );
+          if (!added.ok) throw added.error;
+        }
+        const manifest = accumulator.finish();
+        if (!manifest.ok) throw manifest.error;
+        expect(manifest.value.tools).toEqual([]);
+      }
+      expect(JSON.stringify(capture)).toBe(original);
+    },
+  );
+
+  it("retains agreeing repeated Content-Type values and independently captured body metadata", () => {
+    const capture = scenarioCaptureFixture([
+      {
+        method: "GET",
+        url: "/headers",
+        status: 200,
+        responseHeaders: [
+          { name: "Content-Type", value: "application/json" },
+          { name: "content-type", value: "application/json" },
+        ],
+      },
+      {
+        method: "GET",
+        url: "/body",
+        status: 200,
+        body: "{}",
+        mediaType: "application/json",
+        responseHeaders: [
+          { name: "Content-Type", value: "application/json" },
+          { name: "content-type", value: null },
+        ],
+      },
+    ]);
+    const projected = scenarioCaptureRecords(capture, "manifest");
+    expect(projected.records).toHaveLength(2);
+    for (const record of projected.records)
+      expect(record.reported).toMatchObject({
+        response: { content: { mimeType: "application/json" } },
+      });
+  });
+});
 
 describe("scenarioCaptureRecords", () => {
   it("projects each transaction, in request order, as a HAR-shaped record with its retained bytes", () => {
@@ -26,7 +127,11 @@ describe("scenarioCaptureRecords", () => {
     ]);
     const user = projected.records[1];
     expect(user?.reported).toEqual({
-      request: { method: "GET", url: "http://127.0.0.1:3101/api/users/2" },
+      request: {
+        method: "GET",
+        url: "http://127.0.0.1:3101/api/users/2",
+        bodySize: -1,
+      },
       response: {
         status: 200,
         content: {
@@ -57,11 +162,35 @@ describe("scenarioCaptureRecords", () => {
       request: { url: null },
     });
     expect(projected.records[7]?.reported).toEqual({
-      request: { method: "GET", url: "http://127.0.0.1:3101/api/slow" },
+      request: {
+        method: "GET",
+        url: "http://127.0.0.1:3101/api/slow",
+        bodySize: -1,
+      },
     });
-    expect(projected.limitations).toContain(
+    expect(manifestLimitations(projected)).toContain(
       "1 of 7 scenario transactions with a usable request line retained no response body; tools citing them replay only the recorded status and content type, either of which may be absent.",
     );
+  });
+
+  it("records a hidden request body as absent only when the request names no Content-Type", () => {
+    const toggle = {
+      method: "PUT",
+      url: "/api/entries/1/bookmark",
+      status: 204,
+      requestBodyHidden: true,
+    } as const;
+    const projected = scenarioCaptureRecords(
+      scenarioCaptureFixture([
+        { ...toggle, requestHeaderNames: ["accept", "authorization"] },
+        { ...toggle, requestHeaderNames: ["accept", "Content-Type"] },
+      ]),
+      "manifest",
+    );
+    expect(projected.records.map((entry) => entry.reported)).toMatchObject([
+      { request: { bodySize: 0 } },
+      { request: { bodySize: -1 } },
+    ]);
   });
 
   it("leaves a transaction that cannot be attributed to one request and response unrepresented", () => {
@@ -79,10 +208,10 @@ describe("scenarioCaptureRecords", () => {
     };
     const projected = scenarioCaptureRecords(duplicated, "manifest");
     expect(projected.records[0]?.reported).toEqual({});
-    // No manifest tool can cite it, so it is not counted among bodiless tools.
+    // The shared request-line owner rejects this ambiguous transaction before body counting.
     expect(
-      projected.limitations.some((limitation) =>
-        limitation.includes("retained no response body"),
+      manifestLimitations(projected).some((limitation) =>
+        limitation.includes("scenario transactions with a usable request line"),
       ),
     ).toBe(false);
   });
@@ -130,7 +259,7 @@ describe("scenarioCaptureRecords", () => {
       "response.content.text",
     );
     expect(projected.records[1]?.binary_fields).toEqual([]);
-    expect(projected.limitations).toEqual(
+    expect(manifestLimitations(projected)).toEqual(
       expect.arrayContaining([
         "1 of 2 scenario transactions with a usable request line retained no response body; tools citing them replay only the recorded status and content type, either of which may be absent.",
         "1 of 2 scenario transactions with a usable request line retained a response body with declared secret values replaced by redaction markers; tools citing them replay the redacted bytes.",
@@ -155,6 +284,7 @@ it("reserves retained request-body expansion before schema decoding or projectio
   try {
     const projected = admitScenarioCaptureParent(
       {
+        predicateType: "rea.browser-scenario-capture",
         evidenceId: `ev_${"a".repeat(64)}`,
         operation: "capture_browser_scenario",
         normalizedResult: capture,
@@ -203,6 +333,7 @@ it("reserves request text even when another event's body was not captured", () =
     // The capture's containers fit this budget; only its request text does not.
     const projected = admitScenarioCaptureParent(
       {
+        predicateType: "rea.browser-scenario-capture",
         evidenceId: `ev_${"a".repeat(64)}`,
         operation: "capture_browser_scenario",
         normalizedResult: { ...capture, events: { ...capture.events, items } },
@@ -240,7 +371,7 @@ it("retains request text for replay within the request identity bound", () => {
   }
 });
 
-it("reads a request no browser could send a body with as empty, and an unexposed body as unknown", () => {
+it("reads a replay request no browser could send a body with as empty, and an unexposed body as unknown", () => {
   const exchange = (
     method: string,
     extra: Partial<ScenarioExchange> = {},
@@ -250,7 +381,7 @@ it("reads a request no browser could send a body with as empty, and an unexposed
     status: 200,
     mediaType: "application/json",
     body: "{}",
-    requestBodyNotExposed: true,
+    requestBodyHidden: true,
     ...extra,
   });
   const capture = scenarioCaptureFixture(
@@ -258,9 +389,16 @@ it("reads a request no browser could send a body with as empty, and an unexposed
       // Playwright exposes no bytes for a GET or HEAD; the Fetch standard forbids them a body.
       exchange("GET"),
       exchange("HEAD"),
-      exchange("GET", { requestBodyNotExposed: false }),
+      // A GET without any request content event is body-less all the same.
+      {
+        method: "GET",
+        url: "/api/users/2",
+        status: 200,
+        mediaType: "application/json",
+        body: "{}",
+      },
       // Unexposed bytes on a method that may carry a body establish nothing, even without
-      // a content-length among the retained header values.
+      // a Content-Type name or a content-length among the retained header values.
       exchange("DELETE"),
       exchange("DELETE", {
         requestHeaders: [{ name: "accept", value: "*/*" }],
@@ -281,7 +419,7 @@ it("reads a request no browser could send a body with as empty, and an unexposed
     { request_body: true, response_body: true, header_values: true },
   );
   const states = scenarioCaptureRecords(capture, "replay").records.map(
-    (record) => readRecordedRequestBody(record).state,
+    (record) => readReplayRequestBody(record).state,
   );
   expect(states).toEqual([
     "empty",
@@ -293,4 +431,41 @@ it("reads a request no browser could send a body with as empty, and an unexposed
     "unknown",
     "unknown",
   ]);
+});
+
+it("distinguishes a retained empty request from missing or redacted request bytes", () => {
+  const captured = scenarioCaptureFixture([
+    {
+      method: "POST",
+      url: "/api/items/1/archive",
+      status: 204,
+      requestBody: "",
+      requestMediaType: "application/json",
+    },
+  ]);
+  expect(
+    scenarioCaptureRecords(captured, "manifest").records[0]?.reported,
+  ).toMatchObject({ request: { bodySize: 0 } });
+  const redacted = {
+    ...captured,
+    events: {
+      ...captured.events,
+      items: captured.events.items.map((event) =>
+        event.kind === "network-content" &&
+        event.phase === "request" &&
+        event.body.state === "captured"
+          ? { ...event, body: { ...event.body, redacted: true } }
+          : event,
+      ),
+    },
+  };
+  expect(
+    scenarioCaptureRecords(redacted, "manifest").records[0]?.reported,
+  ).toMatchObject({ request: { bodySize: -1 } });
+  const missing = scenarioCaptureFixture([
+    { method: "POST", url: "/api/items/1/archive", status: 204 },
+  ]);
+  expect(
+    scenarioCaptureRecords(missing, "manifest").records[0]?.reported,
+  ).toMatchObject({ request: { bodySize: -1 } });
 });

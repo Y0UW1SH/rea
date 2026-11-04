@@ -8,7 +8,8 @@ import {
   environmentManifestCaptureFixture,
 } from "../../../tests/fixtures/analysisView.js";
 import { environmentServeSource } from "../../../tests/fixtures/environmentServe.js";
-import { inspectAnalysisView } from "../../application/analysisView/AnalysisViewService.js";
+import { inspectAnalysisViewValidated } from "../../application/analysisView/AnalysisViewService.js";
+import { analysisViewRequestSchema } from "../../domain/analysisView/analysisView.js";
 import {
   serveEnvironment,
   type ServedEnvironment,
@@ -38,9 +39,9 @@ const start = async () => {
       },
     ]),
   );
-  const manifest = inspectAnalysisView({
+  const manifest = inspectAnalysisViewValidated({
     source: { kind: "inline", evidence: capture },
-    view: { kind: "environment-manifest" },
+    view: analysisViewRequestSchema.parse({ kind: "environment-manifest" }),
   });
   if (!manifest.ok) throw manifest.error;
   const source = environmentServeSource({ manifest: manifest.value, capture });

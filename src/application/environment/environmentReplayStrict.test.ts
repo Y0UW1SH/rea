@@ -4,7 +4,8 @@ import {
   environmentManifestCaptureFixture,
 } from "../../../tests/fixtures/analysisView.js";
 import { environmentServeSource } from "../../../tests/fixtures/environmentServe.js";
-import { inspectAnalysisView } from "../analysisView/AnalysisViewService.js";
+import { inspectAnalysisViewValidated } from "../analysisView/AnalysisViewService.js";
+import { analysisViewRequestSchema } from "../../domain/analysisView/analysisView.js";
 import type { JsonValue } from "../../domain/jsonValue.js";
 import { projectAnalysisError } from "../../domain/analysisErrorProjection.js";
 import { replayEnvironmentTool } from "./environmentReplay.js";
@@ -26,9 +27,9 @@ const sourceFor = (entries: JsonValue[]) => {
   const capture = analysisViewCaptureEvidence(
     environmentManifestCaptureFixture(entries),
   );
-  const manifest = inspectAnalysisView({
+  const manifest = inspectAnalysisViewValidated({
     source: { kind: "inline", evidence: capture },
-    view: { kind: "environment-manifest" },
+    view: analysisViewRequestSchema.parse({ kind: "environment-manifest" }),
   });
   if (!manifest.ok) throw manifest.error;
   return environmentServeSource({ manifest: manifest.value, capture });
@@ -41,7 +42,7 @@ const call = (
   const source = sourceFor(entries);
   const tool = source.manifest.tools[0];
   if (tool === undefined) throw new Error("Missing fixture tool");
-  return replayEnvironmentTool(source, tool, args, mode);
+  return replayEnvironmentTool(source, tool, args, undefined, mode);
 };
 const query = (first: number) => ({
   operationName: "ListCustomers",

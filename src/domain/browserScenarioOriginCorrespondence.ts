@@ -1,13 +1,13 @@
-import type { BrowserScenarioCapture } from "./browserScenarioCapture.js";
+import type { RetainedBrowserScenarioCapture } from "./browserScenarioCapture.js";
 import type { SanitizedBrowserUrl } from "./browserObservation.js";
 import type { BrowserScenarioNormalization } from "./browserScenarioDiffValues.js";
 
 /** Comparison-only projection: never modify retained captures or arbitrary text. */
 export const projectScenarioOrigins = (
-  capture: BrowserScenarioCapture,
+  capture: RetainedBrowserScenarioCapture,
   pairs: NonNullable<BrowserScenarioNormalization["origin_pairs"]>,
   side: "before" | "after",
-): BrowserScenarioCapture => {
+): RetainedBrowserScenarioCapture => {
   if (pairs.length === 0) return capture;
   const origins = new Map(
     pairs.map((pair, index) => [
