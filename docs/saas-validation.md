@@ -25,6 +25,7 @@ Linux, Node **24.22.1** (`.nvmrc`), npm **11.16.0** (`packageManager`), fresh
 | Complete suite, `npm run test:with-build` (3,047 files, 93 min, as root)                                                          | 40,907 passed, 375 skipped, 16 failed; every failure classified below and the seven test-side ones repaired                |
 | Complete suite rerun, `vitest run` (3,047 files, 94 min, unprivileged, subreaper)                                                 | 40,969 passed, 326 skipped, 4 invocation artifacts, each shown passing separately; all 16 earlier failures passed in-suite |
 | Complete suite, `npm run test:with-build` (3,047 files, 97 min, checkout owned by the unprivileged user, subreaper, Chromium set) | 41,028 passed, 271 skipped, 0 failed, exit 0                                                                               |
+| Remaining `check:pr` pieces: `test:python`, `jscpd`, `scan:todos`, `mcp-catalog:check`                                            | 93 Python tests passed; duplication 3.51% within the configured threshold; no tech-debt markers; catalog check passed      |
 
 The complete-suite failures: five upstream workflow assertions (`ciCodeqlScope`,
 `ciTestReports`, `realGhidraWindowsWorkflow`) expected unguarded job
