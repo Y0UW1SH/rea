@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../support/workflowForkGuard.js";
 import { readFile } from "node:fs/promises";
 import { matchesGlob } from "node:path";
 import { expect, it } from "vitest";
@@ -109,7 +110,9 @@ it("uses the scope in a bounded workflow gated on administrator activation", asy
       parse(await readFile(new URL("workflows/codeql.yml", github), "utf8")),
     );
   const job = workflow.jobs.analyze;
-  expect(job.if).toBe("vars.REA_CODEQL_ADVANCED == 'true'");
+  expect(job.if).toBe(
+    inheritedJobCondition("vars.REA_CODEQL_ADVANCED == 'true'"),
+  );
   expect(job.strategy.matrix.language).toEqual([
     "javascript-typescript",
     "python",

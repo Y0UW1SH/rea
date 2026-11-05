@@ -35,14 +35,28 @@ const manifest = async (
           }),
     })),
   );
+  // Every event of a transaction names the same URL, as the browser reports it.
   let request = 0;
+  const transactionUrls = new Map<
+    string,
+    ReturnType<typeof sanitizeBrowserUrl>
+  >();
   const capture = browserScenarioCaptureSchema.parse({
     ...original,
     events: {
       ...original.events,
       items: original.events.items.map((event) => {
         if (event.kind === "request")
-          return { ...event, url: sanitizeBrowserUrl(urls[request++]!) };
+          transactionUrls.set(
+            event.transaction_id,
+            sanitizeBrowserUrl(urls[request++]!),
+          );
+        if (
+          "transaction_id" in event &&
+          "url" in event &&
+          transactionUrls.has(event.transaction_id)
+        )
+          return { ...event, url: transactionUrls.get(event.transaction_id) };
         if (event.kind === "network-content" && event.body.state === "captured")
           return { ...event, body: { ...event.body, redacted: true } };
         return event;

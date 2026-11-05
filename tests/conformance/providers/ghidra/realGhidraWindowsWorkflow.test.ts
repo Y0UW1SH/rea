@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../../support/workflowForkGuard.js";
 import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
@@ -21,7 +22,9 @@ describe("real Windows Ghidra workflow trust boundary", () => {
     expect(workflow.permissions).toEqual({ contents: "read" });
     for (const name of ["native-artifact", "verify"]) {
       const job = workflow.jobs[name];
-      expect(job.if).toBe("github.ref == 'refs/heads/main'");
+      expect(job.if).toBe(
+        inheritedJobCondition("github.ref == 'refs/heads/main'"),
+      );
       const checkouts = job.steps.filter((step: { uses?: string }) =>
         step.uses?.startsWith("actions/checkout@"),
       );
@@ -33,7 +36,7 @@ describe("real Windows Ghidra workflow trust boundary", () => {
     expect(workflow).toMatchObject({
       jobs: {
         verify: {
-          if: "github.ref == 'refs/heads/main'",
+          if: inheritedJobCondition("github.ref == 'refs/heads/main'"),
           environment: "real-ghidra-windows",
           "runs-on": expect.arrayContaining(["self-hosted", "Windows", "x64"]),
           steps: expect.arrayContaining([

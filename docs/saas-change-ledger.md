@@ -638,6 +638,13 @@ Local gates on the final code tree (Linux, Node 24.22.1 per `.nvmrc`, npm
   `apk_signature` routing assertion that the guard satisfies, and three
   controller tests that need the exact pinned npm (they passed with
   npm 11.16.0 and after the repairs: 54 passed).
+- Complete suite (`npm run test:with-build`, 3,047 files): 40,907 passed,
+  375 skipped, 16 failed. Seven were test-side: upstream workflow tests that
+  expected unguarded `if` conditions, a coverage fixture that rewrote only
+  request URLs, and a compare test asserting that replay drops request
+  bodies; each now encodes the fork's rule. Nine are Kuna provider cases that
+  need non-root permissions or fail the same way on pure upstream here; see the
+  validation report.
 - Typecheck, `lint` (0 errors), `format:check`, `knip`, `metadata:check`,
   architecture guards and `git diff --check`: passed. `lint:typed` flagged the
   fork's node:test suites for unawaited top-level `test()` calls; they are now

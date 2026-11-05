@@ -22,6 +22,22 @@ Linux, Node **24.22.1** (`.nvmrc`), npm **11.16.0** (`packageManager`), fresh
 | `npm run typecheck`, `npm run lint`, `npm run format:check`, `git diff --check` | passed; lint has 0 errors and the repository's existing warnings                                                   |
 | `npm run check` (typecheck, lint, format, knip, metadata, guards, typed lint)   | passed after marking the node:test suites' top-level calls `void`                                                  |
 | `npm run docs:check`                                                            | passed after adding the fork notice to `README_ro.md` and `README_ur-Latn.md`                                      |
+| Complete suite, `npm run test:with-build` (3,047 files, 93 min, as root)        | 40,907 passed, 375 skipped, 16 failed; every failure classified below and the seven test-side ones repaired        |
+
+The complete-suite failures: five upstream workflow assertions (`ciCodeqlScope`,
+`ciTestReports`, `realGhidraWindowsWorkflow`) expected unguarded job
+conditions and now expect the fork guard, as the earlier CI tests do; the
+`scenarioManifestCoverage` mixed-coverage fixture rewrote only request URLs, so
+the integrated attribution rule (a response must name its request's URL and
+method) withheld the control response, and the fixture now rewrites every event
+of a transaction; the `environmentCompare` probe test asserted that replay
+records drop request bodies, while the fork retains unredacted bodies within
+the strict bound, so it now asserts that retention. Six Kuna cache/cleanup
+cases inject permission failures that root ignores and pass as an unprivileged
+user; the five `kunaVersionProbeOwnership` cases fail identically on the pure
+upstream tree in this container, so they are an environment limitation, not an
+integration regression. The repaired files pass (14 and 53 tests on their two
+runs). The complete suite was not rerun after the test-side repairs.
 
 The complete repository suite, hosted CI, other operating systems, performance
 comparisons and real vendor behavior were not run. Passing checks reduce

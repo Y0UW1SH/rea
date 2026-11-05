@@ -1,3 +1,4 @@
+import { inheritedJobCondition } from "../../support/workflowForkGuard.js";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -404,7 +405,9 @@ it("runs the existing onboarding and Python producer guards from their selected 
   ).toBe(true);
   const deep = jobs["static-deep"];
   expect(deep?.if).toBe(
-    "needs.changes.outputs.tier == 'full' && needs.changes.outputs.code == 'true'",
+    inheritedJobCondition(
+      "needs.changes.outputs.tier == 'full' && needs.changes.outputs.code == 'true'",
+    ),
   );
   expect(deep?.steps.some((step) => step.run === "npm run check:ci:deep")).toBe(
     true,

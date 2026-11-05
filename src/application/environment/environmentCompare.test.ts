@@ -768,7 +768,16 @@ describe("browser probes", () => {
         content: responseContent,
       },
     });
-    expect(post()).not.toHaveProperty("request.postData");
+    // Replay keeps an unredacted request body within its strict-matching bound.
+    expect(post()).toMatchObject({
+      request: {
+        bodySize: 24,
+        postData: {
+          mimeType: "application/json",
+          text: '{"title":"probe folder"}',
+        },
+      },
+    });
   });
 });
 
