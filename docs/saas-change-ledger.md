@@ -659,8 +659,9 @@ Local gates on the final code tree (Linux, Node 24.22.1 per `.nvmrc`, npm
 
 Remaining limitations: the complete repository suite, hosted CI, other
 operating systems, performance comparisons and any real vendor behavior were
-not verified. The fork's SaaS workflows trigger on `main` and
-`feat/saas-behavior-compatibility` only, so this branch has no hosted run.
+not verified. Draft PR #7 into the feature branch produced no workflow or
+check runs, and the repository has had no Actions run since 2026-10-14, so
+GitHub Actions is not executing for this repository until the owner enables it.
 Strict replay keeps its documented scope; state serving remains an
 archive-matching mode and cannot be combined with it.
 

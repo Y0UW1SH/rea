@@ -61,6 +61,14 @@ the unprivileged user, launched through npm under the subreaper with
 failures**, exit code 0. No repository check was weakened; the subreaper
 wrapper is a local environment aid and is not committed.
 
+Hosted CI: draft PR #7 from this branch into the feature branch produced no
+workflow runs and no check runs, and the repository shows no Actions run of any
+workflow since 2026-10-14 although the feature branch received pushes on
+2026-10-19 to 2026-10-21. GitHub Actions is therefore not executing for this
+repository; enabling it is a repository-settings decision for the owner, and
+the fork's guidance asks for a review of the inherited workflows before doing
+so. Hosted qualification and macOS/Windows coverage remain unverified.
+
 The complete repository suite, hosted CI, other operating systems, performance
 comparisons and real vendor behavior were not run. Passing checks reduce
 regression risk; they do not establish that the combined tree is bug-free.
