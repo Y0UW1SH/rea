@@ -16,6 +16,17 @@ These immutable commit IDs identify the code even if a branch later moves:
   Its parent is the initial feature checkpoint above.
 - Portable companion-suite feature head before the 2026-10-20 integration:
   [`5cf82999e904ed8039be9ea2057bf14b702780f6`](https://github.com/Y0UW1SH/rea/commit/5cf82999e904ed8039be9ea2057bf14b702780f6).
+- Upstream integration of 2026-11-04 (this branch):
+  [`babf87631d8306d81e29fbbd1f51534c5b614875`](https://github.com/Y0UW1SH/rea/commit/babf87631d8306d81e29fbbd1f51534c5b614875)
+  (tree `64dbc3c819c5427c0f8c6a36905a9cf3101c900e`) merges upstream `morluto/rea`
+  main `71f680d7c1aa7a45ba0325fe87b104744b0c105f` into the feature head
+  `7b530856457d99a0a850b309ab6a6cdaffc691e1` combined with the 2026-10-21
+  integration branch head `56967277cf6120403cc85ca25b76bc6fe4aa6e41`. The guard
+  repair `d646fee942999cfa09200c2d24eddbe133a50d80`, the study merge
+  `9c9b8c1c39c1e778ef9f659cc95587969da231d0` (PR #3 head `14f2de023`) and the
+  live-investigation merge `ed505f3c4d4377d3107f035a75c95b769ba2bc20` (PR #5 head
+  `599f27049`, tree `8b0a7f92a548b4ba23482d5485a089fc4cbe4de9`) follow it. See the
+  [integration record](#upstream-integration-record-2026-11-04).
 - Upstream integration merge of 2026-10-20:
   [`00830ddf6c105ecb5bd4a73963cd8ac433044a4d`](https://github.com/Y0UW1SH/rea/commit/00830ddf6c105ecb5bd4a73963cd8ac433044a4d)
   (tree `b25cadbc34339795c61310934a9e74faccc6af59`), whose parents are the
@@ -378,11 +389,26 @@ npm run test:focused -- \
   tests/boundary/cli/saasExportCompare.test.ts \
   tests/boundary/cli/saasApiContract.test.ts \
   tests/boundary/cli/saasSurfaceCoverage.test.ts \
+  tests/boundary/cli/saasStudy.test.ts \
+  tests/boundary/mcp/saasInvestigationMcp.test.ts \
+  tests/boundary/cli/saasInvestigationCli.test.ts \
+  tests/process-global/saasInvestigationLifecycle.test.ts \
   tests/boundary/filesystem/saasSurfaceFixtures.test.ts \
   tests/acceptance/setup/selectedSkillSetup.test.ts \
   tests/boundary/filesystem/setupSkill.test.ts \
   tests/boundary/filesystem/qwenClientConfiguration.test.ts
+REA_TEST_CHROMIUM=/absolute/path/to/chromium npm run test:focused -- \
+  tests/acceptance/browser/saasInvestigationLiveCli.test.ts
 ```
+
+The source-level live-investigation suites (`src/domain/saasInvestigation.test.ts`,
+`src/domain/analysisView/scenarioCaptureRecords.test.ts`,
+`src/contracts/toolEffects.test.ts` and
+`src/application/saas/SaasInvestigationService.test.ts`) run with the
+`test:local` command above, as the workflow does. The real-browser acceptance
+test is skipped without `REA_TEST_CHROMIUM`; Chromium refuses its sandbox when
+launched as root, so run that test as an unprivileged user rather than disabling
+the sandbox.
 
 `test:focused` prepares the compiled runtime, packaged skill and the selected
 tests' declared artifacts. It selects exact files and fails if they are missing;
@@ -540,6 +566,91 @@ after the feature branch is fast-forwarded; a push to the integration branch
 alone triggers neither workflow. No full-suite, real-provider or vendor
 behavior was verified.
 
+## Upstream integration record (2026-11-04)
+
+Tested upstream: `morluto/rea` main `71f680d7c1aa7a45ba0325fe87b104744b0c105f`,
+2,459 commits after the previously integrated `01788bac863ac786bfbb648cad69b11e23b40a89`.
+Sources: feature head `7b530856457d99a0a850b309ab6a6cdaffc691e1` (PR #2),
+the 2026-10-21 integration branch head `56967277cf6120403cc85ca25b76bc6fe4aa6e41`
+(PR #6, which already carries PR #4's guards), fork `main`
+`1c2c2f1e78a74cdf5e4909ab8e775b090998a51f` (contained in upstream), PR #3 head
+`14f2de0232fede81d9aba68565626272df2e77f4` and PR #5 head
+`599f2704971b8cc8c39de3f0d630ddca7b669f03`. The work lives on
+`claude/keen-johnson-tqzjho`; no shared branch was reset or force-pushed, and the
+open PRs were not updated.
+
+Conflicts: nineteen files. The environment-serve area was the only semantic
+one: upstream now derives a state from the capture and serves read tools and
+confirmed writes from it, with `--replay-only` for pure replay, while the fork's
+`--replay-mode strict` is a replay matching mode. Resolution: strict replay is
+pure replay layered on upstream's server. `--replay-mode strict` derives no
+state, the card declares no data plane, `serveEnvironment` refuses a state
+combined with strict replay as a programming error, and the stopped document
+gains `replay_mode`. The strict catalog reuses upstream's `describe`/`body`
+catalog hooks (`strictReplayCatalogOptions`), the schema type list is charged
+through upstream's `schemaBytes`, and strict JSON admission still wraps
+upstream's initialize classification. The strict request-body reader
+(`src/domain/analysisView/replayRequestBody.ts`) consumes upstream's HAR
+declaration owner (`recordedExchangeBody.ts`) instead of re-parsing, and
+`RecordedExchange.requestBody` is produced by the one `recordedExchange` owner.
+Replay-purpose scenario records keep the fork's conservative body-less rule
+(GET/HEAD or a lone `content-length: 0`) while manifest records keep upstream's
+Content-Type rule, each documented at the projection boundary. Origin-pair
+projection accepts upstream's `RetainedBrowserScenarioCapture`; the comparison
+limitations keep the fork's origin-pair sentence and upstream's storage/timing
+sentence. The fork's browser CLI/MCP origin tests were ported to upstream's
+`cliTest` and MCP harness types, the archive description suffix was dropped in
+favor of upstream's response summaries, and `package.json` keeps upstream's
+`test:python` runner beside `test:saas`.
+
+Inherited CI: eight jobs upstream added (CI `python`, `apk_signature`,
+`packet_capture`, `signal_recording`; CodeQL `analyze`; the real Android
+metadata and APK signature workflows; release `verify-npm`) received the
+dominating fork guard. The fork's cloud-compatibility skill reference moved to
+the end of the managed inventory so upstream's rollback regression, which
+injects a failure at the third managed file, holds.
+
+Feature integration: PR #3 merged with two textual conflicts (`test:saas` and
+the companion guide). PR #5 required porting to upstream's tool-family
+structure: `registerSaasInvestigationCommands` joins the browser CLI family,
+`registerSaasInvestigationTool` registers beside the browser scenario tool,
+`SAAS_INVESTIGATION_TOOL_CONTRACTS` is a contract group the Playwright scenario
+provider declares, and the product catalog derives from the shared owner. Its
+scenario-record rule (retain the observed request line of an ambiguous
+transaction, withhold response facts) was applied to upstream's record shape,
+and the journal/service use upstream's stable file descriptor, immutable
+evidence bundle snapshot and artifact primary-failure facts. The report payload
+goes to `createEvidence` directly, as upstream's lint rule requires. The
+upstream-integration controller mirrors the expanded workflow commands.
+
+Local gates on the final code tree (Linux, Node 24.22.1 per `.nvmrc`, npm
+11.16.0 per `packageManager`, fresh `npm ci`):
+
+- `npm run test:saas`: 178 passed.
+- Focused lane (42 files, including every SaaS workflow test, the environment
+  serve/replay suites and the CI/release workflow tests): 798 passed, 4 skipped
+  (root permission cases) and 1 failed. The failure was the real-Chromium
+  acceptance test launched as root, where Chromium refuses its sandbox; the
+  same test passed (1 passed, 10 s) when run as an unprivileged user with the
+  sandbox enabled, so no sandbox was disabled.
+- Pre-integration focused lane on the sync alone: 879 passed, 6 failed, 4
+  skipped; the six were the missing guards, the skill rollback order, an
+  `apk_signature` routing assertion that the guard satisfies, and three
+  controller tests that need the exact pinned npm (they passed with
+  npm 11.16.0 and after the repairs: 54 passed).
+- Typecheck, `lint` (0 errors), `format:check`, `knip`, `metadata:check`,
+  architecture guards and `git diff --check`: passed. `lint:typed` flagged the
+  fork's node:test suites for unawaited top-level `test()` calls; they are now
+  marked `void`. `docs:check` flagged the two translated READMEs upstream added
+  without the fork notice; both now carry it.
+
+Remaining limitations: the complete repository suite, hosted CI, other
+operating systems, performance comparisons and any real vendor behavior were
+not verified. The fork's SaaS workflows trigger on `main` and
+`feat/saas-behavior-compatibility` only, so this branch has no hosted run.
+Strict replay keeps its documented scope; state serving remains an
+archive-matching mode and cannot be combined with it.
+
 ## Safe upstream-sync procedure
 
 The [upstream sync guide](saas-upstream-sync.md) includes a reusable prompt for
@@ -614,3 +725,20 @@ evidence validation and explicit limitations. Regression owners are
 Actor/session/context identities, observation references, explicit unknowns and
 unsupported operations survive serialization. No browser or provider authority
 is expanded; the base branch owns GraphQL and contract coverage corrections.
+
+## Live investigation controller (integrated 2026-11-04)
+
+Developed separately as PR #5 from base `87a3ee21748bde3a9cdae7e595b0a5540a7e8416`
+and integrated with the 2026-11-04 upstream sync. See
+[the live investigation guide](saas-live-investigation.md). Main ownership:
+`src/domain/saasInvestigation.ts`, `src/domain/saasInvestigationEvaluation.ts`,
+`src/application/saas/`, `src/cliSaasInvestigationCommands.ts`,
+`src/server/registerSaasInvestigationTool.ts` and
+`src/contracts/saasInvestigationToolContracts.ts`. Regression owners are the
+source suites listed in the focused gates, `tests/boundary/cli/saasInvestigationCli.test.ts`,
+`tests/boundary/mcp/saasInvestigationMcp.test.ts`,
+`tests/process-global/saasInvestigationLifecycle.test.ts` and the real-browser
+`tests/acceptance/browser/saasInvestigationLiveCli.test.ts`. The tool launches a
+browser, executes caller-supplied actions and writes a local journal; maintainer
+scope approval for that execution and mutation capability remains the fork
+owner's decision, and no vendor behavior was verified.

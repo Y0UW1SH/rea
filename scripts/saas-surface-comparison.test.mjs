@@ -75,7 +75,7 @@ const withComparison = (analysis, observed) =>
     }),
   );
 
-test("adopts a complete 3591 comparison result as observed evidence", () => {
+void test("adopts a complete 3591 comparison result as observed evidence", () => {
   const analysis = analysisOf(BUNDLE_FINDINGS);
   const comparison = comparisonOf(analysis, [
     metricsVerdict(analysis, {
@@ -131,7 +131,7 @@ test("adopts a complete 3591 comparison result as observed evidence", () => {
   );
 });
 
-test("lists comparison groups without a static counterpart as undeclared and rejects partial pages", () => {
+void test("lists comparison groups without a static counterpart as undeclared and rejects partial pages", () => {
   const analysis = analysisOf(BUNDLE_FINDINGS);
   const unmatched = withComparison(analysis, [
     input(
@@ -173,7 +173,7 @@ test("lists comparison groups without a static counterpart as undeclared and rej
   );
 });
 
-test("merges comparison verdicts by rank in any input order and never lowers a proven status", () => {
+void test("merges comparison verdicts by rank in any input order and never lowers a proven status", () => {
   const analysis = analysisOf(BUNDLE_FINDINGS);
   const proven = comparisonOf(analysis, [
     metricsVerdict(analysis, {
@@ -207,7 +207,7 @@ test("merges comparison verdicts by rank in any input order and never lowers a p
   }
 });
 
-test("turns a comparison absence into unknown when another input is incomplete", () => {
+void test("turns a comparison absence into unknown when another input is incomplete", () => {
   const analysis = analysisOf(BUNDLE_FINDINGS);
   const dropped = buildSurfaceCapture();
   dropped.events.dropped = 2;
@@ -224,7 +224,7 @@ test("turns a comparison absence into unknown when another input is incomplete",
   );
 });
 
-test("validates comparison methods and targets strictly and rejects foreign digests for every collection", () => {
+void test("validates comparison methods and targets strictly and rejects foreign digests for every collection", () => {
   const analysis = analysisOf(BUNDLE_FINDINGS);
   const invalid = (items, pattern) => {
     const report = withComparison(analysis, [

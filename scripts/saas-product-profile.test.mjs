@@ -13,7 +13,7 @@ const read = (name) =>
       new URL(`./fixtures/saas-profiles/${name}.json`, import.meta.url),
     ),
   );
-test("vendor profiles remain plans with explicit missing access and edition", () => {
+void test("vendor profiles remain plans with explicit missing access and edition", () => {
   for (const name of ["lightspeed", "quickbooks", "generic"]) {
     const report = inspectProductProfile(read(name));
     assert.equal(report.status, "valid_plan");
@@ -25,17 +25,17 @@ test("vendor profiles remain plans with explicit missing access and edition", ()
     assert.ok(report.nextExperiments.length);
   }
 });
-test("a claimed verified workflow requires evidence", () => {
+void test("a claimed verified workflow requires evidence", () => {
   const input = read("generic");
   input.workflows[0].status = "verified";
   assert.equal(inspectProductProfile(input).status, "invalid");
 });
-test("live dependency observation requires explicit evidence", () => {
+void test("live dependency observation requires explicit evidence", () => {
   const input = read("generic");
   input.externalDependencies[0].mode = "observed";
   assert.equal(inspectProductProfile(input).status, "invalid");
 });
-test("duplicate workflow identity and experiment references fail closed", () => {
+void test("duplicate workflow identity and experiment references fail closed", () => {
   const input = read("generic");
   input.workflows.push(structuredClone(input.workflows[0]));
   assert.equal(inspectProductProfile(input).status, "invalid");
@@ -43,7 +43,7 @@ test("duplicate workflow identity and experiment references fail closed", () => 
   other.experiments[0].workflowId = "absent";
   assert.equal(inspectProductProfile(other).status, "invalid");
 });
-test("unknown and unverified never become verified from matching plans", () => {
+void test("unknown and unverified never become verified from matching plans", () => {
   const input = read("generic");
   input.workflows[0].status = "recorded";
   input.workflows[0].evidence = ["local:evidence"];
@@ -52,14 +52,14 @@ test("unknown and unverified never become verified from matching plans", () => {
   assert.equal(report.coverage.verified, 0);
   assert.match(report.limitations.join(" "), /not authenticated/);
 });
-test("malformed plans and unrecognized capabilities are rejected", () => {
+void test("malformed plans and unrecognized capabilities are rejected", () => {
   for (const value of [null, {}, [], { version: 1 }])
     assert.equal(inspectProductProfile(value).status, "invalid");
   const input = read("generic");
   input.extra = true;
   assert.equal(inspectProductProfile(input).status, "invalid");
 });
-test("resolved experiments require evidence and duplicate experiment IDs reject", () => {
+void test("resolved experiments require evidence and duplicate experiment IDs reject", () => {
   const input = read("generic");
   input.experiments[0].status = "resolved";
   assert.equal(inspectProductProfile(input).status, "invalid");
@@ -67,14 +67,14 @@ test("resolved experiments require evidence and duplicate experiment IDs reject"
   input.experiments.push(structuredClone(input.experiments[0]));
   assert.equal(inspectProductProfile(input).status, "invalid");
 });
-test("unknown setup cannot assert values and observed setup needs evidence", () => {
+void test("unknown setup cannot assert values and observed setup needs evidence", () => {
   const input = read("generic");
   input.setup.edition.value = "invented";
   assert.equal(inspectProductProfile(input).status, "invalid");
   input.setup.edition.provenance = "observed";
   assert.equal(inspectProductProfile(input).status, "invalid");
 });
-test("profile inspection preserves input and reviewed external boundaries", () => {
+void test("profile inspection preserves input and reviewed external boundaries", () => {
   const input = read("generic");
   input.externalDependencies[0].mode = "simulated";
   input.externalDependencies[0].evidence = ["synthetic:payment-response"];
@@ -84,7 +84,7 @@ test("profile inspection preserves input and reviewed external boundaries", () =
   assert.equal(report.externalDependencies[0].mode, "simulated");
   assert.equal(JSON.stringify(input), before);
 });
-test("whitespace cannot satisfy required evidence, case paths or observed facts", () => {
+void test("whitespace cannot satisfy required evidence, case paths or observed facts", () => {
   for (const mutate of [
     (p) => {
       p.workflows[0].status = "verified";
@@ -108,7 +108,7 @@ test("whitespace cannot satisfy required evidence, case paths or observed facts"
   }
 });
 
-test("published schema enforces resolved-experiment evidence on its own", () => {
+void test("published schema enforces resolved-experiment evidence on its own", () => {
   const validate = new Ajv2020({ strict: true }).compile(
     read("profile.schema"),
   );
@@ -119,7 +119,7 @@ test("published schema enforces resolved-experiment evidence on its own", () => 
   assert.equal(validate(input), true);
 });
 
-test("CLI rejects malformed UTF-8 workflow identities before linking experiments", () => {
+void test("CLI rejects malformed UTF-8 workflow identities before linking experiments", () => {
   const directory = mkdtempSync(join(tmpdir(), "rea-profile-utf8-"));
   const file = join(directory, "profile.json");
   const cli = fileURLToPath(
@@ -158,7 +158,7 @@ test("CLI rejects malformed UTF-8 workflow identities before linking experiments
   }
 });
 
-test("CLI preserves valid Unicode identities and its leading-BOM rejection", () => {
+void test("CLI preserves valid Unicode identities and its leading-BOM rejection", () => {
   const directory = mkdtempSync(join(tmpdir(), "rea-profile-unicode-"));
   const file = join(directory, "profile.json");
   const cli = fileURLToPath(

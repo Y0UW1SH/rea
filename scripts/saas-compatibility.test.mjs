@@ -17,46 +17,46 @@ const evaluate = (modify, name) => {
   modify?.(input);
   return evaluateCompatibility(input);
 };
-test("synthetic accounting and retail pass with explicit identities", () => {
+void test("synthetic accounting and retail pass with explicit identities", () => {
   for (const name of ["accounting", "retail"])
     assert.equal(evaluate(undefined, name).status, "pass");
 });
-test("wrong business amount fails", () =>
+void test("wrong business amount fails", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.observations[0].value.balance = 61;
     }).status,
     "fail",
   ));
-test("wrong relationship remains visible", () =>
+void test("wrong relationship remains visible", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.observations[0].value.customer.$entity.id = "wrong";
     }).status,
     "unknown",
   ));
-test("missing observation cannot pass", () =>
+void test("missing observation cannot pass", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.observations = [];
     }).status,
     "unknown",
   ));
-test("toast without persisted read cannot pass", () =>
+void test("toast without persisted read cannot pass", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.observations[0].kind = "ui";
     }).status,
     "unknown",
   ));
-test("stale observation cannot establish persistence", () =>
+void test("stale observation cannot establish persistence", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.observations[0].elapsedMs = 0;
     }).status,
     "unknown",
   ));
-test("deadline exhausted differs from observer stopping early", () => {
+void test("deadline exhausted differs from observer stopping early", () => {
   const early = evaluate((x) => {
     x.replacement.observations = [];
   });
@@ -68,7 +68,7 @@ test("deadline exhausted differs from observer stopping early", () => {
   assert.equal(late.checks[0].reason, "deadline_exceeded");
   assert.equal(late.status, "fail");
 });
-test("late result does not satisfy deadline", () =>
+void test("late result does not satisfy deadline", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.observations[0].elapsedMs = 1001;
@@ -76,7 +76,7 @@ test("late result does not satisfy deadline", () =>
     }).status,
     "fail",
   ));
-test("context mismatch and unknown provenance are unknown", () => {
+void test("context mismatch and unknown provenance are unknown", () => {
   assert.equal(
     evaluate((x) => {
       x.replacement.context.currency.value = "EUR";
@@ -90,7 +90,7 @@ test("context mismatch and unknown provenance are unknown", () => {
     "unknown",
   );
 });
-test("duplicate and ambiguous mappings reject input", () => {
+void test("duplicate and ambiguous mappings reject input", () => {
   assert.equal(
     evaluate((x) => {
       x.entities.push(structuredClone(x.entities[0]));
@@ -104,7 +104,7 @@ test("duplicate and ambiguous mappings reject input", () => {
     "invalid",
   );
 });
-test("mapping cannot normalize an amount or unrelated entity type", () => {
+void test("mapping cannot normalize an amount or unrelated entity type", () => {
   assert.equal(
     evaluate((x) => {
       x.replacement.observations[0].value.balance = "c18";
@@ -118,14 +118,14 @@ test("mapping cannot normalize an amount or unrelated entity type", () => {
     "unknown",
   );
 });
-test("duplicate records differ", () =>
+void test("duplicate records differ", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.observations[0].value.extra = [1, 1];
     }).status,
     "fail",
   ));
-test("malformed and unknown keys fail closed", () => {
+void test("malformed and unknown keys fail closed", () => {
   for (const modify of [
     (x) => {
       x.checks = [];
@@ -147,7 +147,7 @@ test("malformed and unknown keys fail closed", () => {
   for (const input of [null, [], {}, { version: 1 }])
     assert.equal(evaluateCompatibility(input).status, "invalid");
 });
-test("wrong relationship to another explicitly mapped customer fails", () => {
+void test("wrong relationship to another explicitly mapped customer fails", () => {
   assert.equal(
     evaluate((x) => {
       const second = structuredClone(x.entities[0]);
@@ -160,7 +160,7 @@ test("wrong relationship to another explicitly mapped customer fails", () => {
     "fail",
   );
 });
-test("JSON objects cannot impersonate normalized identity values", () =>
+void test("JSON objects cannot impersonate normalized identity values", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.observations[0].value.customer = {
@@ -169,21 +169,21 @@ test("JSON objects cannot impersonate normalized identity values", () =>
     }).status,
     "fail",
   ));
-test("prototype names cannot satisfy absent context requirements", () =>
+void test("prototype names cannot satisfy absent context requirements", () =>
   assert.equal(
     evaluate((x) => {
       x.contextKeys.push("__proto__");
     }).status,
     "unknown",
   ));
-test("incomplete capture never passes even with matching visible observations", () =>
+void test("incomplete capture never passes even with matching visible observations", () =>
   assert.equal(
     evaluate((x) => {
       x.replacement.windows[0].coverage = "incomplete";
     }).status,
     "unknown",
   ));
-test("reload returning an old balance fails", () =>
+void test("reload returning an old balance fails", () =>
   assert.equal(
     evaluate((x) => {
       const old = structuredClone(x.replacement.observations[0]);
@@ -194,14 +194,14 @@ test("reload returning an old balance fails", () =>
     }).status,
     "fail",
   ));
-test("mapping order does not change comparison results", () =>
+void test("mapping order does not change comparison results", () =>
   assert.equal(
     evaluate((x) => {
       x.entities.reverse();
     }).status,
     "pass",
   ));
-test("wrong entity scope and ambiguous observation timestamps are invalid", () => {
+void test("wrong entity scope and ambiguous observation timestamps are invalid", () => {
   assert.equal(
     evaluate((x) => {
       x.entities[0].reference.workspace = "other";
@@ -217,12 +217,12 @@ test("wrong entity scope and ambiguous observation timestamps are invalid", () =
     "invalid",
   );
 });
-test("deliberately incorrect synthetic fixture outcomes fail", () => {
+void test("deliberately incorrect synthetic fixture outcomes fail", () => {
   for (const name of ["accounting-incorrect", "retail-incorrect"])
     assert.equal(evaluate(undefined, name).status, "fail");
 });
 
-test("CLI emits evidence-linked reports and distinct exit codes", () => {
+void test("CLI emits evidence-linked reports and distinct exit codes", () => {
   const cli = fileURLToPath(
     new URL("./saas-compatibility.mjs", import.meta.url),
   );
@@ -245,7 +245,7 @@ test("CLI emits evidence-linked reports and distinct exit codes", () => {
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /Usage:/);
 });
-test("run capture date and revision are required and preserved", () => {
+void test("run capture date and revision are required and preserved", () => {
   for (const date of [
     "2026-02-30T00:00:00.000Z",
     "yesterday",
@@ -270,7 +270,7 @@ test("run capture date and revision are required and preserved", () => {
   assert.equal(report.runs.reference.collectedAt, "2026-10-19T00:00:00.000Z");
   assert.equal(report.contextAlignment, "conditional_on_caller_declarations");
 });
-test("report retains the exact predicate and observation window for audit", () => {
+void test("report retains the exact predicate and observation window for audit", () => {
   const report = evaluate();
   assert.deepEqual(report.contextKeys, ["currency", "role"]);
   assert.equal(report.checks[0].persisted, true);
@@ -280,7 +280,7 @@ test("report retains the exact predicate and observation window for audit", () =
   assert.equal(report.checks[0].replacement.window.observedUntilMs, 100);
 });
 
-test("unsafe numeric observation and context values cannot pass", () => {
+void test("unsafe numeric observation and context values cannot pass", () => {
   for (const value of [
     Number.MAX_SAFE_INTEGER + 1,
     Number.MIN_SAFE_INTEGER - 1,
@@ -302,7 +302,7 @@ test("unsafe numeric observation and context values cannot pass", () => {
   }
 });
 
-test("supported numeric values and exact numeric strings remain literal", () => {
+void test("supported numeric values and exact numeric strings remain literal", () => {
   for (const value of [
     Number.MAX_SAFE_INTEGER,
     Number.MIN_SAFE_INTEGER,
@@ -331,7 +331,7 @@ test("supported numeric values and exact numeric strings remain literal", () => 
   );
 });
 
-test("CLI rejects numeric token information loss before comparison", () => {
+void test("CLI rejects numeric token information loss before comparison", () => {
   const directory = mkdtempSync(join(tmpdir(), "rea-saas-numbers-"));
   const file = join(directory, "case.json");
   const cli = fileURLToPath(
@@ -393,7 +393,7 @@ test("CLI rejects numeric token information loss before comparison", () => {
   }
 });
 
-test("CLI rejects malformed UTF-8 before different bytes can compare equal", () => {
+void test("CLI rejects malformed UTF-8 before different bytes can compare equal", () => {
   const directory = mkdtempSync(join(tmpdir(), "rea-saas-utf8-"));
   const file = join(directory, "case.json");
   const cli = fileURLToPath(
@@ -440,7 +440,7 @@ test("CLI rejects malformed UTF-8 before different bytes can compare equal", () 
   }
 });
 
-test("CLI preserves valid Unicode values and its leading-BOM rejection", () => {
+void test("CLI preserves valid Unicode values and its leading-BOM rejection", () => {
   const directory = mkdtempSync(join(tmpdir(), "rea-saas-unicode-"));
   const file = join(directory, "case.json");
   const cli = fileURLToPath(

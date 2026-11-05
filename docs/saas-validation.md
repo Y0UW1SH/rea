@@ -1,5 +1,32 @@
 # SaaS fork validation
 
+## Upstream sync and feature integration — 2026-11-04
+
+Branch `claude/keen-johnson-tqzjho`; final code tree
+`8b0a7f92a548b4ba23482d5485a089fc4cbe4de9` at commit
+`ed505f3c4d4377d3107f035a75c95b769ba2bc20`, followed by lint, README-notice and
+documentation commits. Sources, conflict resolutions and the design of strict
+replay on upstream's state-serving server are recorded in the
+[change ledger](saas-change-ledger.md#upstream-integration-record-2026-11-04).
+
+Linux, Node **24.22.1** (`.nvmrc`), npm **11.16.0** (`packageManager`), fresh
+`npm ci`; no vendor account or live provider was used.
+
+| Check                                                                           | Observed result                                                                                                    |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `npm run test:saas`                                                             | 178 passed (164 companion plus 14 study)                                                                           |
+| Focused lane, 42 files, with `REA_TEST_CHROMIUM` set, run as root               | 798 passed, 1 failed, 4 skipped; the failure is Chromium refusing its sandbox as root                              |
+| `tests/acceptance/browser/saasInvestigationLiveCli.test.ts` as a non-root user  | 1 passed in 10 s: two real-Chromium experiments, adaptive selection, six retained captures, idempotent resume      |
+| Sync-only focused lane before the repairs                                       | 879 passed, 6 failed, 4 skipped; all six repaired or explained in the ledger, then 87 passed on the affected files |
+| Touched source suites after the upstream merge                                  | 362 passed across 15 files                                                                                         |
+| `npm run typecheck`, `npm run lint`, `npm run format:check`, `git diff --check` | passed; lint has 0 errors and the repository's existing warnings                                                   |
+| `npm run check` (typecheck, lint, format, knip, metadata, guards, typed lint)   | passed after marking the node:test suites' top-level calls `void`                                                  |
+| `npm run docs:check`                                                            | passed after adding the fork notice to `README_ro.md` and `README_ur-Latn.md`                                      |
+
+The complete repository suite, hosted CI, other operating systems, performance
+comparisons and real vendor behavior were not run. Passing checks reduce
+regression risk; they do not establish that the combined tree is bug-free.
+
 ## Cancellation, study inventory and signed-zero repairs — 2026-10-21, 15:45 UTC
 
 These repairs start from published PR #4 head

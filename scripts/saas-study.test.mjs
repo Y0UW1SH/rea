@@ -54,7 +54,7 @@ const captureStudy = async (t) => {
   return { dir, study, capture };
 };
 
-test("study round-trips actor identities, authority, unknown revision and unsupported operations", async (t) => {
+void test("study round-trips actor identities, authority, unknown revision and unsupported operations", async (t) => {
   const study = await fixture();
   const valid = validateStudyManifest(study);
   assert.equal(valid.status, "valid", JSON.stringify(valid.issues));
@@ -78,7 +78,7 @@ test("study round-trips actor identities, authority, unknown revision and unsupp
   assert.equal(unobserved.coverageStatus, "unknown");
 });
 
-test("study rejects ambiguous identities, unresolved references and widened authority", async () => {
+void test("study rejects ambiguous identities, unresolved references and widened authority", async () => {
   for (const change of [
     (s) => s.actors.push(structuredClone(s.actors[0])),
     (s) => {
@@ -139,7 +139,7 @@ test("study rejects ambiguous identities, unresolved references and widened auth
   }
 });
 
-test("study checks retained capture identity and observation coordinates without asserting behavioral coverage", async (t) => {
+void test("study checks retained capture identity and observation coordinates without asserting behavioral coverage", async (t) => {
   const { dir, study } = await captureStudy(t);
   const result = await checkStudyEvidence(study, dir);
   assert.equal(result.status, "verified", JSON.stringify(result));
@@ -150,7 +150,7 @@ test("study checks retained capture identity and observation coordinates without
   assert.equal(result.coverageStatus, "unknown");
 });
 
-test("two actors keep distinct capture provenance through serialization and asynchronous checking", async (t) => {
+void test("two actors keep distinct capture provenance through serialization and asynchronous checking", async (t) => {
   const { dir, study } = await captureStudy(t);
   const clerk = buildContractFixture("reference-b");
   const content = JSON.stringify(clerk);
@@ -182,7 +182,7 @@ test("two actors keep distinct capture provenance through serialization and asyn
   assert.equal(result.captures[1].sha256, study.evidence.captures[1].sha256);
 });
 
-test("each actor capture verifies with only its own actor's declared action steps", async (t) => {
+void test("each actor capture verifies with only its own actor's declared action steps", async (t) => {
   const { dir, study, capture } = await captureStudy(t);
   const original = await fixture();
   study.scenarios[0].actions = original.scenarios[0].actions;
@@ -221,7 +221,7 @@ test("each actor capture verifies with only its own actor's declared action step
   assert.ok(result.captures.every((entry) => !entry.missingActionStepIds));
 });
 
-test("study retains unknown missing evidence and detects digest, size and observation contradictions", async (t) => {
+void test("study retains unknown missing evidence and detects digest, size and observation contradictions", async (t) => {
   const { dir, study } = await captureStudy(t);
   const absent = structuredClone(study);
   absent.evidence.captures[0].file = "absent.json";
@@ -250,7 +250,7 @@ test("study retains unknown missing evidence and detects digest, size and observ
   }
 });
 
-test("incomplete and malformed captures cannot establish verified evidence", async (t) => {
+void test("incomplete and malformed captures cannot establish verified evidence", async (t) => {
   const { dir, study, capture } = await captureStudy(t);
   capture.completeness.status = "incomplete";
   capture.events.dropped = 2;
@@ -269,7 +269,7 @@ test("incomplete and malformed captures cannot establish verified evidence", asy
   assert.equal((await checkStudyEvidence(study, dir)).status, "fail");
 });
 
-test("a rehashed capture whose own action count exceeds its steps remains unknown", async (t) => {
+void test("a rehashed capture whose own action count exceeds its steps remains unknown", async (t) => {
   const { dir, study, capture } = await captureStudy(t);
   capture.scenario.action_count += 1;
   const content = JSON.stringify(capture);
@@ -281,7 +281,7 @@ test("a rehashed capture whose own action count exceeds its steps remains unknow
   assert.equal((await checkStudyEvidence(study, dir)).status, "unknown");
 });
 
-test("a capture lacking one of its own actor's declared action steps remains unknown and names only the missing labels", async (t) => {
+void test("a capture lacking one of its own actor's declared action steps remains unknown and names only the missing labels", async (t) => {
   const { dir, study } = await captureStudy(t);
   const declared = study.scenarios[0].actions;
   for (const stepId of ["x1", "x2"])
@@ -302,7 +302,7 @@ test("a capture lacking one of its own actor's declared action steps remains unk
   assert.equal(result.observations[0].status, "verified");
 });
 
-test("rehashed content with missing, wrong-phase, late or wrong-transaction source provenance fails", async (t) => {
+void test("rehashed content with missing, wrong-phase, late or wrong-transaction source provenance fails", async (t) => {
   const { dir, study, capture } = await captureStudy(t);
   for (const change of [
     (c, event) => {
@@ -345,7 +345,7 @@ test("rehashed content with missing, wrong-phase, late or wrong-transaction sour
   }
 });
 
-test("study rejects cross-actor context reuse, duplicate capture paths and invalid evidence references", async (t) => {
+void test("study rejects cross-actor context reuse, duplicate capture paths and invalid evidence references", async (t) => {
   const { study } = await captureStudy(t);
   for (const change of [
     (s) => {
@@ -391,7 +391,7 @@ test("study rejects cross-actor context reuse, duplicate capture paths and inval
   }
 });
 
-test("bounded strict manifest reader rejects duplicate keys, oversized input, malformed UTF-8 and escaping paths", async (t) => {
+void test("bounded strict manifest reader rejects duplicate keys, oversized input, malformed UTF-8 and escaping paths", async (t) => {
   const dir = await stage(t);
   for (const [name, data] of [
     ["duplicate.json", '{"version":1,"version":1}'],
@@ -409,7 +409,7 @@ test("bounded strict manifest reader rejects duplicate keys, oversized input, ma
   );
 });
 
-test("CLI validates without executing actions and makes missing evidence nonzero when explicitly checked", () => {
+void test("CLI validates without executing actions and makes missing evidence nonzero when explicitly checked", () => {
   const script = fileURLToPath(new URL("./saas-study.mjs", import.meta.url));
   const run = (args) =>
     spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
@@ -431,7 +431,7 @@ test("CLI validates without executing actions and makes missing evidence nonzero
   );
 });
 
-test("CLI exits nonzero when a bound capture lacks a declared action step", async (t) => {
+void test("CLI exits nonzero when a bound capture lacks a declared action step", async (t) => {
   const { dir, study } = await captureStudy(t);
   const script = fileURLToPath(new URL("./saas-study.mjs", import.meta.url));
   const run = async (manifest) => {

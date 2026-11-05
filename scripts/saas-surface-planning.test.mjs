@@ -30,7 +30,7 @@ import {
 // Profile planning, the CLI contract and the committed fixtures of the surface
 // coverage companion.
 
-test("appends experiments to a profile without overwriting existing ones", () => {
+void test("appends experiments to a profile without overwriting existing ones", () => {
   const report = reconcileSurface(
     fixtureInputs({
       profile: input("profile.json", genericProfile()),
@@ -85,7 +85,7 @@ test("appends experiments to a profile without overwriting existing ones", () =>
   );
 });
 
-test("CLI maps exit codes to all exercised, gaps found and invalid input", async (t) => {
+void test("CLI maps exit codes to all exercised, gaps found and invalid input", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "rea-surface-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = async (name, value) => {
@@ -149,7 +149,7 @@ test("CLI maps exit codes to all exercised, gaps found and invalid input", async
     assert.equal(run(args).status, 2, args.join(" "));
 });
 
-test("committed fixtures equal the builder output and the real analysis declares the bundle surface", async () => {
+void test("committed fixtures equal the builder output and the real analysis declares the bundle surface", async () => {
   for (const [name, expected] of surfaceFixtureFiles())
     assert.equal(
       await readFile(join(fixturesDirectory, name), "utf8"),

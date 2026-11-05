@@ -24,7 +24,7 @@ import {
   stage,
 } from "./saas-api-contract-test-support.mjs";
 
-test("committed fixtures equal the deterministic builder output", async () => {
+void test("committed fixtures equal the deterministic builder output", async () => {
   for (const [name, expected] of [
     ["manifest.json", serializeFixture(contractFixtureManifest())],
     ...CONTRACT_FIXTURE_VARIANTS.map((variant) => [
@@ -43,7 +43,7 @@ test("committed fixtures equal the deterministic builder output", async () => {
   assert.equal(check.status, 0, check.stderr);
 });
 
-test("manifest validation fails closed on unknown fields, bad limits and non-origins", () => {
+void test("manifest validation fails closed on unknown fields, bad limits and non-origins", () => {
   const valid = validateContractManifest(manifest());
   assert.deepEqual(valid.resource_types, ["fetch", "xhr"]);
   for (const modify of [
@@ -94,7 +94,7 @@ test("manifest validation fails closed on unknown fields, bad limits and non-ori
   assert.equal(defaults.options.required_min_samples, 3);
 });
 
-test("inference yields an evidence-cited OpenAPI contract and a coverage report", async (t) => {
+void test("inference yields an evidence-cited OpenAPI contract and a coverage report", async (t) => {
   const dir = await stage(t);
   const result = await inferContract(manifest(), dir);
   assert.equal(
@@ -215,7 +215,7 @@ test("inference yields an evidence-cited OpenAPI contract and a coverage report"
   assert.equal(JSON.stringify(again), text);
 });
 
-test("inference fails closed on missing content, tampered bodies and over-budget schemas", async (t) => {
+void test("inference fails closed on missing content, tampered bodies and over-budget schemas", async (t) => {
   const dir = await stage(t);
   const noContent = buildContractFixture("reference-a");
   noContent.scenario.network_content = {
@@ -263,7 +263,7 @@ test("inference fails closed on missing content, tampered bodies and over-budget
   );
 });
 
-test("verify accepts a conforming replacement and classifies drift", async (t) => {
+void test("verify accepts a conforming replacement and classifies drift", async (t) => {
   const dir = await stage(t);
   const out = join(dir, "contract");
   const inferred = await inferContract(manifest(), dir);
@@ -309,7 +309,7 @@ test("verify accepts a conforming replacement and classifies drift", async (t) =
   );
 });
 
-test("CLI writes contract files and maps exit codes for infer and verify", async (t) => {
+void test("CLI writes contract files and maps exit codes for infer and verify", async (t) => {
   const dir = await stage(t);
   const out = join(dir, "out");
   const run = (args) =>

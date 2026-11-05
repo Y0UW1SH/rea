@@ -25,7 +25,7 @@ const cli = fileURLToPath(
 );
 
 for (const workflow of ["accounting", "retail"]) {
-  test(`${workflow}: independently persisted implementations agree`, () => {
+  void test(`${workflow}: independently persisted implementations agree`, () => {
     const result = runLabCase({ workflow });
     assert.equal(result.report.status, "pass");
     assert.notEqual(result.case.reference.runId, result.case.replacement.runId);
@@ -39,14 +39,14 @@ for (const workflow of ["accounting", "retail"]) {
     "no_persistence",
     "duplicate_retry",
   ]) {
-    test(`${workflow}: detects ${mutation}`, () => {
+    void test(`${workflow}: detects ${mutation}`, () => {
       const result = runLabCase({ workflow, mutation });
       assert.equal(result.report.status, "fail");
       assert.ok(result.report.checks.some((c) => c.status === "fail"));
     });
   }
 }
-test("unseen customer, amount and quantity produce newly computed outcomes", () => {
+void test("unseen customer, amount and quantity produce newly computed outcomes", () => {
   const accounting = runLabCase({
     workflow: "accounting",
     input: { customer: "Synthetic Customer Z", total: 19317, payment: 6419 },
@@ -67,7 +67,7 @@ test("unseen customer, amount and quantity produce newly computed outcomes", () 
   assert.equal(retail.case.replacement.observations[0].value.stock, 15);
   assert.equal(retail.case.replacement.observations[0].value.net, 868);
 });
-test("invalid or unsafe input fails before execution", () => {
+void test("invalid or unsafe input fails before execution", () => {
   for (const args of [
     { workflow: "other" },
     { mutation: "other" },
@@ -82,7 +82,7 @@ test("invalid or unsafe input fails before execution", () => {
     assert.throws(() => runLabCase(args));
   }
 });
-test("CLI emits structured cases and verifies all expected mutation results", () => {
+void test("CLI emits structured cases and verifies all expected mutation results", () => {
   const result = JSON.parse(
     execFileSync(process.execPath, [cli], { encoding: "utf8" }),
   );
@@ -90,12 +90,12 @@ test("CLI emits structured cases and verifies all expected mutation results", ()
   assert.equal(result.results.length, 12);
   assert.equal(runLab().status, "pass");
 });
-test("CLI rejects unsupported arguments", () => {
+void test("CLI rejects unsupported arguments", () => {
   assert.throws(() =>
     execFileSync(process.execPath, [cli, "--unknown"], { stdio: "pipe" }),
   );
 });
-test("wrong relationship fails even when customer labels and all other values agree", () => {
+void test("wrong relationship fails even when customer labels and all other values agree", () => {
   const result = runLabCase({ mutation: "wrong_relationship" });
   const a = result.case.reference.observations[0].value;
   const b = result.case.replacement.observations[0].value;
@@ -103,7 +103,7 @@ test("wrong relationship fails even when customer labels and all other values ag
   assert.equal(a.balance, b.balance);
   assert.equal(result.report.status, "fail");
 });
-test("success receipts cannot conceal an unsaved operation", () => {
+void test("success receipts cannot conceal an unsaved operation", () => {
   const result = runLabCase({ mutation: "no_persistence" });
   const snapshot = Object.values(result.evidence)[1];
   assert.ok(snapshot.receipts.every((r) => r.status === "success"));
@@ -111,7 +111,7 @@ test("success receipts cannot conceal an unsaved operation", () => {
   assert.equal(result.case.replacement.observations[0].value.balance, 10000);
   assert.equal(result.report.status, "fail");
 });
-test("generated inputs exercise both implementations and every mutation", () => {
+void test("generated inputs exercise both implementations and every mutation", () => {
   for (let n = 1; n <= 20; n++) {
     for (const workflow of ["accounting", "retail"]) {
       const input =
@@ -158,7 +158,7 @@ test("generated inputs exercise both implementations and every mutation", () => 
     }
   }
 });
-test("file-write failures propagate and remove owned temporary directories", () => {
+void test("file-write failures propagate and remove owned temporary directories", () => {
   const root = mkdtempSync(join(tmpdir(), "rea-lab-failure-test-"));
   const moduleUrl = new URL("./lib/saas-compatibility-lab.mjs", import.meta.url)
     .href;
@@ -196,7 +196,7 @@ test("file-write failures propagate and remove owned temporary directories", () 
   }
 });
 
-test("reports identify the actual implementation source revision", () => {
+void test("reports identify the actual implementation source revision", () => {
   const result = runLabCase();
   assert.match(result.case.reference.revision, /^sha256:[a-f0-9]{64}$/u);
   assert.equal(
@@ -205,7 +205,7 @@ test("reports identify the actual implementation source revision", () => {
   );
 });
 
-test("persisted readers reject malformed UTF-8 without normalizing valid Unicode", () => {
+void test("persisted readers reject malformed UTF-8 without normalizing valid Unicode", () => {
   const directory = mkdtempSync(join(tmpdir(), "rea-lab-utf8-"));
   const file = join(directory, "state.json");
   const label = "客户 café 😀 \ufffd \ufeff";

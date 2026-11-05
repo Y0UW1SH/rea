@@ -32,7 +32,7 @@ const options = {
   format_min_samples: 2,
 };
 
-test("segment rules mirror the four exact api-surface formats", () => {
+void test("segment rules mirror the four exact api-surface formats", () => {
   assert.equal(segmentRule("9810"), "numeric");
   assert.equal(segmentRule(UUID), "uuid");
   assert.equal(segmentRule(UUID.toUpperCase()), "uuid");
@@ -44,7 +44,7 @@ test("segment rules mirror the four exact api-surface formats", () => {
   assert.equal(segmentRule(""), null);
 });
 
-test("route templates replace matched segments and index them from the first segment", () => {
+void test("route templates replace matched segments and index them from the first segment", () => {
   const route = routeTemplate(`/api/invoices/9810/lines/${UUID}`);
   assert.equal(route.template, "/api/invoices/{numeric}/lines/{uuid}");
   assert.deepEqual(route.segments, [
@@ -60,7 +60,7 @@ test("route templates replace matched segments and index them from the first seg
   assert.equal(routeTemplate("/a//b").template, "/a//b");
 });
 
-test("recorded paths keep raw spelling and drop query, fragment and credentials", () => {
+void test("recorded paths keep raw spelling and drop query, fragment and credentials", () => {
   assert.deepEqual(recordedPath("https://app.example.test/api/x?y=1#f"), {
     origin: "https://app.example.test",
     path: "/api/x",
@@ -82,7 +82,7 @@ test("recorded paths keep raw spelling and drop query, fragment and credentials"
   assert.equal(recordedPath("https://a.test\\x"), null);
 });
 
-test("origin pairs accept canonical origins only and stay one-to-one", () => {
+void test("origin pairs accept canonical origins only and stay one-to-one", () => {
   const pairs = parseOriginPairs(
     [
       {
@@ -119,7 +119,7 @@ test("origin pairs accept canonical origins only and stay one-to-one", () => {
     assert.throws(() => parseOriginPairs(bad, "origin_pairs"));
 });
 
-test("origin correspondence tokens pair declared origins and keep others literal", () => {
+void test("origin correspondence tokens pair declared origins and keep others literal", () => {
   const pairs = parseOriginPairs(
     [
       {
@@ -219,7 +219,7 @@ const content = (sequence, step_index, id, phase, source, text) => ({
   body: body(text),
 });
 
-test("transactions join request, response and content and inherit the request step", () => {
+void test("transactions join request, response and content and inherit the request step", () => {
   const target = "https://app.example.test/api/invoices/9810";
   const [transaction] = assembleTransactions(
     capture([
@@ -243,7 +243,7 @@ test("transactions join request, response and content and inherit the request st
   assert.equal(transaction.request.body.state, "absent");
 });
 
-test("content without its request keeps the receipt step and digest mismatches fail closed", () => {
+void test("content without its request keeps the receipt step and digest mismatches fail closed", () => {
   const target = "https://app.example.test/api/orphan";
   const [orphan] = assembleTransactions(
     capture([content(5, 1, "t9", "response", 4, "{}")]),
@@ -278,7 +278,7 @@ test("content without its request keeps the receipt step and digest mismatches f
   );
 });
 
-test("reading a capture returns its bytes and digest and rejects unparseable files", async (t) => {
+void test("reading a capture returns its bytes and digest and rejects unparseable files", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "rea-contract-capture-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const text = JSON.stringify(capture([]));
@@ -294,7 +294,7 @@ test("reading a capture returns its bytes and digest and rejects unparseable fil
   );
 });
 
-test("inference parsing keeps number lexemes", () => {
+void test("inference parsing keeps number lexemes", () => {
   const parsed = parseJsonForInference(
     '{"a":1,"b":1.0,"c":9007199254740993,"d":-0}',
   );
@@ -312,7 +312,7 @@ const sample = (id, name, when, uid, maybe) =>
     JSON.stringify({ id, name, tags: ["x"], amount: "1.50", when, uid, maybe }),
   );
 
-test("schemas merge types, presence, formats and enum candidates with evidence markers", () => {
+void test("schemas merge types, presence, formats and enum candidates with evidence markers", () => {
   const accumulator = createSchemaAccumulator({ maxSchemaNodes: 1000 });
   const when = "2026-10-20T00:00:00.000Z";
   for (const index of [1, 2, 3])
@@ -363,7 +363,7 @@ test("schemas merge types, presence, formats and enum candidates with evidence m
   );
 });
 
-test("mixed numeric lexemes widen to number and unsafe integers are flagged", () => {
+void test("mixed numeric lexemes widen to number and unsafe integers are flagged", () => {
   const numbers = createSchemaAccumulator({ maxSchemaNodes: 100 });
   numbers.add(parseJsonForInference("[1, 2.5]"));
   assert.equal(numbers.finish(options).items.type, "number");
@@ -374,7 +374,7 @@ test("mixed numeric lexemes widen to number and unsafe integers are flagged", ()
   assert.equal(schema.items["x-rea-exactness"], "unsafe-integer-observed");
 });
 
-test("required needs enough samples, redacted bodies add structure only, node budget fails closed", () => {
+void test("required needs enough samples, redacted bodies add structure only, node budget fails closed", () => {
   const sparse = createSchemaAccumulator({ maxSchemaNodes: 100 });
   sparse.add(parseJsonForInference('{"a":1}'));
   sparse.add(parseJsonForInference('{"a":2}'));
@@ -395,7 +395,7 @@ test("required needs enough samples, redacted bodies add structure only, node bu
   );
 });
 
-test("fully redacted URLs with an empty spelling are accepted by the capture reader", () => {
+void test("fully redacted URLs with an empty spelling are accepted by the capture reader", () => {
   const redacted = request(1, 1, "t1", "GET", "https://app.example.test/x");
   redacted.url = {
     url: "",
@@ -414,7 +414,7 @@ test("fully redacted URLs with an empty spelling are accepted by the capture rea
   assert.throws(() => validateScenarioCapture(capture([unredacted])), /url/u);
 });
 
-test("prototype-named members, empty strings and impossible dates keep schemas consistent", () => {
+void test("prototype-named members, empty strings and impossible dates keep schemas consistent", () => {
   const proto = createSchemaAccumulator({ maxSchemaNodes: 100 });
   for (let index = 0; index < 3; index += 1)
     proto.add(parseJsonForInference('{"__proto__":1,"b":2}'));
@@ -451,7 +451,7 @@ test("prototype-named members, empty strings and impossible dates keep schemas c
   assert.equal(Object.hasOwn(calendar.properties.at, "format"), false);
 });
 
-test("schema keys follow Unicode code point order", () => {
+void test("schema keys follow Unicode code point order", () => {
   const accumulator = createSchemaAccumulator({ maxSchemaNodes: 100 });
   accumulator.add(parseJsonForInference('{"😀":1,"ｚ":2}'));
   assert.deepEqual(Object.keys(accumulator.finish(options).properties), [

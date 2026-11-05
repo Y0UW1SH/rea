@@ -63,3 +63,9 @@ not update the customized product. Inspect that relationship on each run.
 
 See the [2026-10-21 integration receipt](saas-upstream-sync-validation.md) for a
 worked example, including conflicts, passing checks and unresolved failures.
+
+The [2026-11-04 integration record](saas-change-ledger.md#upstream-integration-record-2026-11-04)
+is the latest worked example: it brought in 2,459 upstream commits, layered
+strict replay on upstream's state-serving environment server, re-guarded the
+inherited CI jobs upstream added, and integrated the study-manifest and
+live-investigation drafts.

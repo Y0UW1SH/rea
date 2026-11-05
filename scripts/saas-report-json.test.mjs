@@ -15,7 +15,7 @@ const fixture = () =>
     ),
   );
 
-test("CLI preserves signed-zero evidence without changing comparison verdicts", (t) => {
+void test("CLI preserves signed-zero evidence without changing comparison verdicts", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "rea-compatibility-signed-zero-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const file = join(dir, "case.json");
@@ -71,7 +71,7 @@ test("CLI preserves signed-zero evidence without changing comparison verdicts", 
   }
 });
 
-test("contract serialization preserves numeric signs and literal JSON data", () => {
+void test("contract serialization preserves numeric signs and literal JSON data", () => {
   const value = JSON.parse(
     '{"nested":[-0,0,{"value":-0}],"__proto__":-0,"constructor":"-0"}',
   );
@@ -94,7 +94,7 @@ test("contract serialization preserves numeric signs and literal JSON data", () 
   assert.equal(serializeContract("-0"), '"-0"\n');
 });
 
-test("report budget includes the numeric negative-zero sign", () => {
+void test("report budget includes the numeric negative-zero sign", () => {
   const maximum = 16 * 1024 * 1024;
   const empty = '{\n  "value": -0,\n  "padding": ""\n}\n';
   const report = { value: -0, padding: "x".repeat(maximum - empty.length) };

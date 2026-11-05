@@ -26,7 +26,7 @@ import {
   sha256,
 } from "./saas-surface-test-support.mjs";
 
-test("GraphQL names never establish a service association or hide unrelated traffic", () => {
+void test("GraphQL names never establish a service association or hide unrelated traffic", () => {
   const capture = buildSurfaceCapture("https://unrelated.example.test");
   for (const event of capture.events.items)
     if (event.transaction_id === "t8" && event.url)
@@ -52,7 +52,7 @@ test("GraphQL names never establish a service association or hide unrelated traf
   assert.equal(observed[0].endpoint_path, "/unrelated-api");
 });
 
-test("GraphQL candidates retain endpoint and document identity without inventing static linkage", () => {
+void test("GraphQL candidates retain endpoint and document identity without inventing static linkage", () => {
   const first = buildSurfaceCapture();
   const second = buildSurfaceCapture();
   for (const event of second.events.items)
@@ -94,7 +94,7 @@ test("GraphQL candidates retain endpoint and document identity without inventing
   assert.equal(new Set(observed.map((entry) => entry.endpoint_path)).size, 2);
 });
 
-test("pins the companion families, statuses and reason superset", () => {
+void test("pins the companion families, statuses and reason superset", () => {
   assert.deepEqual(
     [...SURFACE_FAMILIES],
     ["network", "trpc", "graphql", "route"],
@@ -119,7 +119,7 @@ test("pins the companion families, statuses and reason superset", () => {
   );
 });
 
-test("reconciles every declared family against api-surface groups and a capture", () => {
+void test("reconciles every declared family against api-surface groups and a capture", () => {
   const report = reconcileSurface(fixtureInputs());
   assert.equal(report.status, "complete", JSON.stringify(report.limitations));
   assert.deepEqual(statusesOf(report), expectedBundleStatuses(report));
@@ -148,7 +148,7 @@ test("reconciles every declared family against api-surface groups and a capture"
   assert.equal(Object.hasOwn(report, "profileUpdate"), false);
 });
 
-test("cites static locations and observed ordinals, transactions or steps per item", () => {
+void test("cites static locations and observed ordinals, transactions or steps per item", () => {
   const report = reconcileSurface(fixtureInputs());
   const find = (key) => report.surface.find((item) => item.key === key);
   const customers = find("* https://app.example.test/api/customers/42");
@@ -217,7 +217,7 @@ test("cites static locations and observed ordinals, transactions or steps per it
   );
 });
 
-test("reports undeclared traffic, plans experiments and stays deterministic", () => {
+void test("reports undeclared traffic, plans experiments and stays deterministic", () => {
   const report = reconcileSurface(fixtureInputs());
   assert.deepEqual(
     report.undeclared_observed.map((entry) => [
@@ -288,7 +288,7 @@ test("reports undeclared traffic, plans experiments and stays deterministic", ()
   assert.equal(JSON.stringify(reconcileSurface(fixtureInputs())), text);
 });
 
-test("fails closed on malformed inputs and tolerates envelope extras", () => {
+void test("fails closed on malformed inputs and tolerates envelope extras", () => {
   const invalid = (inputs, pattern) => {
     const report = reconcileSurface(inputs);
     assert.equal(report.status, "invalid");
@@ -340,7 +340,7 @@ test("fails closed on malformed inputs and tolerates envelope extras", () => {
   assert.equal(envelope.inputs.static.root_artifact_sha256, SHA);
 });
 
-test("flips absence to unknown under incomplete coverage and names body-less RPC limits", () => {
+void test("flips absence to unknown under incomplete coverage and names body-less RPC limits", () => {
   const partialRecords = buildSurfaceApiSurface();
   partialRecords.records.total += 1;
   const incomplete = reconcileSurface(
@@ -392,7 +392,7 @@ test("flips absence to unknown under incomplete coverage and names body-less RPC
   );
 });
 
-test("folds replacement origins onto reference origins before joining", () => {
+void test("folds replacement origins onto reference origins before joining", () => {
   const replacement = buildSurfaceCapture(SURFACE_REPLACEMENT_ORIGIN);
   const report = reconcileSurface(
     fixtureInputs({ observed: [input("replacement.json", replacement)] }),
@@ -434,7 +434,7 @@ test("folds replacement origins onto reference origins before joining", () => {
   );
 });
 
-test("keeps GraphQL absence unknown without a transport association", () => {
+void test("keeps GraphQL absence unknown without a transport association", () => {
   const quiet = buildSurfaceCapture();
   quiet.events.items = quiet.events.items.filter(
     (event) => event.transaction_id !== "t8",
@@ -501,7 +501,7 @@ test("keeps GraphQL absence unknown without a transport association", () => {
   );
 });
 
-test("reads persisted-query bodies by operationName and ignores names outside the GraphQL grammar", () => {
+void test("reads persisted-query bodies by operationName and ignores names outside the GraphQL grammar", () => {
   const apq = buildSurfaceCapture();
   setRequestBody(
     apq,
@@ -540,7 +540,7 @@ test("reads persisted-query bodies by operationName and ignores names outside th
   );
 });
 
-test("treats an api-surface page beyond the first or short of its total as incomplete", () => {
+void test("treats an api-surface page beyond the first or short of its total as incomplete", () => {
   const paged = buildSurfaceApiSurface();
   paged.view.offset = 50;
   paged.coverage = {
@@ -565,7 +565,7 @@ test("treats an api-surface page beyond the first or short of its total as incom
   );
 });
 
-test("never echoes a route literal with a query or fragment", () => {
+void test("never echoes a route literal with a query or fragment", () => {
   const report = reconcileSurface(
     fixtureInputs({
       static: input(

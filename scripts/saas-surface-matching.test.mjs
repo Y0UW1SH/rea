@@ -87,7 +87,7 @@ const classify = (value, mechanisms, groups, options = {}) =>
     options.origins ?? [],
   );
 
-test("pins the 3591 status, basis and reason vocabulary", () => {
+void test("pins the 3591 status, basis and reason vocabulary", () => {
   assert.deepEqual(
     [...ENDPOINT_TRAFFIC_UNKNOWN_REASONS],
     OWNER_UNKNOWN_REASONS,
@@ -119,7 +119,7 @@ test("pins the 3591 status, basis and reason vocabulary", () => {
     assert.ok(Object.isFrozen(value));
 });
 
-test("parses static targets without echoing values beyond origin and path", () => {
+void test("parses static targets without echoing values beyond origin and path", () => {
   assert.deepEqual(
     parseStaticTarget("https://api.example.test/v1/items?token=secret#frag"),
     { kind: "absolute", origin: "https://api.example.test", path: "/v1/items" },
@@ -147,7 +147,7 @@ test("parses static targets without echoing values beyond origin and path", () =
     );
 });
 
-test("infers methods from callee names and API definitions only", () => {
+void test("infers methods from callee names and API definitions only", () => {
   assert.deepEqual(nodeMethod(["call:api.post"]), {
     values: ["POST"],
     basis: "callee-name",
@@ -177,7 +177,7 @@ test("infers methods from callee names and API definitions only", () => {
     assert.deepEqual(nodeMethod(mechanisms), { values: [], basis: "unknown" });
 });
 
-test("maps WebSocket constructor origins to ws schemes and leaves others alone", () => {
+void test("maps WebSocket constructor origins to ws schemes and leaves others alone", () => {
   assert.equal(requestOrigin("call:WebSocket", APP), "wss://app.example.test");
   assert.equal(
     requestOrigin("call:window.WebSocket", "http://localhost:3000"),
@@ -187,7 +187,7 @@ test("maps WebSocket constructor origins to ws schemes and leaves others alone",
   assert.equal(requestOrigin("call:WebSocket", "wss://x.test"), "wss://x.test");
 });
 
-test("keys route shapes by the api-surface segment rules as composite tuples", () => {
+void test("keys route shapes by the api-surface segment rules as composite tuples", () => {
   const shape = JSON.stringify([
     [0, "users"],
     [1, "numeric"],
@@ -211,7 +211,7 @@ test("keys route shapes by the api-surface segment rules as composite tuples", (
   );
 });
 
-test("pairs exactly only when every templated value occurred and one position varied", () => {
+void test("pairs exactly only when every templated value occurred and one position varied", () => {
   const single = group("GET", APP, "/users/{numeric}", [
     [1, "numeric", ["8812", "9031"]],
   ]);
@@ -230,7 +230,7 @@ test("pairs exactly only when every templated value occurred and one position va
   assert.equal(pairingBasis(group("GET", APP, "/plain"), "/plain"), "exact");
 });
 
-test("reads network endpoint facts and prefers literal readings over candidates", () => {
+void test("reads network endpoint facts and prefers literal readings over candidates", () => {
   assert.equal(
     networkEndpointFacts({ kind: "javascript-asset", observations: [] }),
     undefined,
@@ -275,7 +275,7 @@ test("reads network endpoint facts and prefers literal readings over candidates"
   assert.deepEqual(facts.mechanisms, ["call:translate.get"]);
 });
 
-test("classifies static endpoints with the 3591 statuses and reasons", () => {
+void test("classifies static endpoints with the 3591 statuses and reasons", () => {
   const login = {
     ...group("POST", APP, "/rest/user/login"),
     record_ordinals: [0, 1],
@@ -333,7 +333,7 @@ test("classifies static endpoints with the 3591 statuses and reasons", () => {
     );
 });
 
-test("leaves undeclared origins unresolved and requires complete exercised coverage", () => {
+void test("leaves undeclared origins unresolved and requires complete exercised coverage", () => {
   const users = group("GET", APP, "/api/users");
   const undeclared = classify("/api/users", ["call:fetch"], [users]);
   assert.equal(undeclared.item.status, "unknown");
@@ -381,7 +381,7 @@ test("leaves undeclared origins unresolved and requires complete exercised cover
   );
 });
 
-test("separates exact literals from template-compatible shapes and disagreeing methods", () => {
+void test("separates exact literals from template-compatible shapes and disagreeing methods", () => {
   const users = group(
     "GET",
     APP,

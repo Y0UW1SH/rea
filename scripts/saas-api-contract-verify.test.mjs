@@ -19,7 +19,7 @@ import {
 } from "./saas-api-contract-test-support.mjs";
 import { setRequestBody } from "./saas-surface-test-support.mjs";
 
-test("hash-only APQ references retain identity and refuse a different hash", async (t) => {
+void test("hash-only APQ references retain identity and refuse a different hash", async (t) => {
   const dir = await stage(t);
   const capture = buildContractFixture("reference-a");
   const apq = (hash) =>
@@ -58,7 +58,7 @@ test("hash-only APQ references retain identity and refuse a different hash", asy
   );
 });
 
-test("unidentified GraphQL reference envelopes preserve uncertainty", async (t) => {
+void test("unidentified GraphQL reference envelopes preserve uncertainty", async (t) => {
   const dir = await stage(t);
   for (const [name, request, redacted] of [
     [
@@ -103,7 +103,7 @@ for (const omission of [
   "redacted-envelope",
   "failed-request",
 ]) {
-  test(`missing GraphQL reference identity stays unknown: ${omission}`, async (t) => {
+  void test(`missing GraphQL reference identity stays unknown: ${omission}`, async (t) => {
     const dir = await stage(t);
     const reference = buildContractFixture("reference-b");
     const event = reference.events.items.find(
@@ -170,7 +170,7 @@ for (const omission of [
   });
 }
 
-test("verification does not turn unsupported JSON numbers into schema drift", async (t) => {
+void test("verification does not turn unsupported JSON numbers into schema drift", async (t) => {
   const dir = await stage(t);
   for (const number of ["1e999", "1e-999", "1.0000000000000001"]) {
     const reference = buildContractFixture("reference-a");
@@ -195,7 +195,7 @@ test("verification does not turn unsupported JSON numbers into schema drift", as
   }
 });
 
-test("unsupported numbers keep REST conformance unknown despite other verified responses", async (t) => {
+void test("unsupported numbers keep REST conformance unknown despite other verified responses", async (t) => {
   const { dir, out } = await contractFor(t);
   const replacement = buildContractFixture("replacement");
   setResponseBody(replacement, "t2", '{"id":1,"name":false}');
@@ -217,7 +217,7 @@ test("unsupported numbers keep REST conformance unknown despite other verified r
   assert.ok(inexact.verified_response_bodies > 0);
 });
 
-test("redacted GraphQL reference responses cannot establish complete conformance", async (t) => {
+void test("redacted GraphQL reference responses cannot establish complete conformance", async (t) => {
   const dir = await stage(t);
   const capture = buildContractFixture("reference-a");
   capture.events.items.find(
@@ -245,7 +245,7 @@ test("redacted GraphQL reference responses cannot establish complete conformance
   assert.equal(report.unverified_graphql_transactions, 1);
 });
 
-test("required coverage is independent of sparse-capture conformance and business compatibility", async (t) => {
+void test("required coverage is independent of sparse-capture conformance and business compatibility", async (t) => {
   const { dir, out } = await contractFor(t);
   const sparse = buildContractFixture("replacement");
   sparse.events.items = sparse.events.items.filter(
@@ -275,7 +275,7 @@ test("required coverage is independent of sparse-capture conformance and busines
   assert.equal(invalid.status, "invalid");
 });
 
-test("required coverage owns selectors before asynchronous reads and after returning", async (t) => {
+void test("required coverage owns selectors before asynchronous reads and after returning", async (t) => {
   const { dir, out } = await contractFor(t);
   const sparse = buildContractFixture("replacement");
   sparse.events.items = sparse.events.items.filter(
@@ -309,7 +309,7 @@ test("required coverage owns selectors before asynchronous reads and after retur
   });
 });
 
-test("GraphQL verification distinguishes same-name documents and validates each response schema", async (t) => {
+void test("GraphQL verification distinguishes same-name documents and validates each response schema", async (t) => {
   const dir = await stage(t);
   const reference = buildContractFixture("reference-b");
   setRequestBody(
@@ -380,7 +380,7 @@ test("GraphQL verification distinguishes same-name documents and validates each 
   );
 });
 
-test("GraphQL identity cannot be established by a response or operation name alone", async (t) => {
+void test("GraphQL identity cannot be established by a response or operation name alone", async (t) => {
   const { dir, out } = await contractFor(t);
   const capture = buildContractFixture("replacement");
   capture.events.items = capture.events.items.filter(
@@ -417,7 +417,7 @@ test("GraphQL identity cannot be established by a response or operation name alo
   );
 });
 
-test("GraphQL response omissions stay unknown and APQ retains operation identity", async (t) => {
+void test("GraphQL response omissions stay unknown and APQ retains operation identity", async (t) => {
   const dir = await stage(t);
   const reference = buildContractFixture("reference-a");
   const requestEvent = reference.events.items.find(
@@ -473,7 +473,7 @@ test("GraphQL response omissions stay unknown and APQ retains operation identity
 // Behaviours found by the independent review of the first increment: every case here
 // describes a replacement or capture shape that used to pass, crash or round-trip badly.
 
-test("verify flags wrong media types on matched operations and ignores unmatched non-JSON noise", async (t) => {
+void test("verify flags wrong media types on matched operations and ignores unmatched non-JSON noise", async (t) => {
   const { dir, out } = await contractFor(t);
   const html = buildContractFixture("replacement");
   setResponseBody(html, "t2", "<html>fallback</html>", "text/html");
@@ -498,7 +498,7 @@ test("verify flags wrong media types on matched operations and ignores unmatched
   );
 });
 
-test("verify is unknown without verified response bodies or a complete capture, and lists unexercised operations", async (t) => {
+void test("verify is unknown without verified response bodies or a complete capture, and lists unexercised operations", async (t) => {
   const { dir, out } = await contractFor(t);
   const noResponses = buildContractFixture("replacement");
   noResponses.scenario.network_content.response_body = false;
@@ -559,7 +559,7 @@ test("verify is unknown without verified response bodies or a complete capture, 
   );
 });
 
-test("failed and unfinished requests are recorded, not modeled as default responses", async (t) => {
+void test("failed and unfinished requests are recorded, not modeled as default responses", async (t) => {
   const dir = await stage(t);
   const failed = buildContractFixture("reference-a");
   failTransaction(failed, "t9", "net::ERR_FAILED");
@@ -602,7 +602,7 @@ test("failed and unfinished requests are recorded, not modeled as default respon
   assert.equal(finding.message, "net::ERR_CONNECTION_RESET");
 });
 
-test("every reference capture verifies against its own contract, including deep bodies and sparse samples", async (t) => {
+void test("every reference capture verifies against its own contract, including deep bodies and sparse samples", async (t) => {
   const { dir, out } = await contractFor(t);
   for (const file of ["reference-a.json", "reference-b.json"]) {
     const self = await verifyContract(out, dir, file, {});
@@ -647,7 +647,7 @@ test("every reference capture verifies against its own contract, including deep 
   );
 });
 
-test("empty bodies, declared origins and duplicate captures are handled explicitly", async (t) => {
+void test("empty bodies, declared origins and duplicate captures are handled explicitly", async (t) => {
   const dir = await stage(t);
   const withDelete = buildContractFixture("reference-a");
   appendTransaction(withDelete, {

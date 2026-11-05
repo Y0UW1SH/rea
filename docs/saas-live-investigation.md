@@ -167,7 +167,8 @@ REA_TEST_CHROMIUM=/absolute/path/to/chromium npm run test:focused -- tests/accep
 ```
 
 Without that environment variable, the browser acceptance test is explicitly
-skipped. A vendor pilot still needs an authorized test workspace, its settings,
+skipped. Chromium refuses to start its sandbox when launched as root; on such a
+host run the test as an unprivileged user instead of disabling the sandbox. A vendor pilot still needs an authorized test workspace, its settings,
 selectors and observable state endpoint. Multi-actor coordination, model-generated
 hypotheses, broader probe families, automatic counterexample minimization, drift
 monitoring and replacement generation are later increments.

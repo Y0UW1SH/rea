@@ -58,14 +58,14 @@ function changedExportRows() {
     replacement: JSON.stringify(rows),
   };
 }
-test("reordered records and exact decimal spellings agree with provenance", async (t) => {
+void test("reordered records and exact decimal spellings agree with provenance", async (t) => {
   const r = await run(t);
   assert.equal(r.status, "pass");
   assert.match(r.reference.sha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(r.reference.excludedFields, ["ignored"]);
   assert.equal(r.reference.records, 2);
 });
-test("wrong amount and literal relationship fail", async (t) => {
+void test("wrong amount and literal relationship fail", async (t) => {
   for (const change of [{ amount: "100.01" }, { customer: "c2" }]) {
     const r = await run(
       t,
@@ -78,7 +78,7 @@ test("wrong amount and literal relationship fail", async (t) => {
     assert.equal(r.status, "fail");
   }
 });
-test("exact decimal comparison never rounds large values", async (t) => {
+void test("exact decimal comparison never rounds large values", async (t) => {
   const r = await run(
     t,
     "id,amount,customer\na,9007199254740993.01,c1",
@@ -88,7 +88,7 @@ test("exact decimal comparison never rounds large values", async (t) => {
   );
   assert.equal(r.status, "fail");
 });
-test("quoted commas newline and escaped quotes are preserved", async (t) => {
+void test("quoted commas newline and escaped quotes are preserved", async (t) => {
   const r = await run(
     t,
     'id,amount,customer\n"a,\nb",1,"c""1"\n',
@@ -96,7 +96,7 @@ test("quoted commas newline and escaped quotes are preserved", async (t) => {
   );
   assert.equal(r.status, "pass");
 });
-test("duplicates missing columns malformed CSV and JSON cannot pass", async (t) => {
+void test("duplicates missing columns malformed CSV and JSON cannot pass", async (t) => {
   for (const a of [
     "id,amount,customer\na,1,c\na,1,c",
     "id,amount\na,1",
@@ -114,7 +114,7 @@ test("duplicates missing columns malformed CSV and JSON cannot pass", async (t) 
   ])
     assert.equal((await run(t, undefined, b)).status, "invalid");
 });
-test("missing and extra record keys remain visible", async (t) => {
+void test("missing and extra record keys remain visible", async (t) => {
   const r = await run(
     t,
     undefined,
@@ -127,7 +127,7 @@ test("missing and extra record keys remain visible", async (t) => {
   assert.deepEqual(r.missingReplacementKeys, [["b"]]);
   assert.deepEqual(r.extraReplacementKeys, [["c"]]);
 });
-test("budgets path traversal and missing file fail closed", async (t) => {
+void test("budgets path traversal and missing file fail closed", async (t) => {
   for (const modify of [
     (p) => (p.limits.maxBytes = 10),
     (p) => (p.limits.maxRecords = 1),
@@ -141,7 +141,7 @@ test("budgets path traversal and missing file fail closed", async (t) => {
       "invalid",
     );
 });
-test("symlinks outside manifest directory are rejected", async (t) => {
+void test("symlinks outside manifest directory are rejected", async (t) => {
   const outside = await mkdtemp(join(tmpdir(), "rea-exports-outside-"));
   t.after(() => rm(outside, { recursive: true, force: true }));
   await writeFile(join(outside, "ref.csv"), "id,amount,customer\na,1,c");
@@ -153,11 +153,11 @@ test("symlinks outside manifest directory are rejected", async (t) => {
   assert.equal(r.status, "invalid");
   assert.match(r.reason, /escapes input directory/);
 });
-test("invalid UTF-8 and BOM are not silently repaired", async (t) => {
+void test("invalid UTF-8 and BOM are not silently repaired", async (t) => {
   for (const a of [Buffer.from([0xff]), "\ufeffid,amount,customer\na,1,c"])
     assert.equal((await run(t, a)).status, "invalid");
 });
-test("invalid UTF-8 retains stable raw input provenance on either side", async (t) => {
+void test("invalid UTF-8 retains stable raw input provenance on either side", async (t) => {
   const malformed = Buffer.from([0xff]);
   for (const side of ["reference", "replacement"]) {
     const r = await run(
@@ -177,7 +177,7 @@ test("invalid UTF-8 retains stable raw input provenance on either side", async (
   }
 });
 
-test("expanded reports fail closed with complete policy and input provenance", async (t) => {
+void test("expanded reports fail closed with complete policy and input provenance", async (t) => {
   const alias = "field".repeat(40000);
   const { reference, replacement } = changedExportRows();
   const r = await run(t, reference, replacement, (p) => {
@@ -194,7 +194,7 @@ test("expanded reports fail closed with complete policy and input provenance", a
   );
 });
 
-test("report budget includes exact UTF-8 escaping and pretty-print overhead", async (t) => {
+void test("report budget includes exact UTF-8 escaping and pretty-print overhead", async (t) => {
   const prefix = 'quotes"\\\b\t\n\f\r\u0000 café 漢字 😀\ud800x\udfff';
   const { reference, replacement } = changedExportRows();
   const baseline = await run(t, reference, replacement, (p) => {
@@ -222,7 +222,7 @@ test("report budget includes exact UTF-8 escaping and pretty-print overhead", as
   assert.match(exceeded.reason, /report: exceeds 16 MiB/);
 });
 
-test("oversized policies are rejected before reading inputs without echoing them", async (t) => {
+void test("oversized policies are rejected before reading inputs without echoing them", async (t) => {
   const r = await run(t, undefined, undefined, (p) => {
     p.name = "x".repeat(1024 * 1024);
   });
@@ -233,7 +233,7 @@ test("oversized policies are rejected before reading inputs without echoing them
   assert.ok(Buffer.byteLength(JSON.stringify(r, null, 2)) < 1024);
 });
 
-test("policy admission snapshots nested choices before asynchronous reads", async (t) => {
+void test("policy admission snapshots nested choices before asynchronous reads", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "rea-export-policy-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, "ref.csv"), "id,amount,customer\na,1,c");
@@ -265,7 +265,7 @@ test("policy admission snapshots nested choices before asynchronous reads", asyn
   assert.equal(p.limits.maxBytes, 1);
 });
 
-test("oversized invalid diagnostics retain policy and input provenance within the report cap", async (t) => {
+void test("oversized invalid diagnostics retain policy and input provenance within the report cap", async (t) => {
   const key = "\u0000".repeat(2400000);
   const r = await run(
     t,
@@ -283,7 +283,7 @@ test("oversized invalid diagnostics retain policy and input provenance within th
     Buffer.byteLength(JSON.stringify(r, null, 2)) + 1 <= 16 * 1024 * 1024,
   );
 });
-test("canonical decimal key collisions and empty keys are invalid", async (t) => {
+void test("canonical decimal key collisions and empty keys are invalid", async (t) => {
   const collision = await run(
     t,
     "id,amount,customer\na,1.0,c\nb,01.00,c",
@@ -293,7 +293,7 @@ test("canonical decimal key collisions and empty keys are invalid", async (t) =>
   assert.equal(collision.status, "invalid");
   assert.equal((await run(t, "id,amount,customer\n,1,c")).status, "invalid");
 });
-test("malformed JSON syntax cannot pass", async (t) => {
+void test("malformed JSON syntax cannot pass", async (t) => {
   for (const b of [
     '[{"id":"a",}]',
     "[true false]",
@@ -305,7 +305,7 @@ test("malformed JSON syntax cannot pass", async (t) => {
   ])
     assert.equal((await run(t, undefined, b)).status, "invalid");
 });
-test("strict decimal spellings exclude exponent locale whitespace and nonfinite numbers", async (t) => {
+void test("strict decimal spellings exclude exponent locale whitespace and nonfinite numbers", async (t) => {
   for (const amount of [
     "1e10",
     "1,23",
@@ -324,7 +324,7 @@ test("strict decimal spellings exclude exponent locale whitespace and nonfinite 
     assert.equal(r.status, "invalid");
   }
 });
-test("integer fields remain exact and reject fractions", async (t) => {
+void test("integer fields remain exact and reject fractions", async (t) => {
   const exact = await run(
     t,
     "id,amount,customer\na,9007199254740993,c1",
@@ -338,7 +338,7 @@ test("integer fields remain exact and reject fractions", async (t) => {
     "invalid",
   );
 });
-test("prototype-looking columns and keys are ordinary data", async (t) => {
+void test("prototype-looking columns and keys are ordinary data", async (t) => {
   const a = "__proto__,amount,constructor\nprototype,1,toString";
   const b = '[{"__proto__":"prototype","amount":"1","constructor":"toString"}]';
   assert.equal(
@@ -362,12 +362,12 @@ test("prototype-looking columns and keys are ordinary data", async (t) => {
     "pass",
   );
 });
-test("malformed input retains successfully read file digest", async (t) => {
+void test("malformed input retains successfully read file digest", async (t) => {
   const r = await run(t, "bad");
   assert.equal(r.status, "invalid");
   assert.match(r.inputs.reference.sha256, /^[a-f0-9]{64}$/);
 });
-test("aggregate JSON and CSV allocation budgets reject expansion", async (t) => {
+void test("aggregate JSON and CSV allocation budgets reject expansion", async (t) => {
   const csv = await run(
     t,
     "id,amount,customer\na,1,c",
@@ -387,7 +387,7 @@ test("aggregate JSON and CSV allocation budgets reject expansion", async (t) => 
   assert.equal(json.status, "invalid");
   assert.match(json.reason, /JSON: exceeds maxValues/);
 });
-test("JSON column union is bounded", async (t) => {
+void test("JSON column union is bounded", async (t) => {
   const r = await run(
     t,
     "id,amount,customer\na,1,c",
@@ -400,7 +400,7 @@ test("JSON column union is bounded", async (t) => {
   assert.equal(r.status, "invalid");
   assert.match(r.reason, /union/);
 });
-test("CLI distinguishes pass fail invalid usage and read failure", async (t) => {
+void test("CLI distinguishes pass fail invalid usage and read failure", async (t) => {
   const { spawnSync } = await import("node:child_process");
   const script = new URL("./saas-export-compare.mjs", import.meta.url);
   const dir = await mkdtemp(join(tmpdir(), "rea-export-cli-"));
@@ -449,7 +449,7 @@ test("CLI distinguishes pass fail invalid usage and read failure", async (t) => 
   assert.match(JSON.parse(result.stdout).reason, /report: exceeds 16 MiB/);
   assert.ok(Buffer.byteLength(result.stdout) <= 16 * 1024 * 1024);
 });
-test("opened descriptor rejects ancestor substitution and concurrent file changes", async () => {
+void test("opened descriptor rejects ancestor substitution and concurrent file changes", async () => {
   const { spawnSync } = await import("node:child_process");
   const moduleUrl = new URL("./lib/saas-export-comparison.mjs", import.meta.url)
     .href;
@@ -490,7 +490,7 @@ test("opened descriptor rejects ancestor substitution and concurrent file change
   );
   assert.equal(result.status, 0, result.stderr);
 });
-test("quoted large fields retain exact bytes without per-character array expansion", async (t) => {
+void test("quoted large fields retain exact bytes without per-character array expansion", async (t) => {
   const label = "x".repeat(100000) + '"'.repeat(10000);
   const r = await run(
     t,
@@ -501,7 +501,7 @@ test("quoted large fields retain exact bytes without per-character array expansi
   assert.equal(r.status, "pass");
 });
 
-test("JSON root record budget is enforced independently of reference rows", async (t) => {
+void test("JSON root record budget is enforced independently of reference rows", async (t) => {
   const r = await run(
     t,
     "id,amount,customer\na,1,c",
