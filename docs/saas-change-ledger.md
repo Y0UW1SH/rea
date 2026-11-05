@@ -647,8 +647,10 @@ Local gates on the final code tree (Linux, Node 24.22.1 per `.nvmrc`, npm
   second complete run on the repaired tree, as an unprivileged user under a
   child-subreaper (this container's PID 1 reaps no orphans), passed 40,969
   tests with all sixteen earlier failures passing in-suite; its four remaining
-  failures were invocation artifacts shown passing separately. See the
-  validation report.
+  failures were invocation artifacts shown passing separately. A third run
+  with the checkout owned by that user, through `npm run test:with-build`
+  under the subreaper with Chromium configured, passed 41,028 tests with 271
+  skipped and no failures. See the validation report.
 - Typecheck, `lint` (0 errors), `format:check`, `knip`, `metadata:check`,
   architecture guards and `git diff --check`: passed. `lint:typed` flagged the
   fork's node:test suites for unawaited top-level `test()` calls; they are now
