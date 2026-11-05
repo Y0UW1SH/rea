@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "profileId": "quickbooks-planning-template",
+  "setup": {
+    "product": {
+      "provenance": "caller_declared",
+      "value": "QuickBooks (edition not selected)",
+      "evidence": []
+    },
+    "edition": {
+      "provenance": "unknown",
+      "value": null,
+      "evidence": []
+    },
+    "region": {
+      "provenance": "unknown",
+      "value": null,
+      "evidence": []
+    },
+    "version": {
+      "provenance": "unknown",
+      "value": null,
+      "evidence": []
+    },
+    "workspace": {
+      "provenance": "unknown",
+      "value": null,
+      "evidence": []
+    },
+    "role": {
+      "provenance": "unknown",
+      "value": null,
+      "evidence": []
+    },
+    "currency": {
+      "provenance": "unknown",
+      "value": null,
+      "evidence": []
+    },
+    "locale": {
+      "provenance": "unknown",
+      "value": null,
+      "evidence": []
+    },
+    "timezone": {
+      "provenance": "unknown",
+      "value": null,
+      "evidence": []
+    }
+  },
+  "observationMethods": [
+    {
+      "kind": "browser",
+      "availability": "unknown",
+      "notes": "Requires explicit authorized target access; no vendor session has been verified."
+    },
+    {
+      "kind": "api",
+      "availability": "unknown",
+      "notes": "Optional. Do not infer API access from browser access."
+    }
+  ],
+  "workflows": [
+    {
+      "id": "first-workflow",
+      "question": "Does a partial payment preserve customer/invoice/payment linkage and balance?",
+      "goals": ["workflow", "saved_data"],
+      "status": "planned",
+      "casePath": null,
+      "evidence": [],
+      "limitations": [
+        "No live vendor capture or independent replacement verified."
+      ]
+    }
+  ],
+  "externalDependencies": [
+    {
+      "name": "payments",
+      "mode": "untested",
+      "scope": "No live effects authorized or exercised by this template.",
+      "evidence": []
+    },
+    {
+      "name": "email",
+      "mode": "untested",
+      "scope": "No live effects authorized or exercised by this template.",
+      "evidence": []
+    },
+    {
+      "name": "identity",
+      "mode": "untested",
+      "scope": "No live effects authorized or exercised by this template.",
+      "evidence": []
+    },
+    {
+      "name": "banking",
+      "mode": "untested",
+      "scope": "No live effects authorized or exercised by this template.",
+      "evidence": []
+    },
+    {
+      "name": "hardware",
+      "mode": "untested",
+      "scope": "No live effects authorized or exercised by this template.",
+      "evidence": []
+    }
+  ],
+  "experiments": [
+    {
+      "id": "fresh-read",
+      "workflowId": "first-workflow",
+      "uncertainty": "Does a partial payment preserve customer/invoice/payment linkage and balance?",
+      "proposedObservation": "In the chosen edition and authorized test workspace, create a synthetic invoice, record a partial payment and freshly read the linked records.",
+      "status": "planned",
+      "evidence": []
+    }
+  ]
+}

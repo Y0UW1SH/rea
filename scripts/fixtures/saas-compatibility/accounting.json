@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "caseId": "synthetic-accounting",
+  "scope": "Synthetic accounting workflow; no vendor behavior verified.",
+  "unsupported": [
+    "Live vendor capture",
+    "Permissions",
+    "Concurrent updates",
+    "Exports"
+  ],
+  "contextKeys": ["currency", "role"],
+  "reference": {
+    "runId": "reference-run",
+    "workspace": "reference-synthetic",
+    "context": {
+      "currency": {
+        "provenance": "caller_declared",
+        "value": "CAD"
+      },
+      "role": {
+        "provenance": "caller_declared",
+        "value": "operator"
+      }
+    },
+    "observations": [
+      {
+        "name": "saved-record",
+        "kind": "persisted_read",
+        "elapsedMs": 100,
+        "value": {
+          "customer": {
+            "$entity": {
+              "type": "customer",
+              "id": "6732"
+            }
+          },
+          "invoice": {
+            "$entity": {
+              "type": "invoice",
+              "id": "9810"
+            }
+          },
+          "total": 100,
+          "paid": 40,
+          "balance": 60
+        },
+        "evidence": ["synthetic:accounting:reference:fresh-read"]
+      }
+    ],
+    "windows": [
+      {
+        "observation": "saved-record",
+        "coverage": "complete",
+        "observedUntilMs": 100,
+        "evidence": ["synthetic:accounting:reference:window"]
+      }
+    ],
+    "collectedAt": "2026-10-19T00:00:00.000Z",
+    "revision": "synthetic-fixture-v1"
+  },
+  "replacement": {
+    "runId": "replacement-run",
+    "workspace": "replacement-synthetic",
+    "context": {
+      "currency": {
+        "provenance": "caller_declared",
+        "value": "CAD"
+      },
+      "role": {
+        "provenance": "caller_declared",
+        "value": "operator"
+      }
+    },
+    "observations": [
+      {
+        "name": "saved-record",
+        "kind": "persisted_read",
+        "elapsedMs": 100,
+        "value": {
+          "customer": {
+            "$entity": {
+              "type": "customer",
+              "id": "c18"
+            }
+          },
+          "invoice": {
+            "$entity": {
+              "type": "invoice",
+              "id": "inv42"
+            }
+          },
+          "total": 100,
+          "paid": 40,
+          "balance": 60
+        },
+        "evidence": ["synthetic:accounting:replacement:fresh-read"]
+      }
+    ],
+    "windows": [
+      {
+        "observation": "saved-record",
+        "coverage": "complete",
+        "observedUntilMs": 100,
+        "evidence": ["synthetic:accounting:replacement:window"]
+      }
+    ],
+    "collectedAt": "2026-10-19T00:00:00.000Z",
+    "revision": "synthetic-fixture-v1"
+  },
+  "entities": [
+    {
+      "type": "customer",
+      "logicalId": "test-customer",
+      "reference": {
+        "runId": "reference-run",
+        "workspace": "reference-synthetic",
+        "id": "6732"
+      },
+      "replacement": {
+        "runId": "replacement-run",
+        "workspace": "replacement-synthetic",
+        "id": "c18"
+      },
+      "evidence": ["synthetic:fixture-identity:customer"]
+    },
+    {
+      "type": "invoice",
+      "logicalId": "test-invoice",
+      "reference": {
+        "runId": "reference-run",
+        "workspace": "reference-synthetic",
+        "id": "9810"
+      },
+      "replacement": {
+        "runId": "replacement-run",
+        "workspace": "replacement-synthetic",
+        "id": "inv42"
+      },
+      "evidence": ["synthetic:fixture-identity:invoice"]
+    }
+  ],
+  "checks": [
+    {
+      "name": "saved-business-result",
+      "observation": "saved-record",
+      "persisted": true,
+      "deadlineMs": 1000
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { browserScenarioCaptureSchema } from "./browserScenarioCapture.js";
+import { retainedBrowserScenarioCaptureSchema } from "./browserScenarioCapture.js";
 
 /** Scenario artifact families compared after step alignment. */
 export const browserScenarioArtifactKindSchema = z.enum([
@@ -49,9 +49,51 @@ const normalizationRuleSchema = z.strictObject({
     .describe("Recorded replacement text used in normalized comparison."),
 });
 
+const correspondenceOriginSchema = z.string().refine((value) => {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" ||
+        url.protocol === "https:" ||
+        url.protocol === "ws:" ||
+        url.protocol === "wss:") &&
+      url.origin === value
+    );
+  } catch {
+    return false;
+  }
+}, "Expected a canonical HTTP(S) or WS(S) origin without credentials, path, query, or fragment");
+
+const originPairsSchema = z
+  .array(
+    z.strictObject({
+      before_origin: correspondenceOriginSchema,
+      after_origin: correspondenceOriginSchema,
+    }),
+  )
+  .superRefine((pairs, context) => {
+    for (const key of ["before_origin", "after_origin"] as const) {
+      const seen = new Set<string>();
+      for (const [index, pair] of pairs.entries()) {
+        if (seen.has(pair[key]))
+          context.addIssue({
+            code: "custom",
+            path: [index, key],
+            message: "Origin correspondence must be one-to-one on each side",
+          });
+        seen.add(pair[key]);
+      }
+    }
+  });
+
 const normalizationInputSchema = z
   .strictObject({
     rules: z.array(normalizationRuleSchema).default([]),
+    origin_pairs: originPairsSchema
+      .optional()
+      .describe(
+        "Explicit before/reference to after/replacement origin correspondence, applied only to structured URL fields. Unlisted origins remain literal.",
+      ),
   })
   .superRefine((normalization, context) => {
     const ruleIds = new Set<string>();
@@ -74,15 +116,19 @@ const normalizationInputSchema = z
 
 /** Input for step-aligned comparison of two browser scenario captures. */
 export const compareBrowserScenariosInputSchema = z.strictObject({
-  before_scenario: browserScenarioCaptureSchema.describe(
-    "Earlier complete normalized_result from capture_browser_scenario.",
-  ),
-  after_scenario: browserScenarioCaptureSchema.describe(
-    "Later complete normalized_result from capture_browser_scenario.",
-  ),
+  before_scenario: retainedBrowserScenarioCaptureSchema
+    .describe(
+      "Earlier complete normalized_result from capture_browser_scenario.",
+    )
+    .meta({ "x-rea-complete-observation": true }),
+  after_scenario: retainedBrowserScenarioCaptureSchema
+    .describe("Later complete normalized_result from capture_browser_scenario.")
+    .meta({ "x-rea-complete-observation": true }),
   normalization: normalizationInputSchema
     .default({ rules: [] })
-    .describe("Exact-literal rules committed in the comparison result."),
+    .describe(
+      "Literal rules and explicit origin pairs committed in the comparison result.",
+    ),
 });
 /** Parsed browser scenario comparison input. */
 export type CompareBrowserScenariosInput = z.infer<
@@ -129,7 +175,9 @@ export const BROWSER_SCENARIO_BUILT_IN_NORMALIZATION_RULES = [
   "ignore_event_step_index",
   "compare_screenshot_content_digest",
   "compare_normalized_text_content",
+  "compare_storage_entries_as_unordered_collection",
   "ignore_capture_local_network_transaction_ids",
+  "ignore_network_request_timing",
   "attribute_network_transactions_to_request_step",
   "compare_network_transactions_as_unordered_collection",
   "preserve_redirect_transaction_ancestry",
@@ -147,11 +195,12 @@ export const browserScenarioDiffSchema = z.strictObject({
       .array(builtInNormalizationSchema)
       .length(BROWSER_SCENARIO_BUILT_IN_NORMALIZATION_RULES.length),
     rules: z.array(normalizationRuleSchema),
+    origin_pairs: originPairsSchema.optional(),
     sha256: z.string().regex(/^[a-f0-9]{64}$/u),
   }),
   alignment: z.strictObject({
     status: z.enum(["aligned", "partial", "failed"]),
-    aligned_steps: z.number().int().min(0),
+    aligned_steps: z.int().min(0),
     before_only: z.array(z.string().min(1)),
     after_only: z.array(z.string().min(1)),
     failures: z.array(alignmentFailureSchema),
@@ -159,8 +208,8 @@ export const browserScenarioDiffSchema = z.strictObject({
   steps: z.array(
     z.strictObject({
       step_id: z.string().min(1),
-      before_step_index: z.number().int().min(0),
-      after_step_index: z.number().int().min(0),
+      before_step_index: z.int().min(0),
+      after_step_index: z.int().min(0),
       before_action: z.string().min(1),
       after_action: z.string().min(1),
       status: z.enum(["changed", "unchanged", "unknown"]),
@@ -168,7 +217,7 @@ export const browserScenarioDiffSchema = z.strictObject({
     }),
   ),
   artifact_diffs: z.strictObject({
-    total: z.number().int().min(0),
+    total: z.int().min(0),
   }),
   limitations: z.array(z.string().min(1)),
 });

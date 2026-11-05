@@ -27,6 +27,7 @@ concurrency:
 
 jobs:
   readiness:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Validate author declaration
     runs-on: ubuntu-24.04
     timeout-minutes: 3

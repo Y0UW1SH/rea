@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "synthetic-invoice-api",
+  "captures": [
+    {
+      "file": "reference-a.json"
+    },
+    {
+      "file": "reference-b.json"
+    }
+  ],
+  "resource_types": ["fetch", "xhr"],
+  "options": {
+    "required_min_samples": 3,
+    "enum_max_cardinality": 8,
+    "enum_min_samples": 5,
+    "format_min_samples": 2
+  },
+  "limits": {
+    "maxBytes": 4194304,
+    "maxTransactions": 1000,
+    "maxBodyBytes": 65536,
+    "maxSchemaNodes": 20000,
+    "maxEvidencePerOperation": 100
+  }
+}

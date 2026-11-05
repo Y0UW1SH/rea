@@ -1,4 +1,5 @@
 import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
+import { parseMcpEvidenceBundle } from "../../fixtures/mcpEvidenceBundle.js";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { afterEach, expect, it } from "vitest";
@@ -35,6 +36,7 @@ import {
 import { z } from "zod";
 import { createDeferred } from "../../fixtures/binarySession.js";
 import { GoBinaryService } from "../../../src/application/go/GoBinaryService.js";
+import { Il2cppMetadataService } from "../../../src/application/il2cpp/Il2cppMetadataService.js";
 import { WebNetworkCaptureService } from "../../../src/application/WebNetworkCaptureService.js";
 import { AnalysisUnsupportedTargetError } from "../../../src/domain/analysisErrorCore.js";
 import { ProviderCleanupError } from "../../../src/domain/providerCleanupError.js";
@@ -108,8 +110,8 @@ it.runIf(SQLITE_NATIVE_LIMITS_AVAILABLE)(
         normalized_result: { rows: { columns: ["id"], returned_rows: 3 } },
       });
       expect(await closing).toMatchObject({ ok: true });
-      // Closing a binding clears its ledger after the admitted recording succeeds.
-      expect(session.evidenceById(evidenceId)).toBeUndefined();
+      // Engine cleanup waits for admission but preserves the completed fact.
+      expect(session.evidenceById(evidenceId)?.evidence_id).toBe(evidenceId);
       expect(closed).toBe(true);
     } finally {
       release.resolve();
@@ -207,9 +209,7 @@ it.runIf(SQLITE_NATIVE_LIMITS_AVAILABLE)(
         arguments: {},
       });
       expect(bundle.isError).not.toBe(true);
-      expect(JSON.stringify(bundle.structuredContent)).toContain(
-        error.details.partial_observation.evidence_id,
-      );
+      expect(parseMcpEvidenceBundle(bundle).records).toContainEqual(retained);
     } finally {
       removalAllowed = true;
       await client.close();
@@ -339,9 +339,10 @@ it("awaits SQLite cleanup and retries its retained owner after failed server shu
   expect(attempts).toBe(2);
 });
 
-it("closes the bound Go and web-capture services and retries failed shutdown", async () => {
+it("closes the bound Go, IL2CPP and web-capture services and retries failed shutdown", async () => {
   let goCalls = 0;
   let goCloseAttempts = 0;
+  let il2cppCloseAttempts = 0;
   let captureCloseAttempts = 0;
   let scenarioCloseAttempts = 0;
   let cleanupAllowed = false;
@@ -362,6 +363,16 @@ it("closes the bound Go and web-capture services and retries failed shutdown", a
       if (!cleanupAllowed) throw new Error("Go cleanup refused");
     },
   });
+  const il2cppMetadata = new Il2cppMetadataService({
+    identity: { id: "il2cpp-fixture", name: "IL2CPP fixture", version: "1" },
+    inspect: async () => {
+      throw new Error("No metadata inspection requested");
+    },
+    close: async () => {
+      il2cppCloseAttempts += 1;
+      if (!cleanupAllowed) throw new Error("IL2CPP cleanup refused");
+    },
+  });
   const webNetworkCapture = new WebNetworkCaptureService({
     inspect: async () => {
       throw new Error("No capture inspection requested");
@@ -375,6 +386,7 @@ it("closes the bound Go and web-capture services and retries failed shutdown", a
     { kind: "fixed", analysis: { execute: async () => ok(null) } },
     {
       goBinary,
+      il2cppMetadata,
       webNetworkCapture,
       browserScenarioCapture: {
         identity: () => ({
@@ -412,12 +424,14 @@ it("closes the bound Go and web-capture services and retries failed shutdown", a
       ]),
     });
     expect(goCloseAttempts).toBe(1);
+    expect(il2cppCloseAttempts).toBe(1);
     expect(captureCloseAttempts).toBe(1);
     expect(scenarioCloseAttempts).toBe(1);
 
     cleanupAllowed = true;
     await server.close();
     expect(goCloseAttempts).toBe(2);
+    expect(il2cppCloseAttempts).toBe(2);
     expect(captureCloseAttempts).toBe(2);
     expect(scenarioCloseAttempts).toBe(2);
   } finally {
@@ -480,7 +494,7 @@ it("closes the Inspector owner with peers and retries its retained cleanup", asy
 
   await server.close();
   expect(inspectorCloseAttempts).toBe(2);
-  expect(peerCloseAttempts).toBe(2);
+  expect(peerCloseAttempts).toBe(1);
 });
 
 it("does not close a caller-owned Inspector observation provider", async () => {

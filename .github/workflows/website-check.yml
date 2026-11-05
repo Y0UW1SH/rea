@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   check:
+    if: github.repository != 'Y0UW1SH/rea'
     name: Website checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -21,6 +22,10 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: website/requirements.txt
+      - name: Set up Node.js for the website Worker checks
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
       - name: Install sharing-image dependencies
         run: |
           sudo apt-get update

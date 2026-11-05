@@ -1,0 +1,758 @@
+# SaaS fork change ledger
+
+This is the durable inventory of this fork's SaaS additions and the review checklist
+for preserving them during upstream updates. Keep it with the feature branch,
+`feat/saas-behavior-compatibility`. See the [usage and scope guide](saas-compatibility.md)
+for contracts and examples, and the [validation report](saas-validation.md) for
+executed checks and known limits.
+
+## Exact checkpoints
+
+These immutable commit IDs identify the code even if a branch later moves:
+
+- Upstream-derived starting point: [`e4c3d72396bf925a45724ce8b18b238b0d23d787`](https://github.com/Y0UW1SH/rea/commit/e4c3d72396bf925a45724ce8b18b238b0d23d787).
+- Initial complete feature checkpoint: [`9f0f4f1537e093eaeae242c68c9fce28340faf11`](https://github.com/Y0UW1SH/rea/commit/9f0f4f1537e093eaeae242c68c9fce28340faf11).
+- Tested numeric/export hardening checkpoint: [`bbb9e40f8f314f240839099bcebefd2410116c7c`](https://github.com/Y0UW1SH/rea/commit/bbb9e40f8f314f240839099bcebefd2410116c7c).
+  Its parent is the initial feature checkpoint above.
+- Portable companion-suite feature head before the 2026-10-20 integration:
+  [`5cf82999e904ed8039be9ea2057bf14b702780f6`](https://github.com/Y0UW1SH/rea/commit/5cf82999e904ed8039be9ea2057bf14b702780f6).
+- Upstream integration of 2026-11-04 (this branch):
+  [`babf87631d8306d81e29fbbd1f51534c5b614875`](https://github.com/Y0UW1SH/rea/commit/babf87631d8306d81e29fbbd1f51534c5b614875)
+  (tree `64dbc3c819c5427c0f8c6a36905a9cf3101c900e`) merges upstream `morluto/rea`
+  main `71f680d7c1aa7a45ba0325fe87b104744b0c105f` into the feature head
+  `7b530856457d99a0a850b309ab6a6cdaffc691e1` combined with the 2026-10-21
+  integration branch head `56967277cf6120403cc85ca25b76bc6fe4aa6e41`. The guard
+  repair `d646fee942999cfa09200c2d24eddbe133a50d80`, the study merge
+  `9c9b8c1c39c1e778ef9f659cc95587969da231d0` (PR #3 head `14f2de023`) and the
+  live-investigation merge `ed505f3c4d4377d3107f035a75c95b769ba2bc20` (PR #5 head
+  `599f27049`, tree `8b0a7f92a548b4ba23482d5485a089fc4cbe4de9`) follow it. See the
+  [integration record](#upstream-integration-record-2026-11-04).
+- Upstream integration merge of 2026-10-20:
+  [`00830ddf6c105ecb5bd4a73963cd8ac433044a4d`](https://github.com/Y0UW1SH/rea/commit/00830ddf6c105ecb5bd4a73963cd8ac433044a4d)
+  (tree `b25cadbc34339795c61310934a9e74faccc6af59`), whose parents are the
+  feature head above and upstream `morluto/rea` main
+  `8716b5241125d81f1a16808eb5178fdfdea1ecdb`. See the
+  [integration record](#upstream-integration-record-2026-10-20).
+
+A Git tag is a named pointer, not an offsite backup. Preserve the commits in a
+verified remote branch or tag and, when separate backup is needed, a repository
+backup outside the working machine. Do not assume a local checkpoint was pushed;
+verify the remote reference and resolved commit. This ledger does not assert that
+any tag has been published or that the feature branch has been merged into `main`.
+
+## Review regression repairs (2026-10-21)
+
+- The combined gate runs each unchanged command through the candidate's existing
+  owned-command supervisor, using a separate `saas-integration` lock. Cancellation
+  retains the live supervisor until its process group or Windows job cleanup
+  settles; stopping only the direct npm/npx process is insufficient. Linux
+  regressions exercise real npx descendants that ignore SIGINT/SIGTERM. This is
+  ordinary command ownership, not containment of hostile detached processes.
+- The known study CLI companion is selected from the actual candidate only when
+  its regular test file and focused-workflow declaration both exist. One-sided
+  inventory drift fails before gate commands. Standalone trees without either
+  remain valid, and the complete workflow-command mirror remains mandatory.
+  This does not import the separate study-foundation feature.
+- SaaS report and contract serialization preserves numeric negative zero as a
+  JSON `-0` token. Comparison verdicts, numeric types, strings and source evidence
+  remain unchanged. Export report-byte admission includes the sign. The explicit
+  `test:saas` inventory includes the signed-zero CLI/serialization/budget
+  regressions in `scripts/saas-report-json.test.mjs`.
+
+## Fork workflow job guards (2026-10-21)
+
+- Every inherited workflow job excludes `Y0UW1SH/rea` through a dominating
+  `github.repository != 'Y0UW1SH/rea'` condition. Existing predicates remain
+  parenthesized and unchanged, including status functions, reusable callers,
+  release publishers and aggregate jobs. Other repositories, including
+  `morluto/rea`, retain their original conditions and implicit status behavior.
+- Only the exact `saas-compatibility` job in `saas-compatibility.yml` and
+  `combined-candidate` job in `saas-upstream-integration.yml` are exempt.
+  `tests/boundary/filesystem/workflowForkSafety.test.ts` discovers every workflow
+  and job, rejects missing or escapable guards, and keeps those two jobs enabled.
+  Both SaaS check lanes execute this inventory regression. Existing workflow
+  tests still assert the original upstream predicates inside the fork guard.
+- These conditions skip jobs; they do not suppress workflow triggers or run
+  records. They apply only to revisions containing them. The fork's observed
+  default branch is `feat/saas-behavior-compatibility`; default-branch events gain
+  these guards only after the guarded revision reaches that branch. The
+  upstream-tracking `main` remains unchanged, so pushes to it and manual runs
+  selecting it can still use unguarded inherited workflows.
+- An inventory failure is a review gate, not a sandbox: a newly added unguarded
+  job can execute concurrently before the regression fails if Actions is already
+  active. Repository-wide activation therefore needs a separately reviewed
+  workflow/event policy covering unguarded branches and newly inherited paths.
+  Merging these guards alone does not establish safe global activation. No
+  Actions activation, workflow disabling, repository settings or merge is part
+  of this code change.
+
+## Sync gate and UTF-8 hardening (2026-10-21)
+
+- Workflow/profile CLIs and both persisted lab readers reject malformed UTF-8
+  before parsing. Literal U+FFFD, embedded U+FEFF and other valid Unicode remain
+  unchanged; leading JSON BOMs remain invalid. The changed lab implementation
+  remains covered by its source-derived revision.
+- The combined gate accepts ordinary PR events for both maintained branches,
+  verifies the event merge's exact base/head parents even in a shallow checkout,
+  and preserves that proposed change when building the three-source candidate.
+  Push and manual events also retain their exact triggering SHA.
+- Preparation and checking compare the controller/candidate helper's committed
+  blob and regular-file mode. Candidate-only gate changes require a reviewed
+  matching controller; a candidate self-test cannot prove an older controller
+  executed the current command inventory.
+- Regression owners: the workflow, profile and lab companion tests, plus
+  `tests/boundary/filesystem/saasUpstreamIntegration.test.ts`. The API contract,
+  surface, GraphQL and strict-replay additions remain intact.
+- This change does not enable Actions, configure protection, merge a PR, or
+  install an upstream polling schedule. Those operational changes are separate.
+
+## Evidence correctness repairs (2026-10-21)
+
+- GraphQL surface reconciliation treats names as candidates until static transport
+  linkage is known. Observed endpoint/document identities remain visible even when
+  a declaration has the same name.
+- Contract verification reports captured-sample conformance, explicit required
+  coverage and unknown business compatibility separately. GraphQL schemas are
+  selected by endpoint, operation name and document/APQ identity.
+- `environment-serve --replay-mode strict` requires complete path/query/JSON-body
+  evidence and refuses absent or contradictory responses. Archive mode remains
+  the default; actor, header, sequence and mutable-state modeling remain future work.
+- Regression owners: surface and contract companion suites, environment replay
+  and scenario source suites, and CLI/MCP environment boundaries.
+- Independent-review corrections retain hash-only APQ identities and unidentified
+  reference envelopes, preserve incomplete response evidence per GraphQL status,
+  advertise JSON batch/scalar bodies in strict discovery, and reject numeric
+  conversion loss before MCP dispatch. The HTTP parser stays within the existing
+  request byte bound and session cancellation lifetime.
+- Follow-up draft review corrected strict HTTP header bypass, lossy UTF-8 decoding
+  and session eviction by rejected initialization. It also preserves omitted
+  reference requests as GraphQL uncertainty, snapshots required-coverage selectors
+  before asynchronous reads, and keeps unsupported JSON numbers unverified in
+  the shared HTTP/GraphQL decoder.
+
+## Feature inventory
+
+### Explicit deployment-origin correspondence
+
+Commit: `da4ad848633a1a541e3ad446a85281041860db5b`.
+
+- Adds directional, one-to-one `origin_pairs` to the existing browser scenario
+  comparison policy, exposed through the existing CLI and MCP contracts.
+- Applies only to structured URL fields; retains paths, queries, fragments,
+  undeclared origins, unrelated mismatches and unchanged original captures.
+- Main ownership: `src/domain/browserScenarioOriginCorrespondence.ts`, scenario
+  normalization/diff modules, `src/cli/browserAdvancedCommands.ts`, and
+  `src/contracts/browserToolContracts.ts`.
+- Regression owners: `src/domain/browserScenarioDiff.test.ts`,
+  `tests/boundary/cli/browserCli.test.ts`, and
+  `tests/boundary/mcp/browserScenarioMcp.test.ts`.
+- Limit: explicitly allowing deployment differences is not proof of business
+  equivalence. Strings in arbitrary DOM text, bodies and storage stay literal.
+
+### Evidence-based workflow evaluator
+
+Commit: `517c0e58922c71dc3313255d221eb884a1af67bd`.
+
+- Adds source-checkout companion `scripts/saas-compatibility.mjs` and its shared
+  evaluator, synthetic accounting/retail cases, usage guidance, and authored
+  `references/cloud-compatibility.md` skill instructions.
+- Compares selected provenance-tagged context, typed entity correspondence,
+  outcome values, fresh-read declarations and bounded completion observations.
+  Missing evidence remains unknown; explicit mismatches fail.
+- Regression owners: `scripts/saas-compatibility.test.mjs` and
+  `tests/boundary/cli/saasCompatibility.test.ts`.
+- Limit: the checker validates supplied observations. It does not authenticate
+  evidence references, perform live actions or independently verify fresh reads.
+
+### Persisted workflow lab and product-planning profiles
+
+Commit: `129712825b0a3ea6448ce97319df41ef12e4c540`.
+
+- Adds `scripts/saas-compatibility-lab.mjs`: independently written local journal
+  and table implementations, unseen synthetic inputs, file-reopen observations,
+  and seeded wrong amounts, relationships, persistence and retry effects.
+- Adds `scripts/saas-product-profile.mjs`, JSON Schema and generic, Lightspeed
+  and QuickBooks planning templates with explicit coverage, unknowns and
+  observed/simulated/untested external-service boundaries.
+- Regression owners: the corresponding `scripts/*.test.mjs` files and
+  `tests/boundary/cli/saasCompatibilityLab.test.ts` and
+  `tests/boundary/cli/saasProductProfile.test.ts`.
+- Limits: templates are not vendor adapters. The lab covers sequential
+  same-process retries and file-reopen persistence, not crash durability,
+  concurrent actors or real vendor behavior.
+
+### Installed skill completeness
+
+Commit: `1b4cb4030d3780de078b1fe21bffea4ca087d7f6`.
+
+- Adds the cloud-compatibility reference to `src/application/SetupSkill.ts`'s
+  managed inventory and the portable skill commitment.
+- Adds `tests/conformance/managedSkillInventory.test.ts` to compare the managed
+  inventory with every authored skill file recursively.
+- Keep source skill files under `.agents/skills/reverse-engineer-anything/`.
+  Regenerate ignored packaged `skills/` output rather than editing it directly.
+- Relevant integration checks cover selected-skill setup, installation/repair and
+  Qwen client configuration in addition to the inventory regression.
+
+### Bounded offline CSV/JSON export comparison
+
+Commit: `9f0f4f1537e093eaeae242c68c9fce28340faf11`.
+
+- Adds `scripts/saas-export-compare.mjs`, comparison helpers and synthetic
+  CSV/JSON fixtures, retaining policy, raw digests and excluded column names.
+- Aligns records by explicit compound keys and compares selected string/integer/
+  decimal fields exactly. Duplicate keys, missing/extra records and meaningful
+  differences remain visible; row ordering alone is ignored.
+- Rejects malformed/ambiguous inputs, invalid UTF-8, detected path escapes and
+  mutation, unsafe coercion, and configured size/record/field/value/depth limits.
+- Regression owners: `scripts/saas-export-compare.test.mjs` and
+  `tests/boundary/cli/saasExportCompare.test.ts`.
+- Limits: reads existing local regular files, not live downloads. It does not
+  establish complete vendor export coverage or provide a hostile-filesystem
+  sandbox. Browser download cancellation behavior is unchanged.
+
+### Numeric fidelity and report-boundary hardening
+
+Commit: `bbb9e40f8f314f240839099bcebefd2410116c7c`.
+
+- Rejects unsafe integers and original JSON numeric tokens that lose precision,
+  underflow or overflow before workflow comparison; exact larger values can be
+  represented as strings. Adds shared lossless JSON parsing for library callers.
+- Adds the shared `scripts/lib/saas-export-budget.mjs` admission owner.
+- Privately snapshots export policy before asynchronous reads, bounds compact
+  policy JSON to 1 MiB and complete UTF-8 reports to 16 MiB before serialization,
+  including escaping, indentation and the final newline, using shared
+  `scripts/lib/saas-export-budget.mjs` accounting.
+- Retains admitted policy and available raw input provenance on report overflow
+  or invalid UTF-8, with explicit omission of oversized diagnostic details.
+- Limits: numeric information already rounded by a caller's parser cannot be
+  recovered. Existing `-0` versus `0` comparison/report-rendering behavior is
+  unchanged; see the validation report.
+
+### API contract inference and verification
+
+Commits: `e1ebc5ace36acae356919df9ced869714d43c9b0` (shared companion helpers) and
+`9ecb9632339f19fd02f2911ae02fa129be606c1c` (contract companion); the wiring and
+documentation commit follows them.
+
+- Adds `scripts/saas-api-contract.mjs` (`infer`, `verify`) with
+  `scripts/lib/saas-api-contract.mjs` (model building and writing),
+  `saas-api-contract-admission.mjs` (manifest validation and the transaction
+  admission shared by both commands), `saas-api-contract-render.mjs` (OpenAPI 3.1
+  rendering with `x-rea-*` evidence markers) and `saas-api-contract-verify.mjs`
+  (Ajv validation of replacement bodies with directional origin pairs).
+- Adds the shared companion helpers `scripts/lib/saas-route-templates.mjs`,
+  `saas-origin-pairs.mjs`, `saas-scenario-capture.mjs` and
+  `saas-json-schema-inference.mjs`, which later increments reuse; `parseExportJson`
+  in `saas-export-comparison.mjs` gains an optional number decoder so inference
+  sees exact lexemes.
+- Mirrors `segmentRule`/`scanRouteTemplate`, raw path extraction and the
+  origin-pair ordering and projection. `tests/boundary/cli/saasApiContract.test.ts`
+  asserts parity with `src/domain/analysisView/webNetworkRouteTemplates.ts`,
+  `src/domain/recordedTransportUrl.ts`,
+  `src/domain/browserScenarioNormalization.ts` and
+  `src/domain/browserScenarioOriginCorrespondence.ts`, and parses every committed
+  fixture with `browserScenarioCaptureSchema`. The `.d.mts` declarations beside
+  the helpers exist for that TypeScript test.
+- Fixtures under `scripts/fixtures/saas-api-contract/` are generated by
+  `scripts/saas-api-contract-fixtures.mjs` (`--check` compares committed bytes)
+  from `scripts/lib/saas-api-contract-fixture.mjs`; they are synthetic.
+- Regression owners: `scripts/saas-api-contract-helpers.test.mjs`,
+  `scripts/saas-api-contract.test.mjs` and
+  `scripts/saas-api-contract-verify.test.mjs` (all in `npm run test:saas`, sharing
+  `scripts/saas-api-contract-test-support.mjs`) and the wrapper above.
+- Limits: required properties, formats and enum candidates are sample-bounded
+  inferences; non-JSON bodies exclude their transaction; one primary origin per
+  contract; `verify` establishes body conformance, not business equivalence.
+- Review fix pass (same increment, after an independent whole-branch review):
+  `verify` now reports a `mediaType` finding when a matched operation answers
+  with a media type the contract never recorded (an HTML fallback page used to
+  pass), a `failed_request` finding for failed or unfinished replacement
+  requests, `unexercised_operations`, and the replacement's completeness; it is
+  `unknown` without a verified response body or on an incomplete capture, and an
+  unmatched request line is a finding only with JSON evidence. `infer` counts
+  failures under `x-rea-failures` instead of modeling them as `default`
+  responses, admits empty bodies, records completeness per input, rejects
+  duplicate captures and declared origins that admit nothing, and lists every
+  sample's capture under `x-rea-evidence.captures`. Inference no longer emits a
+  `format` or decimal `pattern` when any sample is empty or an impossible date,
+  so a contract always accepts its own captures; `__proto__` members render as
+  data; keys sort by code point. Contracts are read back with `JSON.parse` after
+  the digest check, so deep schemas round-trip. The capture reader accepts REA's
+  fully redacted empty URL spelling and validates `events.dropped`.
+
+### Surface coverage, code versus observed
+
+Commits: `dcce47743` (3591 pairing port), `bdb1ada14` (coverage library and
+CLI), `128b1a1c9` (fixtures) and `f41990b26` (wrappers and fixture schema
+checks); the wiring and documentation commit follows them.
+
+- Adds `scripts/saas-surface-coverage.mjs` (`--static`, repeatable `--observed`,
+  `--origins`, optional `--profile` with `--workflow-id`; exit 0 all declared
+  exercised, 1 gaps, 2 invalid) with `scripts/lib/saas-surface-coverage.mjs`
+  (reconciliation and report), `saas-surface-matching.mjs` (verbatim port of the
+  target parsing, method inference, ws(s) origins, route-shape keys, pairing basis
+  and classify rules of the unmerged branch `feat/3591-endpoint-traffic-comparison`,
+  on the increment-1 `saas-route-templates` and `saas-ordering` mirrors),
+  `saas-surface-families.mjs` (GraphQL, tRPC and route families plus undeclared
+  aggregation), `saas-surface-inputs.mjs` and `saas-surface-observed.mjs` (strict
+  readers for analysis results, api-surface views, scenario captures through
+  `saas-scenario-capture`, and 3591 comparison results) and
+  `saas-surface-report.mjs` (profile-schema experiments with deterministic
+  priorities, limitation lines, profile merging through `saas-product-profile`,
+  bounded file reading). The library is split into more files than the plan
+  names so every module stays under the 500-line ceiling.
+- Vocabulary: `scripts/saas-surface-matching.test.mjs` pins the owner's statuses
+  (`matched`, `ambiguous`, `not-observed-in-capture`, `unknown`), bases and ten
+  unknown reasons, so the port can be deleted once 3591 merges; the companion
+  adds `target-unresolved`, `rpc-bodies-not-retained`,
+  `rpc-link-base-undeclared` and `route-pattern-unsupported` for the families
+  the owner never compares, and `operation-type-disagrees` as a GraphQL
+  ambiguity. Target-less items are keyed by the full node id so no two share an
+  experiment.
+- Fixtures under `scripts/fixtures/saas-surface/`: the hand-authored
+  `bundle/main.js`; `api-surface.json`, `scenario-capture.json`, `origins.json`
+  and `profile.json` from `scripts/lib/saas-surface-fixture.mjs` through
+  `scripts/saas-surface-fixtures.mjs` (`--check` compares committed bytes); and
+  `static-analysis.json`, the bare `normalized_result` of
+  `analyze_javascript_application` for the bundle with a repository-relative
+  `input_path`, imported with `--import`. The committed analysis was produced on
+  this Windows checkout, where the owned analysis worker needs the absent
+  packaged native controls, by running the same application-layer analysis
+  (`analyzeJavaScriptApplication` with the worker factory replaced by an
+  in-process port over the worker's own domain steps); the guide documents the
+  CLI command for regeneration. The analyzer reads `axios.get` as a candidate
+  endpoint, so the bundle's customers call uses `fetch`.
+- Regression owners: `scripts/saas-surface-matching.test.mjs`,
+  `scripts/saas-surface-coverage.test.mjs`,
+  `scripts/saas-surface-comparison.test.mjs` and
+  `scripts/saas-surface-planning.test.mjs` (all in `npm run test:saas`, sharing
+  `scripts/saas-surface-test-support.mjs`), `tests/boundary/cli/saasSurfaceCoverage.test.ts`
+  (runs the suites, pins the route-shape keys to `compositeKey` and `segmentRule`,
+  validates the planned experiments with Ajv against `profile.schema.json`) and
+  `tests/boundary/filesystem/saasSurfaceFixtures.test.ts` (parses the committed
+  fixtures with `javascriptApplicationAnalysisResultSchema`, the api-surface group
+  schema, `browserScenarioCaptureSchema` and `commitBrowserScenarioNormalization`).
+  The `.d.mts` beside `saas-surface-matching.mjs` exists for that TypeScript test.
+- Limits: exact literal declarations only; GraphQL and tRPC need retained bodies
+  or declared link bases; routes compare patterns with navigation pathnames; any
+  incomplete observation turns absence into `unknown`; undeclared observed
+  traffic is never a missing-code claim; on the committed fixtures the CLI exits
+  1 by design (seven gaps).
+- Review fix pass (same increment, after an independent whole-branch review):
+  comparison verdicts are merged by rank whatever the `--observed` order, a
+  better verdict replaces the displaced verdict's evidence instead of appending
+  to it, and a complete comparison's not-observed verdict becomes `unknown` when
+  any other input is incomplete; the `root_artifact_sha256` check covers every
+  comparison collection, and verdict `method` and `target` fields are validated
+  strictly (a target path with a query or fragment is rejected, nothing is
+  copied unvalidated). GraphQL absence is claimed only when every input
+  retained request bodies without truncation (truncated request bodies are
+  counted under `body_incompleteness`) and a declared origin was exercised;
+  persisted-query bodies match by `operationName` alone; names outside the
+  GraphQL grammar are ignored instead of reaching a pattern or an error
+  message. An api-surface page beyond the first or short of its group total is
+  incomplete. Route literals with a query or fragment are
+  `route-pattern-unsupported` and keyed by node, never echoed.
+
+## Focused regression gates
+
+Use the exact Node version in `.nvmrc` and npm version in
+`package.json#packageManager` (at the hardening checkpoint: Node 24.18.0 and npm
+11.16.0), then install the locked dependencies with `npm ci`.
+
+The [SaaS compatibility workflow](../.github/workflows/saas-compatibility.yml)
+runs on pushes to `main` and `feat/saas-behavior-compatibility`, and pull requests
+targeting either branch. This covers upstream-integration PRs into the feature
+branch and future direct `main` updates once the workflow is merged there. A push
+tests the branch head; a PR tests GitHub's proposed merge result. These are
+distinct integration checks, so both are retained, while superseded runs of each
+kind are cancelled. The workflow has read-only contents permission, uses existing
+pinned official actions, and has no secrets, deployment or repository-setting
+changes. It intentionally does not invoke the complete repository test suite.
+
+Run the same behavior checks locally:
+
+```bash
+npm run test:saas
+npm run test:local -- \
+  src/domain/browserScenarioDiff.test.ts \
+  tests/conformance/managedSkillInventory.test.ts \
+  tests/conformance/readmeConsistency.test.ts
+node scripts/run-exact-tests.mjs run tests/boundary/filesystem/workflowActionPinning.test.ts
+npm run test:focused -- \
+  tests/boundary/cli/browserCli.test.ts \
+  tests/boundary/mcp/browserScenarioMcp.test.ts \
+  tests/boundary/cli/saasCompatibility.test.ts \
+  tests/boundary/cli/saasCompatibilityLab.test.ts \
+  tests/boundary/cli/saasProductProfile.test.ts \
+  tests/boundary/cli/saasExportCompare.test.ts \
+  tests/boundary/cli/saasApiContract.test.ts \
+  tests/boundary/cli/saasSurfaceCoverage.test.ts \
+  tests/boundary/cli/saasStudy.test.ts \
+  tests/boundary/mcp/saasInvestigationMcp.test.ts \
+  tests/boundary/cli/saasInvestigationCli.test.ts \
+  tests/process-global/saasInvestigationLifecycle.test.ts \
+  tests/boundary/filesystem/saasSurfaceFixtures.test.ts \
+  tests/acceptance/setup/selectedSkillSetup.test.ts \
+  tests/boundary/filesystem/setupSkill.test.ts \
+  tests/boundary/filesystem/qwenClientConfiguration.test.ts
+REA_TEST_CHROMIUM=/absolute/path/to/chromium npm run test:focused -- \
+  tests/acceptance/browser/saasInvestigationLiveCli.test.ts
+```
+
+The source-level live-investigation suites (`src/domain/saasInvestigation.test.ts`,
+`src/domain/analysisView/scenarioCaptureRecords.test.ts`,
+`src/contracts/toolEffects.test.ts` and
+`src/application/saas/SaasInvestigationService.test.ts`) run with the
+`test:local` command above, as the workflow does. The real-browser acceptance
+test is skipped without `REA_TEST_CHROMIUM`; Chromium refuses its sandbox when
+launched as root, so run that test as an unprivileged user rather than disabling
+the sandbox.
+
+`test:focused` prepares the compiled runtime, packaged skill and the selected
+tests' declared artifacts. It selects exact files and fails if they are missing;
+do not replace it with a changed-file filter that could silently omit coverage.
+Also run `npm run check:fast`, `npm run docs:check`, `npm run format:check`,
+`npm run knip` and `git diff --check` before accepting an upstream integration.
+Use the repository's broader CI and relevant real-provider lanes when the
+upstream change requires them; the focused workflow is an additional gate.
+
+### Combined upstream integration check
+
+The supplemental [upstream integration workflow](../.github/workflows/saas-upstream-integration.yml)
+checks one disposable candidate: the feature branch, then fork `main`, then
+`morluto/rea` upstream `main`, using ordinary sequential merges. It never updates
+those branches. Its controller runs outside the candidate and snapshots all
+three source SHAs before fetching and merging them. Push and manual runs pin the
+selected fork branch to the event's exact SHA even if its remote ref advances.
+For a PR into the feature branch, that source is the exact event merge commit;
+for a PR into fork `main`, the fork-main source is that merge commit. The helper
+validates the event repository, target, PR number/ref, full SHAs and the merge's
+ordered base/head parents, including depth-one checkouts. If the other named
+fork branch is the same-repository PR head, it is pinned to the event head SHA;
+a similarly named external-fork branch cannot override a fork source. Remaining
+source refs are observed once when the job starts. An unavailable event object
+fails closed rather than substituting a later merge or branch tip. A result does
+not qualify later changes.
+
+The run summary records the clean controller commit/tree and source SHAs, observed remote heads,
+merge bases, each merge's parents, final candidate commit/tree, toolchain and
+executed checks. Missing refs, fetch errors, unrelated histories, merge conflicts,
+changed candidate files and failing checks fail closed. `prepared` or `checking`
+is incomplete evidence; only `passed` means every supplemental check finished.
+Synthetic commits exist only in the disposable candidate repository.
+The executing helper must be the tracked controller file. Before dependency
+installation and again before gate commands, controller and candidate must have
+the same committed helper blob and regular-file mode. A changed helper requires
+a reviewed controller containing the merged gate changes; candidate self-tests
+do not establish that an older controller executed new requirements. Git blob
+identity permits ordinary CRLF checkout conversion without relaxing content
+identity. The report records both helper identities. Reports stay outside
+both checkouts; preparation does not replace an existing caller-owned report,
+and a summary-rendering failure does not erase provenance. Cancellation forwards
+SIGINT/SIGTERM to the active gate command, escalates after one second, and waits
+for that command to settle before recording cancellation. GitHub's disposable
+runner remains responsible for process-tree cleanup beyond that direct child.
+
+The controller-owned command inventory preserves every existing SaaS workflow
+check, adds capture/cancellation/cleanup regressions and its own Git-fixture
+regressions, then runs `check:fast`, `docs:check`, `format:check` and `knip`.
+Focused boundary tests prepare the compiled runtime and packaged skill. Exact
+files must exist; changed-file selection and zero-test success are not used.
+This gate does not replace the unchanged full CI/provider lanes. Its candidate
+can contain additional upstream changes beyond the proposed PR merge; the
+separate SaaS compatibility workflow checks GitHub's proposed merge tree itself.
+Review the PR and all applicable CI before accepting the integration. These
+same-runner checks are not a hostile-code sandbox or independent attestation.
+
+Triggers are fork pushes to `main` or `feat/saas-behavior-compatibility`, ordinary
+PRs targeting either branch, and manual dispatch, without path filters. A push
+only to upstream does not trigger a workflow in this fork. No polling schedule
+is installed. Main-push coverage requires the workflow on `main`; manual dispatch
+requires it on the repository's actual default branch (observed as the feature
+branch on 2026-10-21). GitHub Actions must be enabled separately. A manual run
+is diagnostic, not an eligible PR ruleset check; validate automatic PR/push runs
+and their actual check names before making them required. No hosted pass or
+branch protection is established by committing the workflow.
+No settings are changed by this addition. Before enabling repository Actions,
+review inherited workflows too: `release.yml` can update release proposals on
+main pushes, and general CI includes scheduled runs.
+
+The new workflow has only read-only contents permission, pinned official actions,
+no persisted checkout credentials, restored/shared dependency or build caches, secrets, artifact
+downloads, publication or privileged PR triggers. It fetches only the fixed fork
+and upstream repositories and offers no arbitrary URL/ref inputs. Candidate
+installation and tests still execute repository code on the disposable runner;
+the provenance report is diagnostic evidence, not a security attestation.
+
+At the hardening checkpoint, 84 SaaS tests, five SaaS CLI tests and 45 browser
+domain/CLI/MCP tests passed, alongside build/static/documentation checks. The
+earlier full-suite run failed: 211 failures, of which two introduced skill
+packaging failures were fixed and 209 were reproduced at the starting point.
+The full suite was not rerun after those fixes or hardening. These are historical
+local results, not a promise of current remote CI success or bug-free features.
+All committed cases are synthetic; no Lightspeed or QuickBooks account was
+accessed and no real vendor behavior was verified.
+
+## Upstream integration record (2026-10-20)
+
+Tested upstream: `morluto/rea` main `8716b5241125d81f1a16808eb5178fdfdea1ecdb`,
+144 commits and 1,104 changed paths after the starting point `e4c3d7239`.
+Integration: branch `integration/saas-upstream-2026-10-20`, created from the
+feature head `5cf82999e` with `git merge --no-ff upstream/main`; merge commit
+`00830ddf6c105ecb5bd4a73963cd8ac433044a4d`, tree
+`b25cadbc34339795c61310934a9e74faccc6af59`. The commit adding this record
+follows the merge on the same branch. Fork `main` was not merged separately: it
+mirrors upstream main and was already contained in the tested upstream commit.
+
+Conflicts: only `package.json` (`scripts`). Upstream extended `test:python` with
+`bridge/pwndbg/test_core_context.py`, and the fork's adjacent `test:saas` entry
+conflicted textually; the resolution keeps upstream's `test:python` and the
+unchanged `test:saas`. `README.md`, the 20 translated READMEs and
+`.agents/skills/reverse-engineer-anything/SKILL.md` merged automatically. After
+the merge, the fork banner, every English fork notice, the fork's SKILL.md
+section (next to upstream's version 44 bump), all 39 fork-only files and both
+SaaS workflows were verified present; upstream's new files were taken unchanged.
+
+Local gates on the merged tree (Windows 11 Pro 10.0.26100, Node 24.21.0,
+npm 11.19.0; fresh `npm ci`, `turbo run compile --force`, `artifacts:skills`,
+`artifacts:managed-evidence --force` and a generated product catalog):
+
+- `oxfmt --check README.md docs/saas-change-ledger.md .github/workflows/saas-compatibility.yml`: passed.
+- `npm run test:saas`: 84 passed.
+- `npm run test:local -- src/domain/browserScenarioDiff.test.ts tests/conformance/managedSkillInventory.test.ts tests/conformance/readmeConsistency.test.ts`: 35 passed (29, 1 and 5).
+- `node scripts/run-exact-tests.mjs run tests/boundary/filesystem/workflowActionPinning.test.ts`: 5 passed.
+- Focused boundary lane, the nine `test:focused` files run through
+  `node scripts/run-exact-tests.mjs run` because `test:focused` runs no tests
+  on this host: 45 passed, 7 failed, 4 skipped. Six failures are the documented
+  Windows-only test-side failures (three `qwenClientConfiguration` `stale`
+  registrations; two `selectedSkillSetup` JSON path-containment assertions and
+  one 30 s timeout), fixed on the fork branches
+  `fix/windows-setup-test-portability` and
+  `fix/windows-client-configuration-paths`. The seventh is upstream's
+  `browserCli` parity case "runs analysis, session, WebMCP, screenshot, and
+  comparison from explicit request scope": since upstream `9aca543f4`,
+  `analyze_web_bundle` runs in an owned worker process, which on a Windows
+  source checkout without `native/windows/build/` reports
+  `capability_unavailable` ("REA Windows native controls are unavailable"). It
+  failed identically when the file ran alone (13 passed, 1 failed), so it is
+  environmental rather than a SaaS contract change. The four SaaS CLI files
+  (5 passed), the fork's comparison cases in `browserCli` and
+  `browserScenarioMcp` (2 passed, 20.5 s) passed.
+- Browser lifecycle lane (six files): 98 passed, 1 failed, 2 skipped. The
+  failure, upstream's `browserScenarioCleanup` case "retries a late Playwright
+  open after cancellation before accepting another capture", passed 8/8 when
+  its file ran alone (6 s); it is a timing flake under lane load in a file the
+  fork does not modify. The skips are the `win32` skips of
+  `browserScenarioCancellationCli`.
+- `node scripts/run-exact-tests.mjs run tests/boundary/filesystem/saasUpstreamIntegration.test.ts`: 25 passed, 4 skipped (`win32` signal cases), 261 s.
+- `npm run check:fast`: passed.
+- `npm run docs:check`: exits 1 on this host before any check runs because
+  `scripts/run-exclusive.mjs` requires the packaged Windows native controls
+  (`native/windows/build/manifest.json`, absent in a source checkout). The
+  wrapped pieces passed when run directly: `npx turbo run docs:check:built`
+  (6 tasks) and `npm run test:local -- tests/conformance/readmeConsistency.test.ts`
+  (5 passed).
+- `npm run format:check` (4,536 files), `npm run knip` and `git diff --check`:
+  passed. A `knip` run started while `compile --force` was rewriting `dist/`
+  reported the `#javascript-analysis-worker` import as unresolved; it passed
+  once the build had finished.
+
+Remaining limitations: Node and npm were newer patch releases than the pinned
+`24.18.0` and `npm@11.16.0`, so the combined CI candidate check was not
+reproduced locally. Linux and macOS results come from the fork's SaaS workflows
+after the feature branch is fast-forwarded; a push to the integration branch
+alone triggers neither workflow. No full-suite, real-provider or vendor
+behavior was verified.
+
+## Upstream integration record (2026-11-04)
+
+Tested upstream: `morluto/rea` main `71f680d7c1aa7a45ba0325fe87b104744b0c105f`,
+2,459 commits after the previously integrated `01788bac863ac786bfbb648cad69b11e23b40a89`.
+Sources: feature head `7b530856457d99a0a850b309ab6a6cdaffc691e1` (PR #2),
+the 2026-10-21 integration branch head `56967277cf6120403cc85ca25b76bc6fe4aa6e41`
+(PR #6, which already carries PR #4's guards), fork `main`
+`1c2c2f1e78a74cdf5e4909ab8e775b090998a51f` (contained in upstream), PR #3 head
+`14f2de0232fede81d9aba68565626272df2e77f4` and PR #5 head
+`599f2704971b8cc8c39de3f0d630ddca7b669f03`. The work lives on
+`claude/keen-johnson-tqzjho`; no shared branch was reset or force-pushed, and the
+open PRs were not updated.
+
+Conflicts: nineteen files. The environment-serve area was the only semantic
+one: upstream now derives a state from the capture and serves read tools and
+confirmed writes from it, with `--replay-only` for pure replay, while the fork's
+`--replay-mode strict` is a replay matching mode. Resolution: strict replay is
+pure replay layered on upstream's server. `--replay-mode strict` derives no
+state, the card declares no data plane, `serveEnvironment` refuses a state
+combined with strict replay as a programming error, and the stopped document
+gains `replay_mode`. The strict catalog reuses upstream's `describe`/`body`
+catalog hooks (`strictReplayCatalogOptions`), the schema type list is charged
+through upstream's `schemaBytes`, and strict JSON admission still wraps
+upstream's initialize classification. The strict request-body reader
+(`src/domain/analysisView/replayRequestBody.ts`) consumes upstream's HAR
+declaration owner (`recordedExchangeBody.ts`) instead of re-parsing, and
+`RecordedExchange.requestBody` is produced by the one `recordedExchange` owner.
+Replay-purpose scenario records keep the fork's conservative body-less rule
+(GET/HEAD or a lone `content-length: 0`) while manifest records keep upstream's
+Content-Type rule, each documented at the projection boundary. Origin-pair
+projection accepts upstream's `RetainedBrowserScenarioCapture`; the comparison
+limitations keep the fork's origin-pair sentence and upstream's storage/timing
+sentence. The fork's browser CLI/MCP origin tests were ported to upstream's
+`cliTest` and MCP harness types, the archive description suffix was dropped in
+favor of upstream's response summaries, and `package.json` keeps upstream's
+`test:python` runner beside `test:saas`.
+
+Inherited CI: eight jobs upstream added (CI `python`, `apk_signature`,
+`packet_capture`, `signal_recording`; CodeQL `analyze`; the real Android
+metadata and APK signature workflows; release `verify-npm`) received the
+dominating fork guard. The fork's cloud-compatibility skill reference moved to
+the end of the managed inventory so upstream's rollback regression, which
+injects a failure at the third managed file, holds.
+
+Feature integration: PR #3 merged with two textual conflicts (`test:saas` and
+the companion guide). PR #5 required porting to upstream's tool-family
+structure: `registerSaasInvestigationCommands` joins the browser CLI family,
+`registerSaasInvestigationTool` registers beside the browser scenario tool,
+`SAAS_INVESTIGATION_TOOL_CONTRACTS` is a contract group the Playwright scenario
+provider declares, and the product catalog derives from the shared owner. Its
+scenario-record rule (retain the observed request line of an ambiguous
+transaction, withhold response facts) was applied to upstream's record shape,
+and the journal/service use upstream's stable file descriptor, immutable
+evidence bundle snapshot and artifact primary-failure facts. The report payload
+goes to `createEvidence` directly, as upstream's lint rule requires. The
+upstream-integration controller mirrors the expanded workflow commands.
+
+Local gates on the final code tree (Linux, Node 24.22.1 per `.nvmrc`, npm
+11.16.0 per `packageManager`, fresh `npm ci`):
+
+- `npm run test:saas`: 178 passed.
+- Focused lane (42 files, including every SaaS workflow test, the environment
+  serve/replay suites and the CI/release workflow tests): 798 passed, 4 skipped
+  (root permission cases) and 1 failed. The failure was the real-Chromium
+  acceptance test launched as root, where Chromium refuses its sandbox; the
+  same test passed (1 passed, 10 s) when run as an unprivileged user with the
+  sandbox enabled, so no sandbox was disabled.
+- Pre-integration focused lane on the sync alone: 879 passed, 6 failed, 4
+  skipped; the six were the missing guards, the skill rollback order, an
+  `apk_signature` routing assertion that the guard satisfies, and three
+  controller tests that need the exact pinned npm (they passed with
+  npm 11.16.0 and after the repairs: 54 passed).
+- Complete suite (`npm run test:with-build`, 3,047 files): 40,907 passed,
+  375 skipped, 16 failed. Seven were test-side: upstream workflow tests that
+  expected unguarded `if` conditions, a coverage fixture that rewrote only
+  request URLs, and a compare test asserting that replay drops request
+  bodies; each now encodes the fork's rule. Nine are Kuna provider cases that
+  need non-root permissions or fail the same way on pure upstream here. A
+  second complete run on the repaired tree, as an unprivileged user under a
+  child-subreaper (this container's PID 1 reaps no orphans), passed 40,969
+  tests with all sixteen earlier failures passing in-suite; its four remaining
+  failures were invocation artifacts shown passing separately. A third run
+  with the checkout owned by that user, through `npm run test:with-build`
+  under the subreaper with Chromium configured, passed 41,028 tests with 271
+  skipped and no failures. See the validation report.
+- Typecheck, `lint` (0 errors), `format:check`, `knip`, `metadata:check`,
+  architecture guards and `git diff --check`: passed. `lint:typed` flagged the
+  fork's node:test suites for unawaited top-level `test()` calls; they are now
+  marked `void`. `docs:check` flagged the two translated READMEs upstream added
+  without the fork notice; both now carry it.
+
+Remaining limitations: the complete repository suite, hosted CI, other
+operating systems, performance comparisons and any real vendor behavior were
+not verified. Draft PR #7 into the feature branch produced no workflow or
+check runs, and the repository has had no Actions run since 2026-10-14, so
+GitHub Actions is not executing for this repository until the owner enables it.
+Strict replay keeps its documented scope; state serving remains an
+archive-matching mode and cannot be combined with it.
+
+## Safe upstream-sync procedure
+
+The [upstream sync guide](saas-upstream-sync.md) includes a reusable prompt for
+preparing, validating and reviewing future updates to the customized fork.
+
+1. Start with a clean working tree. Commit or otherwise preserve local work
+   before integrating. Verify the feature head and a recoverable checkpoint on
+   the intended remote; do not rely only on this file or a local tag. Do not
+   reset, delete or force-push the feature branch to match upstream.
+2. Inspect `git remote -v`. Confirm that `origin` is the intended fork and
+   `upstream` is the intended upstream repository. If needed, add `upstream` only
+   after verifying its URL (`https://github.com/morluto/rea.git` for this lineage).
+   Fetch `upstream` and record the exact `upstream/main` SHA being integrated.
+3. Create a new integration branch **from the current feature head**, not from
+   upstream or the fork's `main`. Merge `upstream/main` there:
+
+   ```bash
+   git switch feat/saas-behavior-compatibility
+   git rev-parse HEAD
+   git fetch upstream
+   git rev-parse upstream/main
+   git switch -c integration/saas-upstream-YYYY-MM-DD
+   git merge upstream/main
+   ```
+
+   Choose a new branch name for each attempt. A normal fork sync updates the
+   selected fork branch; it does not verify these additions against upstream.
+
+4. Resolve conflicts by retaining both upstream fixes and this inventory's
+   behavior. Do not accept all of either side blindly. Inspect the origin-policy
+   contract, CLI/MCP parity, evaluator semantics, export budgets, package scripts,
+   skill inventory and focused workflow even when Git reports no conflict.
+5. Run the focused commands above and applicable broader gates against the
+   merged tree. Investigate failures; do not weaken assertions or hide unknown
+   coverage to obtain a green check. Record the tested upstream SHA, integration
+   SHA, commands, results and remaining limitations in the validation report.
+6. Review the integration diff against the original base, the hardening
+   checkpoint and the pre-sync feature head. For example:
+
+   ```bash
+   git diff --stat e4c3d72396bf925a45724ce8b18b238b0d23d787..HEAD
+   git diff bbb9e40f8f314f240839099bcebefd2410116c7c..HEAD -- \
+     'scripts/saas-*.mjs' 'scripts/lib/saas-*.mjs' 'scripts/lib/saas-*.d.mts' scripts/fixtures/ \
+     'src/domain/browserScenario*' src/cli/browserAdvancedCommands.ts \
+     src/contracts/browserToolContracts.ts src/application/SetupSkill.ts \
+     .agents/skills/reverse-engineer-anything package.json \
+     'tests/boundary/cli/saas*.test.ts' tests/boundary/cli/browserCli.test.ts \
+     tests/boundary/mcp/browserScenarioMcp.test.ts \
+     tests/conformance/managedSkillInventory.test.ts \
+     .github/workflows/saas-compatibility.yml
+   git diff feat/saas-behavior-compatibility..HEAD
+   ```
+
+   Review upstream-driven changes deliberately; checkpoint differences are not
+   automatically regressions. Confirm this feature inventory still holds.
+
+7. Bring only reviewed integration changes back through the normal PR/merge
+   process into the feature branch. Keep `main` unchanged unless its separate
+   PR is reviewed and merging is explicitly approved. Update this ledger with
+   the accepted integration SHA and preserve the previous checkpoints.
+
+Passing tests reduce regression risk; they do not guarantee that an arbitrary
+future fork sync is safe. Preserve history, review conflicts and verify behavior
+at every integration.
+
+## Dependent study manifest foundation (2026-10-21)
+
+Developed separately from base `f9fcd4305d3a7bccebf822a68c0294cbf2d0afd5`.
+See [the study guide](saas-study.md) for the versioned manifest, bounded local
+evidence validation and explicit limitations. Regression owners are
+`scripts/saas-study.test.mjs` and `tests/boundary/cli/saasStudy.test.ts`.
+Actor/session/context identities, observation references, explicit unknowns and
+unsupported operations survive serialization. No browser or provider authority
+is expanded; the base branch owns GraphQL and contract coverage corrections.
+
+## Live investigation controller (integrated 2026-11-04)
+
+Developed separately as PR #5 from base `87a3ee21748bde3a9cdae7e595b0a5540a7e8416`
+and integrated with the 2026-11-04 upstream sync. See
+[the live investigation guide](saas-live-investigation.md). Main ownership:
+`src/domain/saasInvestigation.ts`, `src/domain/saasInvestigationEvaluation.ts`,
+`src/application/saas/`, `src/cliSaasInvestigationCommands.ts`,
+`src/server/registerSaasInvestigationTool.ts` and
+`src/contracts/saasInvestigationToolContracts.ts`. Regression owners are the
+source suites listed in the focused gates, `tests/boundary/cli/saasInvestigationCli.test.ts`,
+`tests/boundary/mcp/saasInvestigationMcp.test.ts`,
+`tests/process-global/saasInvestigationLifecycle.test.ts` and the real-browser
+`tests/acceptance/browser/saasInvestigationLiveCli.test.ts`. The tool launches a
+browser, executes caller-supplied actions and writes a local journal; maintainer
+scope approval for that execution and mutation capability remains the fork
+owner's decision, and no vendor behavior was verified.
