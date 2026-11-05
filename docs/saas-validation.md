@@ -12,17 +12,18 @@ replay on upstream's state-serving server are recorded in the
 Linux, Node **24.22.1** (`.nvmrc`), npm **11.16.0** (`packageManager`), fresh
 `npm ci`; no vendor account or live provider was used.
 
-| Check                                                                           | Observed result                                                                                                    |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `npm run test:saas`                                                             | 178 passed (164 companion plus 14 study)                                                                           |
-| Focused lane, 42 files, with `REA_TEST_CHROMIUM` set, run as root               | 798 passed, 1 failed, 4 skipped; the failure is Chromium refusing its sandbox as root                              |
-| `tests/acceptance/browser/saasInvestigationLiveCli.test.ts` as a non-root user  | 1 passed in 10 s: two real-Chromium experiments, adaptive selection, six retained captures, idempotent resume      |
-| Sync-only focused lane before the repairs                                       | 879 passed, 6 failed, 4 skipped; all six repaired or explained in the ledger, then 87 passed on the affected files |
-| Touched source suites after the upstream merge                                  | 362 passed across 15 files                                                                                         |
-| `npm run typecheck`, `npm run lint`, `npm run format:check`, `git diff --check` | passed; lint has 0 errors and the repository's existing warnings                                                   |
-| `npm run check` (typecheck, lint, format, knip, metadata, guards, typed lint)   | passed after marking the node:test suites' top-level calls `void`                                                  |
-| `npm run docs:check`                                                            | passed after adding the fork notice to `README_ro.md` and `README_ur-Latn.md`                                      |
-| Complete suite, `npm run test:with-build` (3,047 files, 93 min, as root)        | 40,907 passed, 375 skipped, 16 failed; every failure classified below and the seven test-side ones repaired        |
+| Check                                                                             | Observed result                                                                                                            |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `npm run test:saas`                                                               | 178 passed (164 companion plus 14 study)                                                                                   |
+| Focused lane, 42 files, with `REA_TEST_CHROMIUM` set, run as root                 | 798 passed, 1 failed, 4 skipped; the failure is Chromium refusing its sandbox as root                                      |
+| `tests/acceptance/browser/saasInvestigationLiveCli.test.ts` as a non-root user    | 1 passed in 10 s: two real-Chromium experiments, adaptive selection, six retained captures, idempotent resume              |
+| Sync-only focused lane before the repairs                                         | 879 passed, 6 failed, 4 skipped; all six repaired or explained in the ledger, then 87 passed on the affected files         |
+| Touched source suites after the upstream merge                                    | 362 passed across 15 files                                                                                                 |
+| `npm run typecheck`, `npm run lint`, `npm run format:check`, `git diff --check`   | passed; lint has 0 errors and the repository's existing warnings                                                           |
+| `npm run check` (typecheck, lint, format, knip, metadata, guards, typed lint)     | passed after marking the node:test suites' top-level calls `void`                                                          |
+| `npm run docs:check`                                                              | passed after adding the fork notice to `README_ro.md` and `README_ur-Latn.md`                                              |
+| Complete suite, `npm run test:with-build` (3,047 files, 93 min, as root)          | 40,907 passed, 375 skipped, 16 failed; every failure classified below and the seven test-side ones repaired                |
+| Complete suite rerun, `vitest run` (3,047 files, 94 min, unprivileged, subreaper) | 40,969 passed, 326 skipped, 4 invocation artifacts, each shown passing separately; all 16 earlier failures passed in-suite |
 
 The complete-suite failures: five upstream workflow assertions (`ciCodeqlScope`,
 `ciTestReports`, `realGhidraWindowsWorkflow`) expected unguarded job
@@ -37,7 +38,23 @@ cases inject permission failures that root ignores and pass as an unprivileged
 user; the five `kunaVersionProbeOwnership` cases fail identically on the pure
 upstream tree in this container, so they are an environment limitation, not an
 integration regression. The repaired files pass (14 and 53 tests on their two
-runs). The complete suite was not rerun after the test-side repairs.
+runs).
+
+A second complete run (`vitest run`, 3,047 files, 94 min) on the repaired tree
+as an unprivileged user under a child-subreaper wrapper passed **40,969 tests
+with 326 skipped and 4 failures**, and every one of the sixteen earlier
+failures passed in that suite, including the Kuna cache and version-probe cases
+and the real-Chromium live investigation. The subreaper matters because this
+container's PID 1 does not reap orphaned processes: a killed descendant stays a
+zombie, so a process group never empties and ownership checks cannot settle.
+The four remaining failures were artifacts of that invocation: two
+`ciTestProjects` cases because git refused the root-owned checkout for the
+other user, one `ciFeedback` case that must be launched through `npm run`, and
+one `packageRunnerBoundInstallation` case whose npm cache fixture held
+root-owned files. Run through `npm run test:focused` with the git exception
+added, the first three pass as the unprivileged user (23 passed) and the
+fourth passes as root (2 passed). No repository check was weakened; the
+subreaper wrapper is a local environment aid and is not committed.
 
 The complete repository suite, hosted CI, other operating systems, performance
 comparisons and real vendor behavior were not run. Passing checks reduce

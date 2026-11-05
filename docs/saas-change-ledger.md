@@ -643,7 +643,11 @@ Local gates on the final code tree (Linux, Node 24.22.1 per `.nvmrc`, npm
   expected unguarded `if` conditions, a coverage fixture that rewrote only
   request URLs, and a compare test asserting that replay drops request
   bodies; each now encodes the fork's rule. Nine are Kuna provider cases that
-  need non-root permissions or fail the same way on pure upstream here; see the
+  need non-root permissions or fail the same way on pure upstream here. A
+  second complete run on the repaired tree, as an unprivileged user under a
+  child-subreaper (this container's PID 1 reaps no orphans), passed 40,969
+  tests with all sixteen earlier failures passing in-suite; its four remaining
+  failures were invocation artifacts shown passing separately. See the
   validation report.
 - Typecheck, `lint` (0 errors), `format:check`, `knip`, `metadata:check`,
   architecture guards and `git diff --check`: passed. `lint:typed` flagged the
